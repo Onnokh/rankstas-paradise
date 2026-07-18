@@ -122,7 +122,6 @@ export const opportunityLabels: Record<OpportunityKind, string> = {
   ctr: "CTR opportunity",
   "new-demand": "New demand",
   cannibalization: "Cannibalization",
-  "launch-readout": "Launch readout",
 }
 
 export const shortAction: Record<OpportunityKind, string> = {
@@ -130,7 +129,6 @@ export const shortAction: Record<OpportunityKind, string> = {
   ctr: "Test the title and description against the query intent; keep the page focused if its ranking is already strong.",
   "new-demand": "Check existing pages first. Map the keyword only when the intent fits; create a page only when no current page fits.",
   cannibalization: "Choose one primary page, then consolidate, redirect, or clarify the competing pages and their internal links.",
-  "launch-readout": "Review the 28/56/84-day milestones against baseline and record the next change in the action log.",
 }
 
 export const signalMeaning: Record<OpportunityKind, string> = {
@@ -138,7 +136,6 @@ export const signalMeaning: Record<OpportunityKind, string> = {
   ctr: "Current 28-day query row: 50+ impressions, position 1–10, and CTR below 80% of its benchmark. The benchmark is the same-band median when 3+ comparable rows exist; otherwise it is the site median.",
   "new-demand": "After grouping current 28-day rows by query: 20+ impressions and no exact case-insensitive registry keyword match. Brand queries are excluded.",
   cannibalization: "After grouping current 28-day rows by query: the query has rows for 2+ different page URLs. Brand queries are excluded.",
-  "launch-readout": "The target has a publish or baseline date before the latest data date. Visibility is compared with the pre-launch baseline at 28, 56, and 84 days.",
 }
 
 export const signalExplanation: Record<OpportunityKind, string> = {
@@ -146,7 +143,6 @@ export const signalExplanation: Record<OpportunityKind, string> = {
   ctr: "This page already ranks well, but its search result earns fewer clicks than similar results. The title, description, or intent match may need work.",
   "new-demand": "People are searching for a phrase your plan does not cover. First decide whether an existing page satisfies that intent; only then create a new mapping or page.",
   cannibalization: "Google is dividing one query between multiple pages on this site. That can weaken both pages because neither has a clear primary target.",
-  "launch-readout": "This is a measurement checkpoint for a new or changed target. It shows whether visibility is developing compared with the pre-launch baseline.",
 }
 
 export const signalReason = (signal: OpportunitySignal) => {
@@ -155,7 +151,7 @@ export const signalReason = (signal: OpportunitySignal) => {
   if (signal.kind === "ctr") return `“${signal.label}” is ranking at position ${signal.current.position.toFixed(1)} with ${signal.current.impressions} impressions, but its ${ctr} CTR is below the expected rate for this ranking range.`
   if (signal.kind === "new-demand") return `“${signal.label}” generated ${signal.current.impressions} impressions, but it is not mapped to a keyword in the selected site's registry.`
   if (signal.kind === "cannibalization") return `“${signal.label}” is receiving impressions for ${signal.pages.length} pages: ${signal.pages.map((page) => pathOf(page)).join(", ")}.`
-  return `“${signal.label}” has been measured for ${signal.launch?.daysSinceLaunch ?? 0} days. Its current 28-day visibility is being compared with the pre-launch baseline.`
+  return `“${signal.label}” matched the selected opportunity rule based on its current Search Console performance.`
 }
 
 export const readableIntent = (intent: string) => ({

@@ -14,7 +14,7 @@ The TUI stays as-is for humans. Agents get a non-interactive command surface ove
 - `search_snapshot`: per-day `query × page × device × country` rows, finalized data, reconciled daily. Currently 2026-05-17 → 2026-07-13 (site is new; only 53 rows, 3 pages so far).
 - `keyword-registry.csv`: keyword → target URL mapping with `published_at`, `baseline_date`, `priority`, `status`, `why_opportunity` — this is the existing "what was set out" record.
 - `page_baseline`: pre-launch 28-day window per target URL.
-- `opportunityDigest()` in `storage.ts`: already classifies striking-distance, CTR, new-demand, cannibalization, and launch-readout signals — this *is* the answer to question 3, it just has no non-TUI exit besides `weekly-digest.json`.
+- `opportunityDigest()` in `storage.ts`: classifies striking-distance, CTR, new-demand, and cannibalization signals — this *is* the answer to question 3, it just has no non-TUI exit besides `weekly-digest.json`.
 - `targetPerformance()` / `registryTargetProgress()`: per-page 28-day series and progress states.
 
 ## Data gaps to close

@@ -64,11 +64,11 @@ Read commands (local data only, never call Google):
                                   context, signals, and a verdict. Answers "what performed
                                   well" and "what needs optimization".
   page <path>                     Full bundle for one page: plan, rationale, daily series,
-                                  top queries, baseline, launch readout, logged actions.
+                                  top queries, baseline, logged actions.
   queries [--page <path>] [--min-impressions N] [--include-brand] [--limit N] [--window N]
                                   Top queries with previous-window comparison and registry mapping.
   opportunities [--kind <kind>]   Classified signals (striking-distance, ctr, new-demand,
-                                  cannibalization, launch-readout) with recommendations.
+                                  cannibalization) with recommendations.
   registry                        The SEO plan: targets, intents, keywords, rationale, phases.
   log list [--path <path>]        Logged interventions.
 

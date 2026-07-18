@@ -38,14 +38,13 @@ export type FeedView = "home" | "opportunities" | "history" | "registry"
 
 type Tone = "up" | "down" | "flat" | "warn" | ""
 
-const opportunityKinds: readonly OpportunityKind[] = ["striking-distance", "ctr", "new-demand", "cannibalization", "launch-readout"]
+const opportunityKinds: readonly OpportunityKind[] = ["striking-distance", "ctr", "new-demand", "cannibalization"]
 
 const kindIcons: Record<OpportunityKind, string> = {
   "striking-distance": "arrow-up",
   ctr: "eye",
   "new-demand": "search",
   cannibalization: "git-branch",
-  "launch-readout": "clock",
 }
 
 const scrub = (text: string) => text.replaceAll("\t", " ").replaceAll("\n", " ").replaceAll("\r", " ")

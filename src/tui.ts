@@ -25,7 +25,7 @@ const registryForSignal = (signal: OpportunitySignal, registry: readonly Registr
   return queryMapping ?? registry.find((entry) => entry.targetUrl === new URL(signal.page).pathname)
 }
 
-const opportunityKinds: readonly OpportunityKind[] = ["striking-distance", "ctr", "new-demand", "cannibalization", "launch-readout"]
+const opportunityKinds: readonly OpportunityKind[] = ["striking-distance", "ctr", "new-demand", "cannibalization"]
 const homeCategories: readonly HomeCategory[] = [...opportunityKinds, "sitemap-coverage"]
 
 const opportunityRow = (signal: OpportunitySignal, selected: boolean, wide: boolean) => {

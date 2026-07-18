@@ -38,7 +38,7 @@ Because Google withholds anonymized long-tail queries from query-level rows, eve
 
 The installed daily launchd job fills finalized dates absent from the local ledger and re-fetches the five newest finalized dates to absorb late Search Console processing. Older completed dates are retained locally without repeated requests.
 
-The weekly launchd job refreshes the current and preceding 28-day windows, classifies striking-distance, CTR, new-demand, cannibalization, and launch-readout signals, and writes the retained digest to `data/weekly-digest.json`. Home and Opportunities use the same classifier directly from SQLite and the registry CSV.
+The weekly launchd job refreshes the current and preceding 28-day windows, classifies striking-distance, CTR, new-demand, and cannibalization signals, and writes the retained digest to `data/weekly-digest.json`. Home and Opportunities use the same classifier directly from SQLite and the registry CSV. Publish dates, baselines, and action history remain available in page details; they are not a separate opportunity category.
 
 The installed launch agents run the daily sync at 09:15 and the weekly digest each Monday at 09:30. Their logs are retained under `data/`.
 

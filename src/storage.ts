@@ -234,7 +234,7 @@ export type Metrics = {
   readonly position: number
 }
 
-export type OpportunityKind = "striking-distance" | "ctr" | "new-demand" | "cannibalization" | "launch-readout"
+export type OpportunityKind = "striking-distance" | "ctr" | "new-demand" | "cannibalization"
 
 export type OpportunitySignal = {
   readonly kind: OpportunityKind
@@ -321,10 +321,6 @@ const dateDaysBefore = (date: string, days: number) => {
   value.setUTCDate(value.getUTCDate() - days)
   return value.toISOString().slice(0, 10)
 }
-
-const dateDaysAfter = (date: string, days: number) => dateDaysBefore(date, -days)
-
-const daysBetween = (start: string, end: string) => Math.max(0, Math.floor((Date.parse(`${end}T00:00:00.000Z`) - Date.parse(`${start}T00:00:00.000Z`)) / 86_400_000))
 
 const summariseMetrics = (days: readonly RegistryDay[]): Metrics => {
   const impressions = days.reduce((total, day) => total + day.impressions, 0)
@@ -457,39 +453,6 @@ export const opportunityDigest = (entries: readonly RegistryEntry[]): Opportunit
       mapped: registryKeywords.has(query.toLowerCase()),
       recommendation: "Consolidate content and internal links, or clarify canonicals and page intent.",
       score: currentMetrics.impressions * pages.length,
-    })
-  }
-  const uniqueTargets = new Map(entries.filter((entry) => entry.keyword.trim()).map((entry) => [entry.targetUrl, entry]))
-  const pageWindow = db.prepare(`
-    select coalesce(sum(clicks), 0) as clicks, coalesce(sum(impressions), 0) as impressions,
-           case when sum(impressions) > 0 then sum(clicks) * 1.0 / sum(impressions) else 0 end as ctr,
-           case when sum(impressions) > 0 then sum(position * impressions) * 1.0 / sum(impressions) else 0 end as position
-    from search_snapshot
-    where page = ? and date between ? and ? and lower(query) not like '${brandPattern()}'
-  `)
-  for (const [targetUrl, entry] of uniqueTargets) {
-    const start = entry.publishedAt || entry.baselineDate
-    if (!start || latestDate <= start) continue
-    const fullUrl = `${currentSiteOrigin()}${targetUrl}`
-    const milestone = (days: number) => pageWindow.get(fullUrl, start, [latestDate, dateDaysAfter(start, days - 1)].sort().at(0)!) as Metrics
-    const day28 = milestone(28)
-    const day56 = milestone(56)
-    const day84 = milestone(84)
-    const baselineEnd = dateDaysBefore(entry.baselineDate || start, 3)
-    const baselineStart = dateDaysBefore(baselineEnd, 27)
-    const baselineMetrics = pageWindow.get(fullUrl, baselineStart, baselineEnd) as Metrics
-    signals.push({
-      kind: "launch-readout",
-      label: targetUrl,
-      query: null,
-      page: fullUrl,
-      pages: [fullUrl],
-      current: day28,
-      previous: baselineMetrics,
-      mapped: true,
-      recommendation: "Review 28/56/84-day visibility against baseline and check UTM-attributed product outcomes separately.",
-      score: Math.abs(day28.impressions - baselineMetrics.impressions),
-      launch: { daysSinceLaunch: daysBetween(start, latestDate), day28, day56, day84 },
     })
   }
   db.close()
