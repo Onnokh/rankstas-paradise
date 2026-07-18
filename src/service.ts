@@ -134,19 +134,19 @@ export const shortAction: Record<OpportunityKind, string> = {
 }
 
 export const signalMeaning: Record<OpportunityKind, string> = {
-  "striking-distance": "Ranks #4–20 with at least 20 impressions but relatively few clicks.",
-  ctr: "Ranks in the top 10 with at least 50 impressions and CTR below comparable results.",
-  "new-demand": "Meaningful query demand is not in the registry; repeated query-page rows are consolidated.",
-  cannibalization: "The same query earns impressions for two or more Sleevy URLs.",
-  "launch-readout": "Non-brand visibility at 28, 56 and 84 days compared with the pre-launch baseline.",
+  "striking-distance": "In the current 28-day window, a non-brand query has at least 20 impressions, ranks between positions 4 and 20, and has a CTR below 10%.",
+  ctr: "In the current 28-day window, a non-brand query has at least 50 impressions, ranks in the top 10, and has a CTR below 80% of the median CTR for similar rankings.",
+  "new-demand": "A non-brand query has at least 20 impressions but does not exactly match a keyword in the registry. Query-page rows are combined before this check.",
+  cannibalization: "The same query receives impressions for at least two different pages on this site during the current 28-day window.",
+  "launch-readout": "A target has a publish or baseline date, so its non-brand visibility can be compared at 28, 56, and 84 days after launch.",
 }
 
 export const signalExplanation: Record<OpportunityKind, string> = {
-  "striking-distance": "A page is close enough to stronger visibility that improving it may pay off faster than publishing another page.",
-  ctr: "The page already ranks well, but its search snippet is earning fewer clicks than comparable results.",
-  "new-demand": "Searchers are using language the registry does not cover yet. Existing pages should be checked before adding a new target.",
-  cannibalization: "Google is splitting one query across multiple Sleevy pages, which can blur which page should rank.",
-  "launch-readout": "A published target is being measured against its pre-launch visibility as Search Console data matures.",
+  "striking-distance": "This page is already visible and close to the first page. Improving the page may produce more traffic faster than publishing a new page.",
+  ctr: "This page already ranks well, but its search result earns fewer clicks than similar results. The title, description, or intent match may need work.",
+  "new-demand": "People are searching for a phrase your plan does not cover. First decide whether an existing page satisfies that intent; only then create a new mapping or page.",
+  cannibalization: "Google is dividing one query between multiple pages on this site. That can weaken both pages because neither has a clear primary target.",
+  "launch-readout": "This is a measurement checkpoint for a new or changed target. It shows whether visibility is developing compared with the pre-launch baseline.",
 }
 
 export const readableIntent = (intent: string) => ({

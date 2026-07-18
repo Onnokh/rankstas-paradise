@@ -130,6 +130,9 @@ export const showTui = async (initialStatus?: string) => {
   const detailSummary = new BoxRenderable(renderer, { height: 7, flexShrink: 0, minWidth: 0, overflow: "hidden", border: ["bottom"], borderStyle: "single", borderColor: "#4A5568", paddingBottom: 1, flexDirection: "column" })
   const detailSummaryTitle = new TextRenderable(renderer, { height: 1, flexShrink: 0, content: "", fg: "#F7FAFC", attributes: 1 })
   const detailSummaryBody = new TextRenderable(renderer, { flexGrow: 1, minHeight: 0, overflow: "hidden", content: "", fg: "#CBD5E0" })
+  const detailGuide = new BoxRenderable(renderer, { height: 0, flexShrink: 0, minWidth: 0, overflow: "hidden", border: false, borderStyle: "single", borderColor: "#4A5568", paddingBottom: 1, flexDirection: "column" })
+  const detailGuideTitle = new TextRenderable(renderer, { height: 1, flexShrink: 0, content: "", fg: "#F7FAFC", attributes: 1 })
+  const detailGuideBody = new TextRenderable(renderer, { flexGrow: 1, minHeight: 0, overflow: "hidden", content: "", fg: "#CBD5E0" })
   const detailContent = new BoxRenderable(renderer, { flexGrow: 1, minHeight: 0, minWidth: 0, overflow: "hidden", paddingTop: 1, flexDirection: "column" })
   const detailTitle = new TextRenderable(renderer, { height: 1, flexShrink: 0, content: "", fg: "#F7FAFC", attributes: 1 })
   const detailBody = new TextRenderable(renderer, { flexGrow: 1, minHeight: 0, overflow: "hidden", content: "", fg: "#CBD5E0" })
@@ -141,11 +144,14 @@ export const showTui = async (initialStatus?: string) => {
   master.add(masterBody)
   detailSummary.add(detailSummaryTitle)
   detailSummary.add(detailSummaryBody)
+  detailGuide.add(detailGuideTitle)
+  detailGuide.add(detailGuideBody)
   detailContent.add(detailTitle)
   detailContent.add(detailBody)
   detailBottom.add(detailBottomTitle)
   detailBottom.add(detailBottomBody)
   detail.add(detailSummary)
+  detail.add(detailGuide)
   detail.add(detailContent)
   detail.add(detailBottom)
   split.add(master)
@@ -204,6 +210,11 @@ export const showTui = async (initialStatus?: string) => {
     const summary = snapshotSummary()
     const activeView = views.findIndex((item) => item.view === view)
     detailSummary.height = renderer.width >= 120 ? 8 : 11
+    const showGuide = view === "home" || view === "opportunities"
+    detailGuide.height = showGuide ? (renderer.width >= 120 ? 8 : 10) : 0
+    detailGuide.border = showGuide ? ["bottom"] : false
+    detailGuideTitle.content = showGuide ? "OPPORTUNITY GUIDE" : ""
+    detailGuideBody.content = ""
     const showBottomPanel = (view === "registry" && registryTargets.length > 0) || view === "history"
     detailBottom.height = showBottomPanel
       ? view === "history" ? (renderer.height >= 32 ? 14 : 8) : (renderer.height >= 32 ? 8 : 5)
@@ -239,12 +250,14 @@ export const showTui = async (initialStatus?: string) => {
       ].join("\n")
       if (selectedKind === "sitemap-coverage") {
         detailTitle.content = `Sitemap coverage · ${sitemapGaps.length} unmapped pages`
-        detailBody.content = [
-          "What it means",
-          "A published URL appears in sitemap.xml but has no target-page row in keyword-registry.csv.",
+        detailGuideBody.content = [
+          "WHAT IT MEANS",
+          "A published URL appears in sitemap.xml but has no target-page row in the selected site's registry.",
           "",
-          "Detection rule",
-          "Compare every sitemap URL path with the registry target_url column. Keywords may be blank for inventory-only pages.",
+          "DETECTION RULE",
+          "Every sitemap URL path is compared with the registry target_url column. A blank keyword is allowed for inventory-only pages.",
+        ].join("\n")
+        detailBody.content = [
           "",
           "Recommended response",
           "Add a page-only registry row, then assign keywords only when research or observed demand supports them.",
@@ -254,12 +267,14 @@ export const showTui = async (initialStatus?: string) => {
         ].join("\n")
       } else {
         detailTitle.content = `${opportunityLabels[selectedKind]} · ${selectedSignals.length} signals`
-        detailBody.content = [
-          "What it means",
+        detailGuideBody.content = [
+          "WHAT IT MEANS",
           signalExplanation[selectedKind],
           "",
-          "Detection rule",
+          "DETECTION RULE",
           signalMeaning[selectedKind],
+        ].join("\n")
+        detailBody.content = [
           "",
           "Recommended response",
           shortAction[selectedKind],
@@ -319,6 +334,13 @@ export const showTui = async (initialStatus?: string) => {
         `Registry: ${mapping ? `${mapping.targetUrl} · ${mapping.priority}` : "Unmapped"}`,
       ].join("\n")
       detailTitle.content = `${opportunityLabels[signal.kind]} analysis`
+      detailGuideBody.content = [
+        "WHAT IT MEANS",
+        signalExplanation[signal.kind],
+        "",
+        "DETECTION RULE",
+        signalMeaning[signal.kind],
+      ].join("\n")
       detailBody.content = [
         `Query: ${signal.query ?? "Launch target"}`,
         signal.pages.length > 1 ? `Competing URLs: ${signal.pages.map((page) => new URL(page).pathname).join(", ")}` : "",
@@ -328,9 +350,6 @@ export const showTui = async (initialStatus?: string) => {
           metricLine("56 days", signal.launch.day56, signal.launch.daysSinceLaunch >= 55),
           metricLine("84 days", signal.launch.day84, signal.launch.daysSinceLaunch >= 83),
         ] : []),
-        "",
-        "Why it was flagged",
-        signalExplanation[signal.kind],
         "",
         "Recommended action",
         signal.recommendation,
