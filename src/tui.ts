@@ -211,7 +211,7 @@ export const showTui = async (initialStatus?: string) => {
     const activeView = views.findIndex((item) => item.view === view)
     detailSummary.height = renderer.width >= 120 ? 8 : 11
     const showGuide = view === "home" || view === "opportunities"
-    detailGuide.height = showGuide ? (renderer.width >= 120 ? 13 : 15) : 0
+    detailGuide.height = showGuide ? (renderer.width >= 120 ? 16 : 18) : 0
     detailGuide.border = showGuide ? ["bottom"] : false
     detailGuideTitle.content = ""
     detailGuideBody.content = ""
@@ -257,12 +257,11 @@ export const showTui = async (initialStatus?: string) => {
           "",
           "DETECTION RULE",
           "Every sitemap URL path is compared with the registry target_url column. A blank keyword is allowed for inventory-only pages.",
+          "",
+          "RECOMMENDED ACTION",
+          "Add a page-only registry row, then assign keywords only when research or observed demand supports them.",
         ].join("\n")
         detailBody.content = [
-          "",
-          "Recommended response",
-          "Add a page-only registry row, then assign keywords only when research or observed demand supports them.",
-          "",
           "Unmapped pages",
           ...(sitemapGaps.length > 0 ? sitemapGaps.map((page) => page.path) : ["Every sitemap page is represented in the registry."]),
         ].join("\n")
@@ -275,12 +274,11 @@ export const showTui = async (initialStatus?: string) => {
           "",
           "DETECTION RULE",
           signalMeaning[selectedKind],
+          "",
+          "RECOMMENDED ACTION",
+          shortAction[selectedKind],
         ].join("\n")
         detailBody.content = [
-          "",
-          "Recommended response",
-          shortAction[selectedKind],
-          "",
           "Top signals",
           ...(selectedSignals.length > 0
             ? selectedSignals.slice(0, expanded ? 6 : 2).flatMap((signal, index) => [
@@ -343,6 +341,9 @@ export const showTui = async (initialStatus?: string) => {
         "",
         "DETECTION RULE",
         signalMeaning[signal.kind],
+        "",
+        "RECOMMENDED ACTION",
+        shortAction[signal.kind],
       ].join("\n")
       detailBody.content = [
         `Query: ${signal.query ?? "Launch target"}`,
@@ -356,9 +357,6 @@ export const showTui = async (initialStatus?: string) => {
         "",
         "WHY THIS MATCHES THE RULE",
         signalReason(signal),
-        "",
-        "RECOMMENDED ACTION",
-        shortAction[signal.kind],
       ].join("\n")
     } else if (view === "history") {
       const row = item as ReturnType<typeof history>[number]

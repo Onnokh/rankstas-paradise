@@ -183,7 +183,7 @@ export const homeFeed = async (): Promise<string> => {
         prose(signalExplanation[kind]),
         sect("Detection rule"),
         prose(signalMeaning[kind]),
-        sect("Recommended response"),
+        sect("Recommended action"),
         prose(shortAction[kind]),
         sect(`Top signals · ${signals.length}`),
         ...(signals.length > 0
@@ -205,7 +205,7 @@ export const homeFeed = async (): Promise<string> => {
       prose("A published URL appears in sitemap.xml but has no target-page row in keyword-registry.csv."),
       sect("Detection rule"),
       prose("Compare every sitemap URL path with the registry target_url column. Keywords may be blank for inventory-only pages."),
-      sect("Recommended response"),
+      sect("Recommended action"),
       prose("Add a page-only registry row, then assign keywords only when research or observed demand supports them."),
       sect("Unmapped pages"),
       ...(sitemapGaps.length > 0 ? sitemapGaps.map((page) => item(page.path)) : [prose("Every sitemap page is represented in the registry.")]),
