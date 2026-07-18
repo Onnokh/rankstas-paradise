@@ -14,6 +14,7 @@ import {
   statusReport,
 } from "./service.ts"
 import { actionKinds } from "./storage.ts"
+import { siteFor, withSite } from "./site.ts"
 
 type Flags = ReadonlyMap<string, string | boolean>
 
@@ -54,6 +55,8 @@ const numberFlag = (flags: Flags, name: string): number | undefined => {
 const helpText = `Sleevy SEO agent CLI — every command prints one JSON document on stdout.
 
 Usage: bun run seo [--debug] <command> [options]
+
+All commands accept --site <id>; the default is sleevy. Use the configured ids from GET /api/sites (currently sleevy and missingmounts).
 
 Read commands (local data only, never call Google):
   status                          Data freshness, coverage, registry and sitemap summary.
@@ -167,7 +170,8 @@ export const runCli = async (args: readonly string[]): Promise<number> => {
       console.log(helpText)
       return command === undefined ? 1 : 0
     }
-    const payload = await (() => {
+    const site = await siteFor(stringFlag(flags, "site") ?? "sleevy")
+    const payload = await withSite(site, () => (() => {
       switch (command) {
         case "status": return statusReport()
         case "pages": return pagesReport(numberFlag(flags, "window") ?? 28)
@@ -180,7 +184,7 @@ export const runCli = async (args: readonly string[]): Promise<number> => {
         case "backfill": return backfillSearchConsole(numberFlag(flags, "months") ?? 16).then((message) => ({ message }))
         default: throw new Error(`Unknown command: ${command}. Run "bun run seo help" for usage.`)
       }
-    })()
+    })())
     console.log(JSON.stringify({ command, generatedAt: new Date().toISOString(), mode: debugMode ? "debug" : "live", ...payload }, null, 2))
     return 0
   } catch (cause) {
