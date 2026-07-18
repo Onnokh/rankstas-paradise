@@ -126,11 +126,11 @@ export const opportunityLabels: Record<OpportunityKind, string> = {
 }
 
 export const shortAction: Record<OpportunityKind, string> = {
-  "striking-distance": "Improve the ranking page before creating another.",
-  ctr: "Test the title and snippet against search intent.",
-  "new-demand": "Validate intent before mapping or creating a page.",
-  cannibalization: "Consolidate or clarify each page's intent.",
-  "launch-readout": "Review milestones and UTM-attributed outcomes.",
+  "striking-distance": "Improve the existing ranking page first: strengthen intent match, content depth, and internal links before creating a new page.",
+  ctr: "Test the title and description against the query intent; keep the page focused if its ranking is already strong.",
+  "new-demand": "Check existing pages first. Map the keyword only when the intent fits; create a page only when no current page fits.",
+  cannibalization: "Choose one primary page, then consolidate, redirect, or clarify the competing pages and their internal links.",
+  "launch-readout": "Review the 28/56/84-day milestones against baseline and record the next change in the action log.",
 }
 
 export const signalMeaning: Record<OpportunityKind, string> = {
@@ -147,6 +147,15 @@ export const signalExplanation: Record<OpportunityKind, string> = {
   "new-demand": "People are searching for a phrase your plan does not cover. First decide whether an existing page satisfies that intent; only then create a new mapping or page.",
   cannibalization: "Google is dividing one query between multiple pages on this site. That can weaken both pages because neither has a clear primary target.",
   "launch-readout": "This is a measurement checkpoint for a new or changed target. It shows whether visibility is developing compared with the pre-launch baseline.",
+}
+
+export const signalReason = (signal: OpportunitySignal) => {
+  const ctr = `${(signal.current.ctr * 100).toFixed(1)}%`
+  if (signal.kind === "striking-distance") return `“${signal.label}” is ranking at position ${signal.current.position.toFixed(1)} with ${signal.current.impressions} impressions and a ${ctr} CTR. It is visible, but there is room to earn more clicks.`
+  if (signal.kind === "ctr") return `“${signal.label}” is ranking at position ${signal.current.position.toFixed(1)} with ${signal.current.impressions} impressions, but its ${ctr} CTR is below the expected rate for this ranking range.`
+  if (signal.kind === "new-demand") return `“${signal.label}” generated ${signal.current.impressions} impressions, but it is not mapped to a keyword in the selected site's registry.`
+  if (signal.kind === "cannibalization") return `“${signal.label}” is receiving impressions for ${signal.pages.length} pages: ${signal.pages.map((page) => pathOf(page)).join(", ")}.`
+  return `“${signal.label}” has been measured for ${signal.launch?.daysSinceLaunch ?? 0} days. Its current 28-day visibility is being compared with the pre-launch baseline.`
 }
 
 export const readableIntent = (intent: string) => ({

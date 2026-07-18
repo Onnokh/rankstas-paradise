@@ -2,7 +2,7 @@ import { BoxRenderable, createCliRenderer, fg, StyledText, t, TextRenderable } f
 
 import { debugMode } from "./config.ts"
 import { loadRegistry, type RegistryEntry } from "./registry.ts"
-import { opportunityLabels, phaseFor, readableIntent, shortAction, signalExplanation, signalMeaning, sparkline } from "./service.ts"
+import { opportunityLabels, phaseFor, readableIntent, shortAction, signalExplanation, signalMeaning, signalReason, sparkline } from "./service.ts"
 import { loadCachedSitemapPages, unmappedSitemapPages } from "./sitemap.ts"
 import { history, opportunityDigest, registryTargetProgress, snapshotSummary, targetPerformance, type OpportunityKind, type OpportunitySignal, type RegistryTargetProgress } from "./storage.ts"
 import { loadSites, withSite, type Site } from "./site.ts"
@@ -351,8 +351,11 @@ export const showTui = async (initialStatus?: string) => {
           metricLine("84 days", signal.launch.day84, signal.launch.daysSinceLaunch >= 83),
         ] : []),
         "",
-        "Recommended action",
-        signal.recommendation,
+        "WHY THIS MATCHES THE RULE",
+        signalReason(signal),
+        "",
+        "RECOMMENDED ACTION",
+        shortAction[signal.kind],
       ].join("\n")
     } else if (view === "history") {
       const row = item as ReturnType<typeof history>[number]

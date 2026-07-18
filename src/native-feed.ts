@@ -20,7 +20,7 @@
 // Dynamic text is scrubbed of tabs/newlines so the line format holds.
 import { debugMode } from "./config.ts"
 import { loadRegistry, type RegistryEntry } from "./registry.ts"
-import { opportunityLabels, phaseFor, readableIntent, shortAction, signalExplanation, signalMeaning } from "./service.ts"
+import { opportunityLabels, phaseFor, readableIntent, shortAction, signalExplanation, signalMeaning, signalReason } from "./service.ts"
 import { currentSiteOrigin } from "./site.ts"
 import { loadCachedSitemapPages, unmappedSitemapPages } from "./sitemap.ts"
 import {
@@ -250,10 +250,10 @@ export const opportunitiesFeed = async (): Promise<string> => {
               { kind: "dkv", label: "84 days", value: `${signal.launch.day84.impressions} impressions · ${signal.launch.day84.clicks} clicks${signal.launch.daysSinceLaunch >= 83 ? "" : " (partial)"}` } as DetailNode,
             ]
           : []),
-        sect("Why it was flagged"),
-        prose(signalExplanation[signal.kind]),
+        sect("Why this matches the rule"),
+        prose(signalReason(signal)),
         sect("Recommended action"),
-        prose(signal.recommendation),
+        prose(shortAction[signal.kind]),
       ],
     }
   })
