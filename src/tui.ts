@@ -5,6 +5,7 @@ import { loadRegistry, type RegistryEntry } from "./registry.ts"
 import { opportunityLabels, phaseFor, readableIntent, shortAction, signalExplanation, signalMeaning, sparkline } from "./service.ts"
 import { loadCachedSitemapPages, unmappedSitemapPages } from "./sitemap.ts"
 import { history, opportunityDigest, registryTargetProgress, snapshotSummary, targetPerformance, type OpportunityKind, type OpportunitySignal, type RegistryTargetProgress } from "./storage.ts"
+import { loadSites, withSite, type Site } from "./site.ts"
 
 type View = "home" | "opportunities" | "history" | "registry"
 type HomeCategory = OpportunityKind | "sitemap-coverage"
@@ -68,10 +69,10 @@ const formatMetric = (value: number) => value >= 10_000
     : value.toString()
 
 const navigationHint = (view: View) => view === "home"
-  ? "Mouse drag copies section   ↑↓ select category   ←→ navigate sections   Enter inspect signals   r reload   q quit"
+  ? "Mouse drag copies section   ↑↓ select category   ←→ navigate sections   s switch site   Enter inspect signals   r reload   q quit"
   : view === "history"
-    ? "Mouse drag copies section   ↑↓ select day   ←→ navigate sections   r reload   q quit"
-    : `Mouse drag copies section   ↑↓ select ${view === "registry" ? "target" : "opportunity"}   ←→ navigate sections   Enter open page   r reload   q quit`
+    ? "Mouse drag copies section   ↑↓ select day   ←→ navigate sections   s switch site   r reload   q quit"
+    : `Mouse drag copies section   ↑↓ select ${view === "registry" ? "target" : "opportunity"}   ←→ navigate sections   s switch site   Enter open page   r reload   q quit`
 
 const historyChart = (days: readonly ReturnType<typeof history>[number][], selected: number, width = 23) => {
   const height = 8
@@ -106,10 +107,14 @@ const historyChart = (days: readonly ReturnType<typeof history>[number][], selec
 
 export const showTui = async (initialStatus?: string) => {
   const renderer = await createCliRenderer({ exitOnCtrlC: true, consoleMode: "disabled", useMouse: true })
-  let registry = await loadRegistry()
-  let sitemapPages = await loadCachedSitemapPages()
-  let digest = opportunityDigest(registry)
-  let registryTargets = registryTargetProgress(registry)
+  const sites = [...await loadSites()]
+  let siteIndex = 0
+  let activeSiteId = sites[siteIndex]?.id ?? "sleevy"
+  const inSite = <T>(work: () => T): T => withSite(sites[siteIndex] ?? activeSiteId, work)
+  let registry = await inSite(() => loadRegistry())
+  let sitemapPages = await inSite(() => loadCachedSitemapPages())
+  let digest = inSite(() => opportunityDigest(registry))
+  let registryTargets = inSite(() => registryTargetProgress(registry))
   let view: View = "home"
   let selected = 0
   let status = initialStatus ?? navigationHint("home")
@@ -151,7 +156,7 @@ export const showTui = async (initialStatus?: string) => {
   app.add(footer)
   renderer.root.add(app)
 
-  const rows = () => view === "home" ? homeCategories : view === "opportunities" ? digest.signals : view === "history" ? history() : registryTargets
+  const rows = () => view === "home" ? homeCategories : view === "opportunities" ? digest.signals : view === "history" ? inSite(() => history()) : registryTargets
   const selectedRow = () => rows()[selected]
   const visibleRows = <T>(items: readonly T[]) => {
     const hasTableHeader = view === "registry" || view === "history" || (view === "opportunities" && renderer.width >= 120)
@@ -159,12 +164,12 @@ export const showTui = async (initialStatus?: string) => {
     const start = Math.min(Math.max(0, selected - Math.floor(limit / 2)), Math.max(0, items.length - limit))
     return { start, items: items.slice(start, start + limit) }
   }
-  const setView = (next: View) => { view = next; selected = next === "history" ? Math.max(0, history().length - 1) : 0 }
+  const setView = (next: View) => { view = next; selected = next === "history" ? Math.max(0, inSite(() => history()).length - 1) : 0 }
   const moveView = (direction: -1 | 1) => {
     const index = views.findIndex((item) => item.view === view)
     setView(views[(index + direction + views.length) % views.length]!.view)
   }
-  const openSelected = () => {
+  const openSelected = () => withSite(activeSiteId, () => {
     const item = selectedRow()
     if (view === "home") {
       const kind = item as HomeCategory | undefined
@@ -186,7 +191,7 @@ export const showTui = async (initialStatus?: string) => {
     const url = view === "opportunities"
       ? (item as OpportunitySignal | undefined)?.page
       : view === "registry"
-        ? `https://sleevy.app${(item as RegistryTargetProgress | undefined)?.targetUrl ?? ""}`
+        ? `${sites[siteIndex]?.origin ?? "https://sleevy.app"}${(item as RegistryTargetProgress | undefined)?.targetUrl ?? ""}`
         : undefined
     if (!url) {
       status = view === "history" ? "History rows have no page destination. Use ←/→ to change workspace." : "Nothing selected."
@@ -194,8 +199,8 @@ export const showTui = async (initialStatus?: string) => {
     }
     Bun.spawn(["open", url])
     status = `Opened ${url}`
-  }
-  const render = () => {
+  })
+  const render = () => withSite(activeSiteId, () => {
     const summary = snapshotSummary()
     const activeView = views.findIndex((item) => item.view === view)
     detailSummary.height = renderer.width >= 120 ? 8 : 11
@@ -204,7 +209,8 @@ export const showTui = async (initialStatus?: string) => {
       ? view === "history" ? (renderer.height >= 32 ? 14 : 8) : (renderer.height >= 32 ? 8 : 5)
       : 0
     detailBottom.border = showBottomPanel ? ["top"] : false
-    header.content = `Sleevy SEO  ·  ${summary.rows} Search Console rows across ${summary.dates} finalized days  ·  ${debugMode ? "DEBUG" : "LIVE"}`
+    const site = sites[siteIndex]!
+    header.content = `${site.name} SEO  ·  ${site.origin}  ·  ${summary.rows} Search Console rows across ${summary.dates} finalized days  ·  ${debugMode ? "DEBUG" : "LIVE"}`
     nav.content = views.map((item, index) => `${index === activeView ? "[" : " "}${item.key} ${item.label}${index === activeView ? "]" : " "}`).join("  ")
     if (view === "home") {
       selected = Math.max(0, Math.min(selected, homeCategories.length - 1))
@@ -408,7 +414,7 @@ export const showTui = async (initialStatus?: string) => {
         : "No keyword target assigned; this page is tracked as sitemap inventory."
     }
     footer.content = `${status === navigationHint(view) ? status : `${status}   ·   ${navigationHint(view)}`}${view === "registry" ? "   ·   Dim rows: Google reports this page is not indexed." : ""}`
-  }
+  })
   renderer.on("selection", (selection) => {
     const text = selection.getSelectedText()
     if (!text.trim()) return
@@ -432,8 +438,14 @@ export const showTui = async (initialStatus?: string) => {
       else if (key.name === "1") setView("opportunities")
       else if (key.name === "2") setView("history")
       else if (key.name === "3") setView("registry")
+      else if (key.name === "s") {
+        siteIndex = (siteIndex + 1) % sites.length
+        activeSiteId = sites[siteIndex]?.id ?? "sleevy"
+        void Promise.all([inSite(() => loadRegistry()), inSite(() => loadCachedSitemapPages())]).then(([nextRegistry, nextSitemapPages]) => { registry = nextRegistry; sitemapPages = nextSitemapPages; digest = inSite(() => opportunityDigest(registry)); registryTargets = inSite(() => registryTargetProgress(registry)); selected = 0; status = `Switched to ${sites[siteIndex]?.name ?? activeSiteId}.`; render() })
+        return
+      }
       else if (key.name === "r") {
-        void Promise.all([loadRegistry(), loadCachedSitemapPages()]).then(([nextRegistry, nextSitemapPages]) => { registry = nextRegistry; sitemapPages = nextSitemapPages; digest = opportunityDigest(registry); registryTargets = registryTargetProgress(registry); status = "Reloaded keyword registry, sitemap cache, and local SQLite history."; render() })
+        void Promise.all([inSite(() => loadRegistry()), inSite(() => loadCachedSitemapPages())]).then(([nextRegistry, nextSitemapPages]) => { registry = nextRegistry; sitemapPages = nextSitemapPages; digest = inSite(() => opportunityDigest(registry)); registryTargets = inSite(() => registryTargetProgress(registry)); status = "Reloaded keyword registry, sitemap cache, and local SQLite history."; render() })
         return
       }
       else if (key.name === "q") { renderer.destroy(); resolve(); return }

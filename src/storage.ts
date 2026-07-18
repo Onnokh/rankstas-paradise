@@ -1,11 +1,14 @@
 import { Database } from "bun:sqlite"
+import { mkdirSync } from "node:fs"
 
-import { databasePath } from "./config.ts"
+import { siteDatabasePath, currentSiteOrigin, currentBrandTerms } from "./site.ts"
 import type { DailySnapshot, DailyTotals, PageIndexStatus } from "./google.ts"
 import type { RegistryEntry } from "./registry.ts"
 
 export const database = () => {
-  const db = new Database(databasePath, { create: true })
+  const path = siteDatabasePath()
+  mkdirSync(path.slice(0, path.lastIndexOf("/")), { recursive: true })
+  const db = new Database(path, { create: true })
   db.run(`
     create table if not exists search_snapshot (
       date text not null,
@@ -342,6 +345,7 @@ const median = (values: readonly number[]) => {
 }
 
 const positionBand = (position: number) => position <= 3 ? "1–3" : position <= 5 ? "4–5" : "6–10"
+const brandPattern = () => `%${currentBrandTerms()[0]!.toLowerCase()}%`
 
 export const opportunityDigest = (entries: readonly RegistryEntry[]): OpportunityDigest => {
   const db = database()
@@ -353,14 +357,14 @@ export const opportunityDigest = (entries: readonly RegistryEntry[]): Opportunit
   const currentStart = dateDaysBefore(latestDate, 27)
   const previousEnd = dateDaysBefore(currentStart, 1)
   const previousStart = dateDaysBefore(previousEnd, 27)
-  const windowRows = (start: string, end: string) => db.query<Opportunity, [string, string]>(`
+  const windowRows = (start: string, end: string) => db.query<Opportunity, [string, string, string]>(`
     select query, page, sum(impressions) as impressions, sum(clicks) as clicks,
            sum(clicks) * 1.0 / sum(impressions) as ctr,
            sum(position * impressions) * 1.0 / sum(impressions) as position
     from search_snapshot
-    where date between ? and ? and lower(query) not like '%sleevy%'
+    where date between ? and ? and lower(query) not like ?
     group by query, page
-  `).all(start, end)
+  `).all(start, end, brandPattern())
   const current = windowRows(currentStart, latestDate)
   const previous = windowRows(previousStart, previousEnd)
   const previousByKey = new Map(previous.map((row) => [`${row.query}\u0000${row.page}`, row]))
@@ -425,7 +429,7 @@ export const opportunityDigest = (entries: readonly RegistryEntry[]): Opportunit
     const currentMetrics = combineRows(rows)
     const priorRows = previousByQuery.get(query) ?? []
     if (currentMetrics.impressions >= 20 && !registryKeywords.has(query.toLowerCase())) {
-      const ranksOnRegisteredTarget = pages.some((page) => entries.some((entry) => page === `https://sleevy.app${entry.targetUrl}`))
+      const ranksOnRegisteredTarget = pages.some((page) => entries.some((entry) => page === `${currentSiteOrigin()}${entry.targetUrl}`))
       signals.push({
         kind: "new-demand",
         label: query,
@@ -461,12 +465,12 @@ export const opportunityDigest = (entries: readonly RegistryEntry[]): Opportunit
            case when sum(impressions) > 0 then sum(clicks) * 1.0 / sum(impressions) else 0 end as ctr,
            case when sum(impressions) > 0 then sum(position * impressions) * 1.0 / sum(impressions) else 0 end as position
     from search_snapshot
-    where page = ? and date between ? and ? and lower(query) not like '%sleevy%'
+    where page = ? and date between ? and ? and lower(query) not like '${brandPattern()}'
   `)
   for (const [targetUrl, entry] of uniqueTargets) {
     const start = entry.publishedAt || entry.baselineDate
     if (!start || latestDate <= start) continue
-    const fullUrl = `https://sleevy.app${targetUrl}`
+    const fullUrl = `${currentSiteOrigin()}${targetUrl}`
     const milestone = (days: number) => pageWindow.get(fullUrl, start, [latestDate, dateDaysAfter(start, days - 1)].sort().at(0)!) as Metrics
     const day28 = milestone(28)
     const day56 = milestone(56)
@@ -507,9 +511,9 @@ export const targetPerformance = (targetUrl: string, includeBrand = false): Regi
            sum(position * impressions) * 1.0 / sum(impressions) as position
     from search_snapshot
     where page = ? and date between ? and ?
-      and (? = 1 or lower(query) not like '%sleevy%')
+      and (? = 1 or lower(query) not like '${brandPattern()}')
     group by date
-  `).all(`https://sleevy.app${targetUrl}`, start, latestDate, includeBrand ? 1 : 0)
+  `).all(`${currentSiteOrigin()}${targetUrl}`, start, latestDate, includeBrand ? 1 : 0)
   const byDate = new Map(rows.map((row) => [row.date, row]))
   const days = Array.from({ length: 28 }, (_, index) => {
     const date = new Date(`${start}T00:00:00.000Z`)
@@ -536,7 +540,7 @@ export const registryProgress = (entries: readonly RegistryEntry[]): RegistryPro
            case when sum(impressions) > 0 then sum(clicks) * 1.0 / sum(impressions) else 0 end as ctr,
            case when sum(impressions) > 0 then sum(position * impressions) * 1.0 / sum(impressions) else 0 end as position
     from search_snapshot
-    where page = ? and date between ? and ? and lower(query) not like '%sleevy%'
+    where page = ? and date between ? and ? and lower(query) not like '${brandPattern()}'
   `)
   const keywordMetrics = db.prepare(`
     select coalesce(sum(clicks), 0) as clicks,
@@ -550,7 +554,7 @@ export const registryProgress = (entries: readonly RegistryEntry[]): RegistryPro
     select clicks, impressions, ctr, position from page_baseline where target_url = ?
   `)
   const result = entries.map((entry) => {
-    const targetUrl = `https://sleevy.app${entry.targetUrl}`
+    const targetUrl = `${currentSiteOrigin()}${entry.targetUrl}`
     const baselineRow = baseline.get(targetUrl) as Metrics | null
     const progressStart = entry.publishedAt || entry.baselineDate
     if (!latestDate) return { entry, latestDate, measuredFrom: null, target: zero, keyword: zero, baseline: baselineRow, state: "awaiting-data" as const }
@@ -595,8 +599,8 @@ export const registryTargetProgress = (entries: readonly RegistryEntry[]): Regis
       target: targetPerformance(targetUrl, inventoryOnly).total,
       baseline: first.baseline,
       state: first.state,
-      indexStatus: indexByUrl.get(`https://sleevy.app${targetUrl}`)?.status ?? "unknown",
-      inspectedAt: indexByUrl.get(`https://sleevy.app${targetUrl}`)?.inspected_at ?? null,
+      indexStatus: indexByUrl.get(`${currentSiteOrigin()}${targetUrl}`)?.status ?? "unknown",
+      inspectedAt: indexByUrl.get(`${currentSiteOrigin()}${targetUrl}`)?.inspected_at ?? null,
     }
   })
   const priorityRank = (priority: string) => /^P\d+$/.test(priority) ? Number(priority.slice(1)) : Number.POSITIVE_INFINITY
@@ -646,7 +650,7 @@ export const pagesWindowOverview = (windowDays = 28): PagesWindowOverview => {
            sum(clicks) * 1.0 / sum(impressions) as ctr,
            sum(position * impressions) * 1.0 / sum(impressions) as position
     from search_snapshot
-    where date between ? and ? and (? = 1 or lower(query) not like '%sleevy%')
+    where date between ? and ? and (? = 1 or lower(query) not like '${brandPattern()}')
     group by page
   `).all(start, end, includeBrand ? 1 : 0)
   const totalsWindow = (start: string, end: string) => db.query<Grouped, [string, string]>(`
@@ -710,7 +714,7 @@ export const topQueries = (options: TopQueriesOptions = {}): { readonly latestDa
            sum(position * impressions) * 1.0 / sum(impressions) as position
     from search_snapshot
     where date between ? and ?
-      and (? = 1 or lower(query) not like '%sleevy%')
+      and (? = 1 or lower(query) not like '${brandPattern()}')
       and (? = '' or page = ?)
     group by query, page
   `).all(start, end, includeBrand ? 1 : 0, page ?? "", page ?? "")
@@ -774,14 +778,14 @@ export const capturePageBaselines = (entries: readonly RegistryEntry[], baseline
   windowStartDate.setUTCDate(windowStartDate.getUTCDate() - 27)
   const windowStart = windowStartDate.toISOString().slice(0, 10)
   const windowEnd = windowEndDate.toISOString().slice(0, 10)
-  const targets = [...new Set(entries.map((entry) => `https://sleevy.app${entry.targetUrl}`))]
+  const targets = [...new Set(entries.map((entry) => `${currentSiteOrigin()}${entry.targetUrl}`))]
   const metrics = db.prepare(`
     select coalesce(sum(clicks), 0) as clicks,
            coalesce(sum(impressions), 0) as impressions,
            case when sum(impressions) > 0 then sum(clicks) * 1.0 / sum(impressions) else 0 end as ctr,
            case when sum(impressions) > 0 then sum(position * impressions) * 1.0 / sum(impressions) else 0 end as position
     from search_snapshot
-    where page = ? and date between ? and ? and lower(query) not like '%sleevy%'
+    where page = ? and date between ? and ? and lower(query) not like '${brandPattern()}'
   `)
   const upsert = db.prepare(`
     insert into page_baseline (target_url, baseline_date, window_start, window_end, clicks, impressions, ctr, position)

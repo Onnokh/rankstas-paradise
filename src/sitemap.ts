@@ -1,6 +1,8 @@
 import { Effect } from "effect"
+import { mkdirSync } from "node:fs"
 
-import { dataDirectory, ensureDataDirectory, loadConfig } from "./config.ts"
+import { ensureDataDirectory } from "./config.ts"
+import { siteFor, siteSitemapPath } from "./site.ts"
 import type { RegistryEntry } from "./registry.ts"
 
 export type SitemapPage = {
@@ -9,7 +11,6 @@ export type SitemapPage = {
   readonly lastModified: string | null
 }
 
-const cachePath = `${dataDirectory}/sitemap.json`
 const tagValue = (xml: string, tag: string) => xml.match(new RegExp(`<${tag}>([^<]+)</${tag}>`))?.[1] ?? null
 
 const parseSitemap = (xml: string): SitemapPage[] => [...xml.matchAll(/<url>([\s\S]*?)<\/url>/g)].flatMap((match) => {
@@ -19,11 +20,9 @@ const parseSitemap = (xml: string): SitemapPage[] => [...xml.matchAll(/<url>([\s
 })
 
 export const refreshSitemapPages = Effect.gen(function* () {
-  const config = yield* loadConfig
+  const site = yield* Effect.tryPromise({ try: () => siteFor(), catch: (cause) => new Error(String(cause)) })
   yield* ensureDataDirectory
-  const hostname = config.siteUrl.startsWith("sc-domain:")
-    ? config.siteUrl.slice("sc-domain:".length)
-    : new URL(config.siteUrl).hostname
+  const hostname = new URL(site.origin).hostname
   const response = yield* Effect.tryPromise({
     try: (signal) => fetch(`https://${hostname}/sitemap.xml`, { signal }),
     catch: (cause) => new Error(`Could not fetch the sitemap: ${String(cause)}`),
@@ -34,14 +33,17 @@ export const refreshSitemapPages = Effect.gen(function* () {
     catch: (cause) => new Error(`Could not read the sitemap: ${String(cause)}`),
   })
   const pages = parseSitemap(xml)
+  const cachePath = siteSitemapPath()
+  mkdirSync(cachePath.slice(0, cachePath.lastIndexOf("/")), { recursive: true })
   yield* Effect.tryPromise({
-    try: () => Bun.write(cachePath, `${JSON.stringify(pages, null, 2)}\n`),
+    try: () => Bun.write(siteSitemapPath(), `${JSON.stringify(pages, null, 2)}\n`),
     catch: (cause) => new Error(`Could not cache the sitemap: ${String(cause)}`),
   })
   return pages
 })
 
 export const loadCachedSitemapPages = async (): Promise<readonly SitemapPage[]> => {
+  const cachePath = siteSitemapPath()
   if (!await Bun.file(cachePath).exists()) return []
   try {
     return JSON.parse(await Bun.file(cachePath).text()) as SitemapPage[]

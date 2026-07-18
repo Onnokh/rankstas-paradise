@@ -4,13 +4,20 @@ export type SeoConfig = {
   readonly googleClientId: string
   readonly googleClientSecret: string
   readonly siteUrl: string
+  readonly sites?: readonly {
+    readonly id: string
+    readonly name?: string
+    readonly siteUrl: string
+    readonly origin?: string
+    readonly sitemapUrl?: string
+    readonly brandTerms?: readonly string[]
+  }[]
 }
 
 const configPath = `${import.meta.dir}/../config.json`
 export const dataDirectory = `${import.meta.dir}/../data`
 export const tokenPath = `${dataDirectory}/google-token.json`
 export const debugMode = Bun.argv.includes("--debug")
-export const databasePath = `${dataDirectory}/search-console${debugMode ? ".debug" : ""}.sqlite`
 
 export const loadConfig = Effect.tryPromise({
   try: async () => {

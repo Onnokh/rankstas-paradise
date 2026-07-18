@@ -20,15 +20,8 @@
 // Dynamic text is scrubbed of tabs/newlines so the line format holds.
 import { debugMode } from "./config.ts"
 import { loadRegistry, type RegistryEntry } from "./registry.ts"
-import {
-  opportunityLabels,
-  phaseFor,
-  readableIntent,
-  shortAction,
-  signalExplanation,
-  signalMeaning,
-  siteOrigin,
-} from "./service.ts"
+import { opportunityLabels, phaseFor, readableIntent, shortAction, signalExplanation, signalMeaning } from "./service.ts"
+import { currentSiteOrigin } from "./site.ts"
 import { loadCachedSitemapPages, unmappedSitemapPages } from "./sitemap.ts"
 import {
   history,
@@ -351,7 +344,7 @@ export const registryFeed = async (): Promise<string> => {
         progress.target.clicks,
         phaseFor(progress),
       ],
-      url: `${siteOrigin}${progress.targetUrl}`,
+      url: `${currentSiteOrigin()}${progress.targetUrl}`,
       icon: "",
       tone: "",
       nodes: [

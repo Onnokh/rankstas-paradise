@@ -7,6 +7,7 @@
 // has no JSON parser.
 import { backfillSearchConsole, syncSearchConsole } from "./automation.ts"
 import { debugMode } from "./config.ts"
+import { loadSites, siteFor, withSite } from "./site.ts"
 import { feedFor, type FeedView } from "./native-feed.ts"
 import { type RegistryPatch } from "./registry.ts"
 import {
@@ -30,6 +31,7 @@ type JobName = "sync" | "backfill"
 type Job = {
   readonly id: number
   readonly name: JobName
+  readonly siteId: string
   status: "running" | "done" | "failed"
   readonly startedAt: string
   finishedAt: string | null
@@ -43,9 +45,9 @@ let nextJobId = 1
 
 const runningJob = () => jobs.find((job) => job.status === "running")
 
-const startJob = (name: JobName, work: () => Promise<string>): Job | null => {
+const startJob = (name: JobName, siteId: string, work: () => Promise<string>): Job | null => {
   if (runningJob()) return null
-  const job: Job = { id: nextJobId++, name, status: "running", startedAt: new Date().toISOString(), finishedAt: null, message: null }
+  const job: Job = { id: nextJobId++, name, siteId, status: "running", startedAt: new Date().toISOString(), finishedAt: null, message: null }
   jobs.push(job)
   work()
     .then((message) => {
@@ -97,49 +99,58 @@ const pagesLines = async (windowDays = 28): Promise<string> => {
 const handle = async (request: Request): Promise<Response> => {
   const url = new URL(request.url)
   const route = `${request.method} ${url.pathname}`
+  if (route === "GET /api/sites") return json({ sites: await loadSites() })
+  const site = await siteFor(url.searchParams.get("site") ?? "sleevy")
   switch (route) {
-    case "GET /api/status": return json(await statusReport())
-    case "GET /api/pages": return json(await pagesReport(numberParam(url, "window") ?? 28))
+    case "GET /api/status": return json(await withSite(site, () => statusReport()))
+    case "GET /api/pages": return json(await withSite(site, () => pagesReport(numberParam(url, "window") ?? 28)))
     case "GET /api/page": {
       const path = url.searchParams.get("path")
       if (!path || !path.startsWith("/")) return badRequest("page requires ?path=</path>")
-      return json(await pageReport(path))
+      return json(await withSite(site, () => pageReport(path)))
     }
-    case "GET /api/queries": return json(await queriesReport({
+    case "GET /api/queries": return json(await withSite(site, () => queriesReport({
       page: url.searchParams.get("page") ?? undefined,
       windowDays: numberParam(url, "window"),
       minImpressions: numberParam(url, "min-impressions"),
       includeBrand: url.searchParams.get("include-brand") === "true",
       limit: numberParam(url, "limit"),
-    }))
-    case "GET /api/opportunities": return json(await opportunitiesReport(url.searchParams.get("kind") ?? undefined))
-    case "GET /api/registry": return json(await registryList())
-    case "POST /api/registry": return json(await registryAdd(await request.json() as Parameters<typeof registryAdd>[0]))
+    })))
+    case "GET /api/opportunities": return json(await withSite(site, () => opportunitiesReport(url.searchParams.get("kind") ?? undefined)))
+    case "GET /api/registry": return json(await withSite(site, () => registryList()))
+    case "POST /api/registry": {
+      const body = await request.json() as Parameters<typeof registryAdd>[0]
+      return json(await withSite(site, () => registryAdd(body)))
+    }
     case "PATCH /api/registry": {
       const body = await request.json() as { target?: string; keyword?: string; patch?: RegistryPatch }
-      if (!body.target) return badRequest("registry set requires target")
-      return json(await registrySet(body.target, body.keyword, body.patch ?? {}))
+      const target = body.target
+      if (!target) return badRequest("registry set requires target")
+      return json(await withSite(site, () => registrySet(target, body.keyword, body.patch ?? {})))
     }
-    case "GET /api/log": return json(logList(url.searchParams.get("path") ?? undefined))
-    case "POST /api/log": return json(logAdd(await request.json() as Parameters<typeof logAdd>[0]))
-    case "GET /api/history": return json(historyReport(numberParam(url, "limit") ?? 28))
+    case "GET /api/log": return json(await withSite(site, () => logList(url.searchParams.get("path") ?? undefined)))
+    case "POST /api/log": {
+      const body = await request.json() as Parameters<typeof logAdd>[0]
+      return json(await withSite(site, () => logAdd(body)))
+    }
+    case "GET /api/history": return json(await withSite(site, () => historyReport(numberParam(url, "limit") ?? 28)))
     case "GET /api/jobs": return json({ jobs })
     case "POST /api/jobs/sync": {
-      const job = startJob("sync", syncSearchConsole)
+      const job = startJob("sync", site.id, () => withSite(site, syncSearchConsole))
       return job ? json({ job }, 202) : json({ error: `a ${runningJob()!.name} job is already running` }, 409)
     }
     case "POST /api/jobs/backfill": {
       const body = await request.json().catch(() => ({})) as { months?: number }
-      const job = startJob("backfill", () => backfillSearchConsole(body.months ?? 16))
+      const job = startJob("backfill", site.id, () => withSite(site, () => backfillSearchConsole(body.months ?? 16)))
       return job ? json({ job }, 202) : json({ error: `a ${runningJob()!.name} job is already running` }, 409)
     }
-    case "GET /pages.txt": return new Response(await pagesLines(numberParam(url, "window") ?? 28), { headers: { "content-type": "text/plain" } })
+    case "GET /pages.txt": return new Response(await withSite(site, () => pagesLines(numberParam(url, "window") ?? 28)), { headers: { "content-type": "text/plain" } })
     case "GET /tui/home.txt":
     case "GET /tui/opportunities.txt":
     case "GET /tui/history.txt":
     case "GET /tui/registry.txt": {
       const view = url.pathname.slice("/tui/".length, -".txt".length) as FeedView
-      return new Response(await feedFor(view), { headers: { "content-type": "text/plain" } })
+      return new Response(await withSite(site, () => feedFor(view)), { headers: { "content-type": "text/plain" } })
     }
     default: return json({ error: `no route: ${route}` }, 404)
   }

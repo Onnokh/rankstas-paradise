@@ -1,5 +1,21 @@
 {
   "googleClientId": "YOUR_DESKTOP_OAUTH_CLIENT_ID.apps.googleusercontent.com",
   "googleClientSecret": "YOUR_DESKTOP_OAUTH_CLIENT_SECRET",
-  "siteUrl": "sc-domain:sleevy.app"
+  "siteUrl": "sc-domain:sleevy.app",
+  "sites": [
+    {
+      "id": "sleevy",
+      "name": "Sleevy",
+      "siteUrl": "sc-domain:sleevy.app",
+      "origin": "https://sleevy.app",
+      "brandTerms": ["sleevy"]
+    },
+    {
+      "id": "missingmounts",
+      "name": "Missingmounts",
+      "siteUrl": "sc-domain:missingmounts.com",
+      "origin": "https://missingmounts.com",
+      "brandTerms": ["missingmounts"]
+    }
+  ]
 }

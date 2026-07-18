@@ -1,4 +1,5 @@
 import { debugMode } from "./config.ts"
+import { siteRegistryPath } from "./site.ts"
 
 export type RegistryEntry = {
   readonly cluster: string
@@ -13,10 +14,11 @@ export type RegistryEntry = {
   readonly status: string
 }
 
-const registryPath = `${import.meta.dir}/../keyword-registry.csv`
 const columns = ["cluster", "keyword", "target_url", "intent", "country", "priority", "published_at", "baseline_date", "status", "why_opportunity"] as const
 
 export const loadRegistry = async (): Promise<readonly RegistryEntry[]> => {
+  const registryPath = siteRegistryPath()
+  if (!await Bun.file(registryPath).exists()) return []
   const [header, ...lines] = (await Bun.file(registryPath).text()).trim().split("\n")
   if (header !== columns.join(",")) throw new Error("keyword-registry.csv has an unexpected header")
   return lines.map((line) => {
@@ -73,7 +75,10 @@ export const appendRegistryEntry = async (entry: RegistryEntry): Promise<void> =
   if (!entry.keyword.trim() && existing.some((row) => row.targetUrl === entry.targetUrl && !row.keyword.trim())) {
     throw new Error(`An inventory-only row for ${entry.targetUrl} already exists.`)
   }
-  const source = (await Bun.file(registryPath).text()).trimEnd()
+  const registryPath = siteRegistryPath()
+  const source = (await Bun.file(registryPath).exists())
+    ? (await Bun.file(registryPath).text()).trimEnd()
+    : columns.join(",")
   const line = columns.map((column) => fieldFor(entry, column)).join(",")
   await Bun.write(registryPath, `${source}\n${line}\n`)
 }
@@ -109,6 +114,7 @@ export const updateRegistryRows = async (targetUrl: string, keyword: string | un
     if (value !== undefined && (value.includes(",") || value.includes("\n"))) throw new Error(`Registry field ${field} must not contain commas or newlines: ${value}`)
   }
   if (patch.newTargetUrl !== undefined && !patch.newTargetUrl.startsWith("/")) throw new Error(`new target must be a path starting with "/": ${patch.newTargetUrl}`)
+  const registryPath = siteRegistryPath()
   const source = await Bun.file(registryPath).text()
   const [header, ...lines] = source.trim().split("\n")
   if (header !== columns.join(",")) throw new Error("keyword-registry.csv has an unexpected header")
@@ -132,6 +138,7 @@ export const updateRegistryRows = async (targetUrl: string, keyword: string | un
 }
 
 export const markMissingBaselines = async (baselineDate: string): Promise<number> => {
+  const registryPath = siteRegistryPath()
   const source = await Bun.file(registryPath).text()
   const [header, ...lines] = source.trim().split("\n")
   if (header !== columns.join(",")) throw new Error("keyword-registry.csv has an unexpected header")

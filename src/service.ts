@@ -23,6 +23,7 @@ import {
   type PageWindowRow,
   type RegistryTargetProgress,
 } from "./storage.ts"
+import { currentBrandTerms, currentSiteOrigin } from "./site.ts"
 
 export const siteOrigin = "https://sleevy.app"
 
@@ -40,7 +41,7 @@ export const tidyWindow = (window: { readonly current: Metrics; readonly previou
   deltaClicks: window.current.clicks - window.previous.clicks,
 })
 
-export const pathOf = (page: string) => page.startsWith(siteOrigin) ? new URL(page).pathname : page
+export const pathOf = (page: string, origin = currentSiteOrigin()) => page.startsWith(origin) ? new URL(page).pathname : page
 
 export const phaseFor = (progress: RegistryTargetProgress) => {
   const keywordCount = progress.entries.filter((entry) => entry.keyword.trim()).length
@@ -67,7 +68,7 @@ export const signalSummary = (signal: OpportunitySignal) => ({
   kind: signal.kind,
   query: signal.query,
   page: pathOf(signal.page),
-  pages: signal.pages.map(pathOf),
+  pages: signal.pages.map((page) => pathOf(page)),
   mapped: signal.mapped,
   current: tidy(signal.current),
   previous: signal.previous ? tidy(signal.previous) : null,
@@ -99,7 +100,7 @@ export const verdictFor = (
   for (const signal of signals) {
     if (signal.kind === "striking-distance") reasons.push(`"${signal.query}" ranks at position ${signal.current.position.toFixed(1)} with ${signal.current.impressions} impressions — within striking distance of the top results.`)
     if (signal.kind === "ctr") reasons.push(`"${signal.query}" ranks in the top 10 but earns fewer clicks than comparable results (${(signal.current.ctr * 100).toFixed(1)}% CTR).`)
-    if (signal.kind === "cannibalization") reasons.push(`"${signal.query}" is split across ${signal.pages.length} pages: ${signal.pages.map(pathOf).join(", ")}.`)
+    if (signal.kind === "cannibalization") reasons.push(`"${signal.query}" is split across ${signal.pages.length} pages: ${signal.pages.map((page) => pathOf(page)).join(", ")}.`)
   }
   if (phase === "PRE") return { verdict: "awaiting-launch", reasons: ["Published or baseline date is in the future of the available data; waiting for post-launch observations.", ...reasons] }
   const { current, previous } = metrics
@@ -113,7 +114,7 @@ export const verdictFor = (
   return { verdict: "steady", reasons: [`Impressions within ±20% of the previous window (${previous.impressions} → ${current.impressions}).`, ...reasons] }
 }
 
-export const isBrandQuery = (query: string) => query.toLowerCase().includes("sleevy")
+export const isBrandQuery = (query: string) => currentBrandTerms().some((term) => query.toLowerCase().includes(term.toLowerCase()))
 
 // Shared presentation copy for the interactive frontends (TUI, native app).
 export const opportunityLabels: Record<OpportunityKind, string> = {
@@ -244,7 +245,7 @@ export const pageReport = async (path: string) => {
   const digest = opportunityDigest(registry)
   const pageSignals = digest.signals.filter((signal) => signal.pages.some((page) => pathOf(page) === path))
   const overviewRow = pagesWindowOverview().rows.find((row) => pathOf(row.page) === path)
-  const queries = topQueries({ page: `${siteOrigin}${path}`, includeBrand: true, limit: 25 })
+  const queries = topQueries({ page: `${currentSiteOrigin()}${path}`, includeBrand: true, limit: 25 })
   const phase = progress ? phaseFor(progress) : "UNMAPPED"
   const judged = keywordEntries.length > 0 ? overviewRow?.nonBrand : overviewRow?.allQueries
   const verdict = verdictFor(phase, judged ?? { current: performance.total, previous: { impressions: 0, clicks: 0, ctr: 0, position: 0 } }, pageSignals)
@@ -292,7 +293,7 @@ export type QueriesOptions = {
 export const queriesReport = async (options: QueriesOptions = {}) => {
   const registry = await loadRegistry()
   const result = topQueries({
-    page: options.page ? `${siteOrigin}${options.page}` : undefined,
+    page: options.page ? `${currentSiteOrigin()}${options.page}` : undefined,
     windowDays: options.windowDays ?? 28,
     minImpressions: options.minImpressions ?? 0,
     includeBrand: options.includeBrand === true,

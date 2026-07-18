@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto"
 import { Effect } from "effect"
 
 import { ensureDataDirectory, loadConfig, tokenPath, type SeoConfig } from "./config.ts"
+import { siteFor } from "./site.ts"
 
 const scope = "https://www.googleapis.com/auth/webmasters.readonly"
 const callbackPort = 8765
@@ -171,11 +172,11 @@ type UrlInspectionResponse = {
 
 const rowLimit = 25_000
 
-const queryAllRows = (config: SeoConfig, accessToken: string, date: string, dimensions: readonly string[]) => Effect.gen(function* () {
+const queryAllRows = (config: SeoConfig, property: string, accessToken: string, date: string, dimensions: readonly string[]) => Effect.gen(function* () {
   const rows: SearchRow[] = []
   for (let startRow = 0; ; startRow += rowLimit) {
     const result = yield* Effect.tryPromise({
-      try: () => fetchJson<{ rows?: SearchRow[] }>(`https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(config.siteUrl)}/searchAnalytics/query`, {
+      try: () => fetchJson<{ rows?: SearchRow[] }>(`https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(property)}/searchAnalytics/query`, {
         method: "POST",
         headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
         body: JSON.stringify({
@@ -197,10 +198,11 @@ const queryAllRows = (config: SeoConfig, accessToken: string, date: string, dime
 
 export const fetchSearchConsoleSnapshots = (dates: readonly string[]) => Effect.gen(function* () {
   const config = yield* loadConfig
+  const site = yield* Effect.tryPromise({ try: () => siteFor(), catch: (cause) => new Error(String(cause)) })
   const accessToken = yield* Effect.tryPromise({ try: () => getAccessToken(config), catch: (cause) => new Error(String(cause)) })
   const snapshots: DailySnapshot[] = []
   for (const date of dates) {
-    const rows = yield* queryAllRows(config, accessToken, date, ["query", "page", "device", "country"])
+    const rows = yield* queryAllRows(config, site.property, accessToken, date, ["query", "page", "device", "country"])
     snapshots.push(...rows.map((row) => ({
       date,
       query: row.keys[0] ?? "",
@@ -220,14 +222,15 @@ export const fetchSearchConsoleSnapshots = (dates: readonly string[]) => Effect.
 // query-grouped rows omit, so these totals are the true daily numbers.
 export const fetchDailyTotals = (dates: readonly string[]) => Effect.gen(function* () {
   const config = yield* loadConfig
+  const site = yield* Effect.tryPromise({ try: () => siteFor(), catch: (cause) => new Error(String(cause)) })
   const accessToken = yield* Effect.tryPromise({ try: () => getAccessToken(config), catch: (cause) => new Error(String(cause)) })
-  const site: SiteDailyTotal[] = []
+  const siteTotals: SiteDailyTotal[] = []
   const pages: PageDailyTotal[] = []
   for (const date of dates) {
-    const siteRows = yield* queryAllRows(config, accessToken, date, [])
+    const siteRows = yield* queryAllRows(config, site.property, accessToken, date, [])
     const siteRow = siteRows[0]
-    if (siteRow) site.push({ date, clicks: siteRow.clicks, impressions: siteRow.impressions, ctr: siteRow.ctr, position: siteRow.position })
-    const pageRows = yield* queryAllRows(config, accessToken, date, ["page"])
+    if (siteRow) siteTotals.push({ date, clicks: siteRow.clicks, impressions: siteRow.impressions, ctr: siteRow.ctr, position: siteRow.position })
+    const pageRows = yield* queryAllRows(config, site.property, accessToken, date, ["page"])
     pages.push(...pageRows.map((row) => ({
       date,
       page: row.keys[0] ?? "",
@@ -237,7 +240,7 @@ export const fetchDailyTotals = (dates: readonly string[]) => Effect.gen(functio
       position: row.position,
     })))
   }
-  return { site, pages } satisfies DailyTotals
+  return { site: siteTotals, pages } satisfies DailyTotals
 })
 
 // URL Inspection returns the state of Google's indexed version of a URL. We
@@ -245,6 +248,7 @@ export const fetchDailyTotals = (dates: readonly string[]) => Effect.gen(functio
 // the request rate comfortably below the API's per-site limit.
 export const fetchPageIndexStatuses = (targetUrls: readonly string[]) => Effect.gen(function* () {
   const config = yield* loadConfig
+  const site = yield* Effect.tryPromise({ try: () => siteFor(), catch: (cause) => new Error(String(cause)) })
   const accessToken = yield* Effect.tryPromise({ try: () => getAccessToken(config), catch: (cause) => new Error(String(cause)) })
   const inspections: PageIndexStatus[] = []
   let failed = 0
@@ -253,7 +257,7 @@ export const fetchPageIndexStatuses = (targetUrls: readonly string[]) => Effect.
       try: () => fetchJson<UrlInspectionResponse>("https://searchconsole.googleapis.com/v1/urlInspection/index:inspect", {
         method: "POST",
         headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
-        body: JSON.stringify({ inspectionUrl: targetUrl, siteUrl: config.siteUrl, languageCode: "en-US" }),
+        body: JSON.stringify({ inspectionUrl: targetUrl, siteUrl: site.property, languageCode: "en-US" }),
       }),
       catch: () => null,
     })
