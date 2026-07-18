@@ -5,6 +5,7 @@ import { debugDailyTotals, debugSnapshots } from "./debug.ts"
 import { fetchDailyTotals, fetchPageIndexStatuses, fetchSearchConsoleSnapshots } from "./google.ts"
 import { loadRegistry } from "./registry.ts"
 import { refreshSitemapPages } from "./sitemap.ts"
+import { currentSiteOrigin } from "./site.ts"
 import { missingDailyTotalDates, missingSnapshotDates, opportunityDigest, recentlyInspectedUrls, recentlySyncedDates, saveDailyTotals, savePageIndexStatuses, saveSnapshots, snapshotDateRange } from "./storage.ts"
 
 const today = new Date()
@@ -64,7 +65,7 @@ export const syncSearchConsole = async () => {
   const totals = totalDates.length > 0 ? await Effect.runPromise(fetchDailyTotals(totalDates)) : { site: [], pages: [] }
   saveDailyTotals(totals, totalDates)
   const registry = await loadRegistry()
-  const targetUrls = [...new Set(registry.map((entry) => `https://sleevy.app${entry.targetUrl}`))]
+  const targetUrls = [...new Set(registry.map((entry) => `${currentSiteOrigin()}${entry.targetUrl}`))]
   const freshUrls = new Set(recentlyInspectedUrls(targetUrls, inspectionTtlHours))
   const staleUrls = targetUrls.filter((targetUrl) => !freshUrls.has(targetUrl))
   const inspection = staleUrls.length > 0 ? await Effect.runPromise(fetchPageIndexStatuses(staleUrls)) : { inspections: [], failed: 0 }

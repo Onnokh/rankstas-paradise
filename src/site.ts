@@ -53,7 +53,7 @@ export const loadSites = async (): Promise<readonly Site[]> => {
   }
 }
 
-export const siteFor = async (siteId = defaultSiteId): Promise<Site> => {
+export const siteFor = async (siteId = currentSiteId()): Promise<Site> => {
   const sites = await loadSites()
   const site = sites.find((candidate) => candidate.id === siteId)
   if (!site) throw new Error(`Unknown site "${siteId}". Available sites: ${sites.map((candidate) => candidate.id).join(", ")}`)
