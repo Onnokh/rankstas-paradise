@@ -211,7 +211,7 @@ export const showTui = async (initialStatus?: string) => {
     const activeView = views.findIndex((item) => item.view === view)
     detailSummary.height = renderer.width >= 120 ? 8 : 11
     const showGuide = view === "home" || view === "opportunities"
-    detailGuide.height = showGuide ? (renderer.width >= 120 ? 8 : 10) : 0
+    detailGuide.height = showGuide ? (renderer.width >= 120 ? 13 : 15) : 0
     detailGuide.border = showGuide ? ["bottom"] : false
     detailGuideTitle.content = ""
     detailGuideBody.content = ""

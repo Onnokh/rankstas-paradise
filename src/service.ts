@@ -134,11 +134,11 @@ export const shortAction: Record<OpportunityKind, string> = {
 }
 
 export const signalMeaning: Record<OpportunityKind, string> = {
-  "striking-distance": "Current-window query row: impressions ≥ 20, average position ≥ 4 and ≤ 20, and CTR < 10%. Brand queries are excluded.",
-  ctr: "Current-window query row: impressions ≥ 50, average position ≤ 10, and CTR < 80% of the benchmark. The benchmark is the median CTR for the same position band when at least 3 comparable rows exist; otherwise it uses the site-wide median.",
-  "new-demand": "After grouping current-window rows by query, the combined query has impressions ≥ 20 and no exact case-insensitive match in the keyword registry. Brand queries are excluded.",
-  cannibalization: "After grouping current-window rows by query, the query has rows for at least 2 different page URLs. Brand queries are excluded.",
-  "launch-readout": "The registry target has a published or baseline date earlier than the latest data date. The code then compares visibility from that date with the pre-launch baseline at 28, 56, and 84-day milestones.",
+  "striking-distance": "Current 28-day query row: 20+ impressions, position 4–20, and CTR under 10%. Brand queries are excluded.",
+  ctr: "Current 28-day query row: 50+ impressions, position 1–10, and CTR below 80% of its benchmark. The benchmark is the same-band median when 3+ comparable rows exist; otherwise it is the site median.",
+  "new-demand": "After grouping current 28-day rows by query: 20+ impressions and no exact case-insensitive registry keyword match. Brand queries are excluded.",
+  cannibalization: "After grouping current 28-day rows by query: the query has rows for 2+ different page URLs. Brand queries are excluded.",
+  "launch-readout": "The target has a publish or baseline date before the latest data date. Visibility is compared with the pre-launch baseline at 28, 56, and 84 days.",
 }
 
 export const signalExplanation: Record<OpportunityKind, string> = {
