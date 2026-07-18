@@ -134,11 +134,11 @@ export const shortAction: Record<OpportunityKind, string> = {
 }
 
 export const signalMeaning: Record<OpportunityKind, string> = {
-  "striking-distance": "In the current 28-day window, a non-brand query has at least 20 impressions, ranks between positions 4 and 20, and has a CTR below 10%.",
-  ctr: "In the current 28-day window, a non-brand query has at least 50 impressions, ranks in the top 10, and has a CTR below 80% of the median CTR for similar rankings.",
-  "new-demand": "A non-brand query has at least 20 impressions but does not exactly match a keyword in the registry. Query-page rows are combined before this check.",
-  cannibalization: "The same query receives impressions for at least two different pages on this site during the current 28-day window.",
-  "launch-readout": "A target has a publish or baseline date, so its non-brand visibility can be compared at 28, 56, and 84 days after launch.",
+  "striking-distance": "Current-window query row: impressions ≥ 20, average position ≥ 4 and ≤ 20, and CTR < 10%. Brand queries are excluded.",
+  ctr: "Current-window query row: impressions ≥ 50, average position ≤ 10, and CTR < 80% of the benchmark. The benchmark is the median CTR for the same position band when at least 3 comparable rows exist; otherwise it uses the site-wide median.",
+  "new-demand": "After grouping current-window rows by query, the combined query has impressions ≥ 20 and no exact case-insensitive match in the keyword registry. Brand queries are excluded.",
+  cannibalization: "After grouping current-window rows by query, the query has rows for at least 2 different page URLs. Brand queries are excluded.",
+  "launch-readout": "The registry target has a published or baseline date earlier than the latest data date. The code then compares visibility from that date with the pre-launch baseline at 28, 56, and 84-day milestones.",
 }
 
 export const signalExplanation: Record<OpportunityKind, string> = {

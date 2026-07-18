@@ -213,7 +213,7 @@ export const showTui = async (initialStatus?: string) => {
     const showGuide = view === "home" || view === "opportunities"
     detailGuide.height = showGuide ? (renderer.width >= 120 ? 8 : 10) : 0
     detailGuide.border = showGuide ? ["bottom"] : false
-    detailGuideTitle.content = showGuide ? "OPPORTUNITY GUIDE" : ""
+    detailGuideTitle.content = ""
     detailGuideBody.content = ""
     const showBottomPanel = (view === "registry" && registryTargets.length > 0) || view === "history"
     detailBottom.height = showBottomPanel
@@ -250,6 +250,7 @@ export const showTui = async (initialStatus?: string) => {
       ].join("\n")
       if (selectedKind === "sitemap-coverage") {
         detailTitle.content = `Sitemap coverage · ${sitemapGaps.length} unmapped pages`
+        detailGuideTitle.content = "SITEMAP COVERAGE"
         detailGuideBody.content = [
           "WHAT IT MEANS",
           "A published URL appears in sitemap.xml but has no target-page row in the selected site's registry.",
@@ -267,6 +268,7 @@ export const showTui = async (initialStatus?: string) => {
         ].join("\n")
       } else {
         detailTitle.content = `${opportunityLabels[selectedKind]} · ${selectedSignals.length} signals`
+        detailGuideTitle.content = opportunityLabels[selectedKind].toUpperCase()
         detailGuideBody.content = [
           "WHAT IT MEANS",
           signalExplanation[selectedKind],
@@ -334,6 +336,7 @@ export const showTui = async (initialStatus?: string) => {
         `Registry: ${mapping ? `${mapping.targetUrl} · ${mapping.priority}` : "Unmapped"}`,
       ].join("\n")
       detailTitle.content = `${opportunityLabels[signal.kind]} analysis`
+      detailGuideTitle.content = opportunityLabels[signal.kind].toUpperCase()
       detailGuideBody.content = [
         "WHAT IT MEANS",
         signalExplanation[signal.kind],
