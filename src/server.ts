@@ -72,6 +72,23 @@ const json = (payload: unknown, status = 200) =>
 
 const badRequest = (message: string) => json({ error: message }, 400)
 
+// A single static bearer token guards every request — no internal/external
+// distinction, so the check stays one branch (see ADR 0001). Fail closed: if
+// RP_TOKEN is unset the server refuses everything rather than silently serving
+// the data unauthenticated. Returns a Response to short-circuit `handle`, or
+// null when the caller is authorized.
+const requireBearer = (request: Request): Response | null => {
+  const expected = Bun.env.RP_TOKEN
+  if (!expected) return json({ error: "server misconfigured: set RP_TOKEN" }, 503)
+  const header = request.headers.get("authorization")
+  const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : null
+  // Plain string compare: the token is a static single-tenant secret behind
+  // Coolify's TLS proxy, so the timing-attack surface isn't worth a
+  // constant-time compare here.
+  if (token !== expected) return json({ error: "unauthorized" }, 401)
+  return null
+}
+
 const numberParam = (url: URL, name: string): number | undefined => {
   const value = url.searchParams.get(name)
   if (value === null) return undefined
@@ -97,6 +114,8 @@ const pagesLines = async (windowDays = 28): Promise<string> => {
 }
 
 const handle = async (request: Request): Promise<Response> => {
+  const denied = requireBearer(request)
+  if (denied) return denied
   const url = new URL(request.url)
   const route = `${request.method} ${url.pathname}`
   if (route === "GET /api/sites") return json({ sites: await loadSites() })
@@ -165,9 +184,10 @@ const handle = async (request: Request): Promise<Response> => {
 
 Bun.serve({
   port,
-  hostname: "127.0.0.1",
+  // Behind Coolify's proxy now, so bind all interfaces rather than loopback.
+  hostname: "0.0.0.0",
   fetch: (request) =>
     handle(request).catch((cause) => badRequest(cause instanceof Error ? cause.message : String(cause))),
 })
 
-console.log(`Ranksta’s Paradise server listening on http://127.0.0.1:${port} (${debugMode ? "debug" : "live"} mode)`)
+console.log(`Ranksta’s Paradise server listening on http://0.0.0.0:${port} (${debugMode ? "debug" : "live"} mode, ${Bun.env.RP_TOKEN ? "token configured" : "NO TOKEN — set RP_TOKEN"})`)
