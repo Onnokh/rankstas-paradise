@@ -59,6 +59,25 @@ Three things that make or break it:
 
 **Recovery.** If Google ever revokes the token (password change, manual revoke), the server can't re-login itself — re-run the Mac bootstrap (steps 1–2). Rare once the consent screen is in production.
 
+## 4b. Migrating existing local data
+
+If you already run RP locally (history, registry, logged actions), migrate it instead of starting empty — it's a **plain file copy**, lossless, no transform. The storage schema is `create table if not exists …` with no versioning or migrations, so the deployed code opens the copied DBs directly.
+
+Copy the app home into `/data/rankstas-paradise/`, preserving structure:
+
+- `config.json`, `google-token.json` (from step 4 above)
+- `sites/<id>/keyword-registry.csv`, `search-console.sqlite`, `sitemap.json` — for each site
+
+```sh
+scp -r ~/.config/rankstas-paradise/sites <server>:<volume-path>/rankstas-paradise/
+```
+
+- **Skip** any `search-console.debug.sqlite` (debug fixture only).
+- **Close the Mac TUI first** — it's the only writer. The DBs are `journal_mode=delete` with no `-wal`/`-shm` sidecars, so once the app is closed each `.sqlite` is a clean single file.
+- The first scheduled sync on the server fills any gap between the copy and today (missing finalized days + reconcile of the newest few), so a slightly stale copy self-heals.
+
+Do **not** rely on `backfill` as a substitute: it only refetches Google snapshots (≤16 months) and never restores `action_log` or the registry, so you would lose logged actions and still have to copy the CSVs anyway.
+
 ## 5. Google OAuth consent screen MUST be "In production" ⚠
 
 If the consent screen is left in **Testing**, Google expires the refresh token after **7 days** — sync then fails silently every week and data goes stale with no error at deploy time.
