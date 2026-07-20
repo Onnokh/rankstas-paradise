@@ -53,6 +53,9 @@ export const createApiClient = (config?: ClientConfig) => {
     // Reads — every method takes an optional site passed as ?site=.
     status: (site?: string) =>
       request<Report<"statusReport">>("GET", "/api/status", { site }),
+    // The whole dashboard model in one read — what the remote TUI consumes.
+    dashboard: (site?: string) =>
+      request<Report<"dashboardSnapshot">>("GET", "/api/dashboard", { site }),
     pages: (window?: number, site?: string) =>
       request<Report<"pagesReport">>("GET", "/api/pages", { window, site }),
     page: (path: string, site?: string) =>

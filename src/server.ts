@@ -15,6 +15,7 @@ import { loadSites, siteFor, withSite } from "./site.ts"
 import { feedFor, type FeedView } from "./native-feed.ts"
 import { type RegistryPatch } from "./registry.ts"
 import {
+  dashboardSnapshot,
   historyReport,
   logAdd,
   logList,
@@ -142,6 +143,10 @@ const handle = async (request: Request): Promise<Response> => {
   const site = await siteFor(url.searchParams.get("site") ?? "sleevy")
   switch (route) {
     case "GET /api/status": return json(await withSite(site, () => statusReport()))
+    // The whole interactive-dashboard model in one read — the TUI's remote data
+    // source (see tuiData.ts and ADR 0001). Raw shapes, so the TUI renders it
+    // identically to a local read.
+    case "GET /api/dashboard": return json(await withSite(site, () => dashboardSnapshot()))
     case "GET /api/pages": return json(await withSite(site, () => pagesReport(numberParam(url, "window") ?? 28)))
     case "GET /api/page": {
       const path = url.searchParams.get("path")
