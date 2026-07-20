@@ -29,10 +29,20 @@ export const debugMode = Bun.argv.includes("--debug")
 
 export const loadConfig = Effect.tryPromise({
   try: async () => {
-    const raw = await Bun.file(configPath).text()
-    const config = JSON.parse(raw) as Partial<SeoConfig>
+    const file = JSON.parse(await Bun.file(configPath).text()) as Partial<SeoConfig>
+    // The Google client id/secret are static, so they may come from the
+    // environment (Coolify secrets) and take precedence over the file — a hosted
+    // deploy then keeps them out of config.json, which only needs siteUrl and the
+    // sites[] catalog. Locally, leaving the env unset falls back to the file. The
+    // mutable OAuth token still lives on the volume (google.ts rewrites it on
+    // refresh), so a persistent volume is required regardless.
+    const config: Partial<SeoConfig> = {
+      ...file,
+      googleClientId: Bun.env.GOOGLE_CLIENT_ID ?? file.googleClientId,
+      googleClientSecret: Bun.env.GOOGLE_CLIENT_SECRET ?? file.googleClientSecret,
+    }
     if (!config.googleClientId || !config.googleClientSecret || !config.siteUrl) {
-      throw new Error("config.json must include googleClientId, googleClientSecret, and siteUrl")
+      throw new Error("Missing config: set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (env or config.json), and siteUrl in config.json")
     }
     return config as SeoConfig
   },

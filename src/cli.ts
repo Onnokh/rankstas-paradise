@@ -1,4 +1,6 @@
+import { createApiClient, type ApiClient } from "./apiClient.ts"
 import { backfillSearchConsole, syncSearchConsole } from "./automation.ts"
+import { resolveMode } from "./clientConfig.ts"
 import { debugMode } from "./config.ts"
 import { type RegistryPatch } from "./registry.ts"
 import {
@@ -12,9 +14,15 @@ import {
   registryList,
   registrySet,
   statusReport,
+  type RegistryAddInput,
 } from "./service.ts"
 import { logKinds } from "./storage.ts"
 import { siteFor, withSite } from "./site.ts"
+
+// Command context: in remote mode `api` is the HTTP client (bound to a site by
+// id); in local mode it is null and commands call the service functions
+// directly inside a withSite context.
+type Context = { readonly api: ApiClient | null; readonly siteId: string }
 
 type Flags = ReadonlyMap<string, string | boolean>
 
@@ -54,11 +62,16 @@ const numberFlag = (flags: Flags, name: string): number | undefined => {
 
 const helpText = `Ranksta’s Paradise agent CLI — every command prints one JSON document on stdout.
 
-Usage: bun run seo [--debug] <command> [options]
+Usage: bun run seo [--debug] [--local|--network] <command> [options]
+
+Data source: auto — the hosted server when a client is configured (RP_API_URL/RP_TOKEN
+or client.json), otherwise local SQLite/CSV. Force it with --local (direct local data)
+or --network (the configured remote server). In remote mode reads and writes hit the
+server; in local mode they touch this machine's data directly.
 
 All commands accept --site <id>; the default is sleevy. Use the configured ids from GET /api/sites (currently sleevy and missingmounts).
 
-Read commands (local data only, never call Google):
+Read commands (never call Google — served from local data or the remote server):
   status                          Data freshness, coverage, registry and sitemap summary.
   pages [--window N]              Every page with current/previous window metrics, planning
                                   context, signals, and a verdict. Answers "what performed
@@ -91,27 +104,29 @@ Google commands:
 Fields: dates are YYYY-MM-DD; CSV fields must not contain commas. --debug targets the isolated
 fake database and registry overrides used for development.`
 
-const commandPage = (flags: Flags, positional: readonly string[]) => {
+const commandPage = (flags: Flags, positional: readonly string[], ctx: Context) => {
   const path = positional[0] ?? stringFlag(flags, "path")
   if (!path || !path.startsWith("/")) throw new Error(`Usage: page </path> — got: ${path ?? "nothing"}`)
-  return pageReport(path)
+  return ctx.api ? ctx.api.page(path, ctx.siteId) : pageReport(path)
 }
 
-const commandQueries = (flags: Flags) =>
-  queriesReport({
+const commandQueries = (flags: Flags, ctx: Context) => {
+  const options = {
     page: stringFlag(flags, "page"),
     windowDays: numberFlag(flags, "window"),
     minImpressions: numberFlag(flags, "min-impressions"),
     includeBrand: flags.get("include-brand") === true,
     limit: numberFlag(flags, "limit"),
-  })
+  }
+  return ctx.api ? ctx.api.queries(options, ctx.siteId) : queriesReport(options)
+}
 
-const commandRegistry = (flags: Flags, positional: readonly string[]) => {
+const commandRegistry = (flags: Flags, positional: readonly string[], ctx: Context) => {
   const action = positional[0]
   if (action === "add") {
     const target = stringFlag(flags, "target")
     if (!target) throw new Error("registry add requires --target </path>")
-    return registryAdd({
+    const input: RegistryAddInput = {
       target,
       keyword: stringFlag(flags, "keyword"),
       cluster: stringFlag(flags, "cluster"),
@@ -122,7 +137,8 @@ const commandRegistry = (flags: Flags, positional: readonly string[]) => {
       publishedAt: stringFlag(flags, "published-at"),
       baselineDate: stringFlag(flags, "baseline-date"),
       status: stringFlag(flags, "status"),
-    })
+    }
+    return ctx.api ? ctx.api.registryAdd(input, ctx.siteId) : registryAdd(input)
   }
   if (action === "set") {
     const target = stringFlag(flags, "target")
@@ -141,13 +157,14 @@ const commandRegistry = (flags: Flags, positional: readonly string[]) => {
     if (Object.values(patch).every((value) => value === undefined)) {
       throw new Error("registry set requires at least one field flag: --cluster, --intent, --country, --priority, --published-at, --baseline-date, --status, --why, --new-target.")
     }
-    return registrySet(target, stringFlag(flags, "keyword"), patch)
+    const keyword = stringFlag(flags, "keyword")
+    return ctx.api ? ctx.api.registrySet(target, keyword, patch, ctx.siteId) : registrySet(target, keyword, patch)
   }
   if (action !== undefined && action !== "list") throw new Error(`Unknown registry action: ${action}. Use list, add, or set.`)
-  return registryList()
+  return ctx.api ? ctx.api.registry(ctx.siteId) : registryList()
 }
 
-const commandLog = (flags: Flags, positional: readonly string[]) => {
+const commandLog = (flags: Flags, positional: readonly string[], ctx: Context) => {
   const action = positional[0]
   if (action === "add") {
     const path = stringFlag(flags, "path")
@@ -156,10 +173,11 @@ const commandLog = (flags: Flags, positional: readonly string[]) => {
     if (!kind || !logKinds.includes(kind as never)) throw new Error(`log add requires --kind <${logKinds.join("|")}>`)
     const date = stringFlag(flags, "date")
     if (date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`--date must use YYYY-MM-DD: ${date}`)
-    return logAdd({ path, kind, date, note: stringFlag(flags, "note") })
+    const input = { path, kind, date, note: stringFlag(flags, "note") }
+    return ctx.api ? ctx.api.logAdd(input, ctx.siteId) : logAdd(input)
   }
   if (action !== undefined && action !== "list") throw new Error(`Unknown log action: ${action}. Use list or add.`)
-  return logList(stringFlag(flags, "path"))
+  return ctx.api ? ctx.api.log(stringFlag(flags, "path"), ctx.siteId) : logList(stringFlag(flags, "path"))
 }
 
 export const runCli = async (args: readonly string[]): Promise<number> => {
@@ -170,22 +188,27 @@ export const runCli = async (args: readonly string[]): Promise<number> => {
       console.log(helpText)
       return command === undefined ? 1 : 0
     }
-    const site = await siteFor(stringFlag(flags, "site") ?? "sleevy")
-    const payload = await withSite(site, () => (() => {
+    const mode = await resolveMode()
+    const siteId = stringFlag(flags, "site") ?? "sleevy"
+    const ctx: Context = { api: mode === "remote" ? createApiClient() : null, siteId }
+    const run = (): unknown => {
       switch (command) {
-        case "status": return statusReport()
-        case "pages": return pagesReport(numberFlag(flags, "window") ?? 28)
-        case "page": return commandPage(flags, positional)
-        case "queries": return commandQueries(flags)
-        case "opportunities": return opportunitiesReport(stringFlag(flags, "kind"))
-        case "registry": return commandRegistry(flags, positional)
-        case "log": return commandLog(flags, positional)
-        case "sync": return syncSearchConsole().then((message) => ({ message }))
-        case "backfill": return backfillSearchConsole(numberFlag(flags, "months") ?? 16).then((message) => ({ message }))
+        case "status": return ctx.api ? ctx.api.status(siteId) : statusReport()
+        case "pages": { const window = numberFlag(flags, "window") ?? 28; return ctx.api ? ctx.api.pages(window, siteId) : pagesReport(window) }
+        case "page": return commandPage(flags, positional, ctx)
+        case "queries": return commandQueries(flags, ctx)
+        case "opportunities": { const kind = stringFlag(flags, "kind"); return ctx.api ? ctx.api.opportunities(kind, siteId) : opportunitiesReport(kind) }
+        case "registry": return commandRegistry(flags, positional, ctx)
+        case "log": return commandLog(flags, positional, ctx)
+        case "sync": return ctx.api ? ctx.api.syncJob(siteId) : syncSearchConsole().then((message) => ({ message }))
+        case "backfill": { const months = numberFlag(flags, "months") ?? 16; return ctx.api ? ctx.api.backfillJob(months, siteId) : backfillSearchConsole(months).then((message) => ({ message })) }
         default: throw new Error(`Unknown command: ${command}. Run "bun run seo help" for usage.`)
       }
-    })())
-    console.log(JSON.stringify({ command, generatedAt: new Date().toISOString(), mode: debugMode ? "debug" : "live", ...payload }, null, 2))
+    }
+    // Local commands read/write this machine's data, so they run inside a site
+    // context; remote commands carry the site id in each request and need none.
+    const payload = ctx.api ? await run() : await withSite(await siteFor(siteId), run)
+    console.log(JSON.stringify({ command, generatedAt: new Date().toISOString(), mode: mode === "remote" ? "remote" : debugMode ? "debug" : "live", ...(payload as object) }, null, 2))
     return 0
   } catch (cause) {
     console.error(cause instanceof Error ? cause.message : String(cause))

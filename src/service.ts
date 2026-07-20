@@ -3,12 +3,13 @@
 // this module — none of them should reach into storage.ts for report
 // shaping themselves.
 import { appendRegistryEntry, loadRegistry, updateRegistryRows, type RegistryEntry, type RegistryPatch } from "./registry.ts"
-import { loadCachedSitemapPages, unmappedSitemapPages } from "./sitemap.ts"
+import { loadCachedSitemapPages, unmappedSitemapPages, type SitemapPage } from "./sitemap.ts"
 import {
   actionKinds,
   addLogEntry,
   dateDaysBefore,
   history,
+  historyWithPending,
   latestSnapshotDate,
   listLog,
   logKinds,
@@ -21,12 +22,15 @@ import {
   targetPerformance,
   topQueries,
   type ActionKind,
+  type HistoryDay,
   type LogEntry,
   type LogKind,
   type Metrics,
+  type OpportunityDigest,
   type OpportunityKind,
   type OpportunitySignal,
   type PageWindowRow,
+  type RegistryPerformance,
   type RegistryTargetProgress,
 } from "./storage.ts"
 import { currentBrandTerms, currentSiteOrigin } from "./site.ts"
@@ -521,5 +525,51 @@ export const historyReport = (limit = 28) => {
   const days = history(limit)
   return {
     days: days.map((day) => ({ date: day.date, ...tidy(day) })),
+  }
+}
+
+// Everything the interactive dashboards (TUI, and any JSON UI) draw for one
+// site, in a single read. This is the source the TUI's data seam consumes both
+// locally (calling this directly) and remotely (fetching /api/dashboard), so a
+// remote TUI renders identically to a local one with nothing reconstructed
+// client-side (ADR 0001). Unlike the /api/* reports it returns the RAW internal
+// shapes (un-tidied metrics, full-URL pages, before/after log readouts, the
+// provisional/totals-day history) — the frontends format them; the tidied
+// reports stay for CLI/agent consumers. Every field here is JSON-safe.
+export type DashboardSnapshot = {
+  readonly summary: { readonly rows: number; readonly dates: number }
+  readonly registry: readonly RegistryEntry[]
+  readonly sitemapGaps: readonly SitemapPage[]
+  readonly sitemapPageCount: number
+  readonly digest: OpportunityDigest
+  readonly registryTargets: readonly RegistryTargetProgress[]
+  readonly logEntries: readonly LogFeedEntry[]
+  readonly history: readonly HistoryDay[]
+  readonly recentActions: readonly LogEntry[]
+  // Per-target day series, precomputed for every registry target so a remote
+  // client needs no follow-up round-trips. inventoryOnly (all-queries scope)
+  // matches the TUI's own rule: the target has no keyword rows.
+  readonly performances: readonly { readonly targetUrl: string; readonly performance: RegistryPerformance }[]
+}
+
+export const dashboardSnapshot = async (): Promise<DashboardSnapshot> => {
+  const registry = await loadRegistry()
+  const sitemapPages = await loadCachedSitemapPages()
+  const logEntries = await logFeed()
+  const registryTargets = registryTargetProgress(registry)
+  return {
+    summary: snapshotSummary(),
+    registry,
+    sitemapGaps: unmappedSitemapPages(sitemapPages, registry),
+    sitemapPageCount: sitemapPages.length,
+    digest: opportunityDigest(registry),
+    registryTargets,
+    logEntries,
+    history: historyWithPending(),
+    recentActions: recentActions(3),
+    performances: registryTargets.map((target) => ({
+      targetUrl: target.targetUrl,
+      performance: targetPerformance(target.targetUrl, target.entries.every((entry) => !entry.keyword.trim())),
+    })),
   }
 }
