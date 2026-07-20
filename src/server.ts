@@ -100,6 +100,12 @@ const handle = async (request: Request): Promise<Response> => {
   const url = new URL(request.url)
   const route = `${request.method} ${url.pathname}`
   if (route === "GET /api/sites") return json({ sites: await loadSites() })
+  // Plain-text site catalog for the Native SDK app (no JSON parser): one
+  // `id\tname` line per site.
+  if (route === "GET /sites.txt") {
+    const sites = await loadSites()
+    return new Response(sites.map((candidate) => `${candidate.id}\t${candidate.name}`).join("\n"), { headers: { "content-type": "text/plain" } })
+  }
   const site = await siteFor(url.searchParams.get("site") ?? "sleevy")
   switch (route) {
     case "GET /api/status": return json(await withSite(site, () => statusReport()))
