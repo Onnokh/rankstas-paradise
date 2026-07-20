@@ -29,20 +29,35 @@ Without the volume the token and history are lost on every redeploy.
 
 The Google **client id/secret** are static, so they go in env (Coolify secrets). Everything else Google/data-related is a file on the volume (next step). See [src/config.ts](../src/config.ts): env takes precedence, `config.json` is the fallback.
 
-## 4. Seed the volume
+## 4. Google authentication — mint once, refresh headlessly
 
-Two files still live under the app home — they can't be env vars:
+Google OAuth has two phases, and **only the first needs a browser**:
+
+- **Interactive login (once, on your Mac).** `connectGoogle` ([src/google.ts](../src/google.ts)) opens a loopback callback + your browser, you approve the `webmasters.readonly` scope, and it writes `google-token.json` containing a long-lived **`refresh_token`**. This is a *desktop* OAuth flow (loopback redirect, macOS `open`) and **cannot run on the headless server** — it is only ever triggered from the Mac TUI ([src/main.ts](../src/main.ts)).
+- **Headless refresh (forever, on the server).** With that token file present, the server only ever calls `getAccessToken`: a server-to-server POST of `refresh_token` + client id/secret to Google, no browser. The refreshed token is rewritten to the file, which is why it must live on the writable volume. The server has **no code path that opens a browser** — a missing/revoked token just makes sync jobs fail cleanly (read endpoints keep serving).
+
+So the login is a one-time bootstrap on your Mac; the server lives entirely off the copied refresh token.
+
+**Two files must be on the volume** (they can't be env vars):
 
 - `config.json` — only `siteUrl` and the `sites` array now (the client id/secret come from env). See [config.example.json](../config.example.json).
-- `google-token.json` — the OAuth token, **mutable** (the app rewrites it on every refresh), so it must be on a writable volume.
+- `google-token.json` — the OAuth token, **mutable** (rewritten on every refresh).
 
 Steps:
 
-1. On the Mac, with a valid local `config.json`, run `bun run seo` once and complete Google's OAuth flow. This writes `~/.config/rankstas-paradise/google-token.json`.
+1. On the Mac, with a valid local `config.json` (or the `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` env set), run `bun run seo` once and complete Google's OAuth flow. This writes `~/.config/rankstas-paradise/google-token.json`.
 2. Copy both files onto the volume at `/data/rankstas-paradise/`:
    - Coolify file manager, or
    - `scp config.json google-token.json <server>:<volume-path>/rankstas-paradise/`
 3. Redeploy / restart. The service refreshes the token itself from then on.
+
+Three things that make or break it:
+
+- **Same OAuth client both sides.** The `refresh_token` is bound to the client that minted it — the server's `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` must be the *same* desktop client you used on the Mac, or refresh is rejected.
+- **Consent screen "In production"** (see next section) — otherwise the refresh token dies after 7 days.
+- **One token covers all sites.** The token is per-*account*, stored at the app-home root (not under `sites/<id>/`), so one login serves every site in that Google account's Search Console.
+
+**Recovery.** If Google ever revokes the token (password change, manual revoke), the server can't re-login itself — re-run the Mac bootstrap (steps 1–2). Rare once the consent screen is in production.
 
 ## 5. Google OAuth consent screen MUST be "In production" ⚠
 
