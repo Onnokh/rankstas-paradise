@@ -5,10 +5,10 @@
 import { appendRegistryEntry, loadRegistry, updateRegistryRows, type RegistryEntry, type RegistryPatch } from "./registry.ts"
 import { loadCachedSitemapPages, unmappedSitemapPages } from "./sitemap.ts"
 import {
-  actionKinds,
-  addAction,
+  addLogEntry,
   history,
-  listActions,
+  listLog,
+  logKinds,
   opportunityDigest,
   pagesWindowOverview,
   registryTargetProgress,
@@ -16,7 +16,7 @@ import {
   snapshotSummary,
   targetPerformance,
   topQueries,
-  type ActionKind,
+  type LogKind,
   type Metrics,
   type OpportunityKind,
   type OpportunitySignal,
@@ -191,7 +191,7 @@ export const statusReport = async () => {
       pages: sitemapPages.length,
       unmapped: unmappedSitemapPages(sitemapPages, registry).map((page) => page.path),
     },
-    actions: listActions().length,
+    actions: listLog().length,
   }
 }
 
@@ -283,7 +283,7 @@ export const pageReport = async (path: string) => {
       previous: row.previous ? tidy(row.previous) : null,
     })),
     signals: pageSignals.map(signalSummary),
-    actions: listActions(path),
+    actions: listLog(path),
   }
 }
 
@@ -424,13 +424,13 @@ export type LogAddInput = {
 
 export const logAdd = (input: LogAddInput) => {
   if (!input.path || !input.path.startsWith("/")) throw new Error("log add requires a path starting with /")
-  if (!actionKinds.includes(input.kind as ActionKind)) throw new Error(`log kind must be one of: ${actionKinds.join(", ")}`)
+  if (!logKinds.includes(input.kind as LogKind)) throw new Error(`log kind must be one of: ${logKinds.join(", ")}`)
   const date = input.date ?? new Date().toISOString().slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`date must use YYYY-MM-DD: ${date}`)
-  return { logged: addAction({ date, path: input.path, kind: input.kind as ActionKind, note: input.note ?? "" }) }
+  return { logged: addLogEntry({ date, path: input.path, kind: input.kind as LogKind, note: input.note ?? "" }) }
 }
 
-export const logList = (path?: string) => ({ actions: listActions(path) })
+export const logList = (path?: string) => ({ actions: listLog(path) })
 
 export const sparkline = (values: readonly number[], lowerIsBetter = false) => {
   const observed = values.filter((value) => value > 0)

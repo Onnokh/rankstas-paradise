@@ -13,7 +13,7 @@ import {
   registrySet,
   statusReport,
 } from "./service.ts"
-import { actionKinds } from "./storage.ts"
+import { logKinds } from "./storage.ts"
 import { siteFor, withSite } from "./site.ts"
 
 type Flags = ReadonlyMap<string, string | boolean>
@@ -81,7 +81,7 @@ Write commands:
                                   Update any field. Without --keyword every row of the target is
                                   patched; with --keyword only that row. --new-target remaps rows
                                   to another page (e.g. consolidating cannibalized keywords).
-  log add --path </path> --kind <${actionKinds.join("|")}> [--date D] [--note TEXT]
+  log add --path </path> --kind <${logKinds.join("|")}> [--date D] [--note TEXT]
                                   Record an intervention so later readouts can compare before/after.
 
 Google commands:
@@ -153,7 +153,7 @@ const commandLog = (flags: Flags, positional: readonly string[]) => {
     const path = stringFlag(flags, "path")
     const kind = stringFlag(flags, "kind")
     if (!path || !path.startsWith("/")) throw new Error("log add requires --path </path>")
-    if (!kind || !actionKinds.includes(kind as never)) throw new Error(`log add requires --kind <${actionKinds.join("|")}>`)
+    if (!kind || !logKinds.includes(kind as never)) throw new Error(`log add requires --kind <${logKinds.join("|")}>`)
     const date = stringFlag(flags, "date")
     if (date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`--date must use YYYY-MM-DD: ${date}`)
     return logAdd({ path, kind, date, note: stringFlag(flags, "note") })

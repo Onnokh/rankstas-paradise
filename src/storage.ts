@@ -700,31 +700,38 @@ export const topQueries = (options: TopQueriesOptions = {}): { readonly latestDa
   return { latestDate, currentStart, previousStart, previousEnd, rows }
 }
 
-export type ActionKind = "publish" | "content-update" | "title-change" | "internal-links" | "consolidation" | "note"
-export const actionKinds: readonly ActionKind[] = ["publish", "content-update", "title-change", "internal-links", "consolidation", "note"]
+// An Action is a concrete change made to a page to influence its ranking; a
+// Note is a free-form annotation, not a change. Both live in the same log
+// (action_log), distinguished by kind — see CONTEXT.md. Note is a LogKind, not
+// an ActionKind.
+export type ActionKind = "publish" | "content-update" | "title-change" | "internal-links" | "consolidation"
+export const actionKinds: readonly ActionKind[] = ["publish", "content-update", "title-change", "internal-links", "consolidation"]
 
-export type ActionEntry = {
+export type LogKind = ActionKind | "note"
+export const logKinds: readonly LogKind[] = [...actionKinds, "note"]
+
+export type LogEntry = {
   readonly id: number
   readonly date: string
   readonly path: string
-  readonly kind: ActionKind
+  readonly kind: LogKind
   readonly note: string
   readonly createdAt: string
 }
 
-export const addAction = (action: { readonly date: string; readonly path: string; readonly kind: ActionKind; readonly note: string }): ActionEntry => {
+export const addLogEntry = (entry: { readonly date: string; readonly path: string; readonly kind: LogKind; readonly note: string }): LogEntry => {
   const db = database()
   const row = db.query<{ readonly id: number; readonly created_at: string }, [string, string, string, string]>(`
     insert into action_log (date, path, kind, note) values (?, ?, ?, ?)
     returning id, created_at
-  `).get(action.date, action.path, action.kind, action.note)!
+  `).get(entry.date, entry.path, entry.kind, entry.note)!
   db.close()
-  return { id: row.id, createdAt: row.created_at, ...action }
+  return { id: row.id, createdAt: row.created_at, ...entry }
 }
 
-export const listActions = (path?: string): ActionEntry[] => {
+export const listLog = (path?: string): LogEntry[] => {
   const db = database()
-  const rows = db.query<{ readonly id: number; readonly date: string; readonly path: string; readonly kind: ActionKind; readonly note: string; readonly created_at: string }, [string, string]>(`
+  const rows = db.query<{ readonly id: number; readonly date: string; readonly path: string; readonly kind: LogKind; readonly note: string; readonly created_at: string }, [string, string]>(`
     select id, date, path, kind, note, created_at from action_log
     where (? = '' or path = ?)
     order by date desc, id desc
