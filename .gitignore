@@ -9,4 +9,5 @@ client.json
 *.sqlite-*
 .env
 .env.*
+!.env.example
 data/
