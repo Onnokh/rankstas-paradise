@@ -222,7 +222,7 @@ export const showTui = async (initialStatus?: string) => {
     const index = views.findIndex((item) => item.view === view)
     setView(views[(index + direction + views.length) % views.length]!.view)
   }
-  const openSelected = () => withSite(activeSiteId, () => {
+  const openSelected = () => inSite(() => {
     const item = selectedRow()
     if (view === "home") {
       const kind = item as HomeCategory | undefined
@@ -262,7 +262,7 @@ export const showTui = async (initialStatus?: string) => {
     Bun.spawn(["open", url])
     status = `Opened ${url}`
   })
-  const render = () => withSite(activeSiteId, () => {
+  const render = () => inSite(() => {
     const summary = snapshotSummary()
     const activeView = views.findIndex((item) => item.view === view)
     detailSummary.height = renderer.width >= 120 ? 8 : 11
