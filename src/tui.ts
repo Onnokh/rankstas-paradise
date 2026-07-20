@@ -160,12 +160,12 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
   // fetched over the same seam.
   const remote = (await resolveMode()) === "remote"
   const sites = [...await loadSiteCatalog(remote)]
+  if (sites.length === 0) throw new Error("No sites configured. Add a site to config.json (see config.example.json).")
   let siteIndex = 0
-  let activeSiteId = sites[siteIndex]?.id ?? "sleevy"
-  const inSite = <T>(work: () => T): T => withSite(sites[siteIndex] ?? activeSiteId, work)
-  // Synthetic site for the empty-config edge case, matching withSite's own
-  // string fallback so origin-dependent helpers stay consistent.
-  const activeSite = (): Site => sites[siteIndex] ?? { id: activeSiteId, name: activeSiteId, property: activeSiteId, origin: activeSiteId === "sleevy" ? "https://sleevy.app" : `https://${activeSiteId}`, sitemapUrl: "", brandTerms: [activeSiteId] }
+  // siteIndex is always a valid catalog index (0-based, cycled by modulo), so
+  // the active site is never synthetic — the catalog decides what we open.
+  const activeSite = (): Site => sites[siteIndex]!
+  const inSite = <T>(work: () => T): T => withSite(activeSite(), work)
   const loadData = () => loadTuiData(activeSite(), remote)
   let data = await loadData()
   let view: View = "home"
@@ -253,7 +253,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
       }
       return
     }
-    const origin = sites[siteIndex]?.origin ?? "https://sleevy.app"
+    const origin = activeSite().origin
     const url = view === "opportunities"
       ? (item as OpportunitySignal | undefined)?.page
       : view === "registry"
@@ -620,8 +620,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
       else if (key.name === "4") setView("log")
       else if (key.name === "s") {
         siteIndex = (siteIndex + 1) % sites.length
-        activeSiteId = sites[siteIndex]?.id ?? "sleevy"
-        void loadData().then((next) => { data = next; selected = 0; status = `Switched to ${sites[siteIndex]?.name ?? activeSiteId}.`; render() })
+        void loadData().then((next) => { data = next; selected = 0; status = `Switched to ${activeSite().name}.`; render() })
         return
       }
       else if (key.name === "r") {

@@ -23,7 +23,6 @@ type ConfigSite = {
 }
 
 const siteStorage = new AsyncLocalStorage<Site>()
-const defaultSiteId = "sleevy"
 
 const originFor = (siteUrl: string, explicitOrigin?: string) => explicitOrigin ?? (
   siteUrl.startsWith("sc-domain:") ? `https://${siteUrl.slice("sc-domain:".length)}` : siteUrl
@@ -47,7 +46,10 @@ export const loadSites = async (): Promise<readonly Site[]> => {
     const config = await Effect.runPromise(loadConfig)
     const configured = (config.sites ?? []).map((site) => normalize(site))
     if (configured.length > 0) return configured
-    return [normalize({ id: defaultSiteId, name: "Sleevy", siteUrl: config.siteUrl, brandTerms: ["sleevy"] })]
+    // Legacy single-site config: only `siteUrl`, no `sites` array. Derive one
+    // site from the hostname's first label — no hardcoded property.
+    const id = new URL(originFor(config.siteUrl)).hostname.split(".")[0]!
+    return [normalize({ id, siteUrl: config.siteUrl })]
   } catch (cause) {
     throw new Error(`Could not load site catalog: ${String(cause)}`)
   }
@@ -60,15 +62,23 @@ export const siteFor = async (siteId = currentSiteId()): Promise<Site> => {
   return site
 }
 
-export const currentSiteId = () => siteStorage.getStore()?.id ?? defaultSiteId
+// The site helpers only make sense inside a withSite(...) context; there is no
+// ambient default site any more (the client picks). Missing context is a bug,
+// not something to paper over with a hardcoded fallback.
+const requireStore = (): Site => {
+  const store = siteStorage.getStore()
+  if (!store) throw new Error("No active site: wrap the call in withSite(...).")
+  return store
+}
+export const currentSiteId = () => requireStore().id
 export const withSite = <T>(site: Site | string, work: () => T): T => {
   const value = typeof site === "string"
-    ? { id: site, name: site, property: site, origin: site === defaultSiteId ? "https://sleevy.app" : `https://${site}`, sitemapUrl: "", brandTerms: [site] }
+    ? { id: site, name: site, property: site, origin: `https://${site}`, sitemapUrl: "", brandTerms: [site] }
     : site
   return siteStorage.run(value, work)
 }
-export const currentSiteOrigin = () => siteStorage.getStore()?.origin ?? "https://sleevy.app"
-export const currentBrandTerms = () => siteStorage.getStore()?.brandTerms ?? ["sleevy"]
+export const currentSiteOrigin = () => requireStore().origin
+export const currentBrandTerms = () => requireStore().brandTerms
 
 // Every site keeps its data in one place: data/sites/<id>/. Nothing lives
 // at the repo root or the top of data/ — that stays for global, non-site

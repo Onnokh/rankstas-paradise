@@ -30,7 +30,7 @@ Fix: during each sync, issue two extra cheap requests per day and store:
 
 Page-level performance answers then come from `page_daily` (true totals); `search_snapshot` remains the source for query-level analysis, brand filtering, and cannibalization. The delta between the two is itself a useful signal (anonymized long-tail share).
 
-Caveat: brand exclusion (`query not like '%sleevy%'`) is impossible on `page_daily` because it has no query dimension. Page reports should surface both numbers: `total` (true, from `page_daily`) and `nonBrandKnown` (from `search_snapshot`).
+Caveat: brand exclusion (`query not like '%<brand>%'`) is impossible on `page_daily` because it has no query dimension. Page reports should surface both numbers: `total` (true, from `page_daily`) and `nonBrandKnown` (from `search_snapshot`).
 
 ### 2. Historical backfill (`backfill` command)
 

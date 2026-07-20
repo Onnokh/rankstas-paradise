@@ -7,7 +7,7 @@ The vocabulary of a local-only tool that tracks Google Search Console performanc
 ### Sites & pages
 
 **Site**:
-A tracked web property (e.g. Sleevy, Missingmounts). Each site has isolated Search Console history, registry, and sitemap state.
+A tracked web property. Each site has isolated Search Console history, registry, and sitemap state.
 
 **Page**:
 A URL on a site — the Search Console "Page" dimension, and the unit measured by true totals.
@@ -49,7 +49,7 @@ The actual search term a user typed, as reported by Google Search Console. Obser
 _Avoid_: using "keyword" for an observed term.
 
 **Brand query**:
-A query containing the site's brand name (e.g. `sleevy`). Its complement is **non-brand**.
+A query containing the site's brand name. Its complement is **non-brand**.
 
 **All-queries**:
 Metrics summed from stored per-query rows, brand *included*. Inventory-only pages are judged on this.
