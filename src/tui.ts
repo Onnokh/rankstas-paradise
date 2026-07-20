@@ -1,10 +1,11 @@
 import { BoxRenderable, createCliRenderer, fg, StyledText, t, TextRenderable } from "@opentui/core"
 
+import { isRemoteMode } from "./clientConfig.ts"
 import { debugMode } from "./config.ts"
-import { loadRegistry, type RegistryEntry } from "./registry.ts"
-import { logFeed, logKindLabel, opportunityLabels, phaseFor, readableIntent, recentActions, shortAction, signalExplanation, signalMeaning, signalReason, sparkline, type LogFeedEntry, type LogReadout } from "./service.ts"
-import { loadCachedSitemapPages, unmappedSitemapPages } from "./sitemap.ts"
-import { historyWithPending, opportunityDigest, registryTargetProgress, snapshotSummary, targetPerformance, type OpportunityKind, type OpportunitySignal, type RegistryTargetProgress } from "./storage.ts"
+import { type RegistryEntry } from "./registry.ts"
+import { logKindLabel, opportunityLabels, phaseFor, readableIntent, shortAction, signalExplanation, signalMeaning, signalReason, sparkline, type LogFeedEntry, type LogReadout } from "./service.ts"
+import { type HistoryDay, type OpportunityKind, type OpportunitySignal, type RegistryTargetProgress } from "./storage.ts"
+import { loadTuiData, type TuiData } from "./tuiData.ts"
 import { loadSites, withSite, type Site } from "./site.ts"
 
 type View = "home" | "opportunities" | "history" | "registry" | "log"
@@ -88,7 +89,7 @@ const registryTable = (targets: readonly RegistryTargetProgress[], selected: num
   return new StyledText(chunks)
 }
 
-const historyRow = (day: ReturnType<typeof historyWithPending>[number], previous: ReturnType<typeof historyWithPending>[number] | undefined, selected: boolean, wide: boolean) => {
+const historyRow = (day: HistoryDay, previous: HistoryDay | undefined, selected: boolean, wide: boolean) => {
   const change = previous ? day.impressions - previous.impressions : null
   const changeLabel = change === null ? "—" : `${change >= 0 ? "+" : ""}${change}`
   return wide
@@ -96,7 +97,7 @@ const historyRow = (day: ReturnType<typeof historyWithPending>[number], previous
     : `${selected ? "▶" : " "} ${day.date.slice(5)} ${day.impressions.toString().padStart(5)} ${changeLabel.padStart(5)} ${day.clicks.toString().padStart(4)} ${`${(day.ctr * 100).toFixed(1)}%`.padStart(5)} ${day.position.toFixed(1).padStart(5)}`
 }
 
-const historyTable = (allDays: readonly ReturnType<typeof historyWithPending>[number][], visible: readonly ReturnType<typeof historyWithPending>[number][], selected: number, start: number, wide: boolean) => {
+const historyTable = (allDays: readonly HistoryDay[], visible: readonly HistoryDay[], selected: number, start: number, wide: boolean) => {
   const header = wide
     ? "  DATE        IMPRESSIONS    CHANGE  CLICKS     CTR AVG. POSITION"
     : "  DATE   IMPR.   Δ  CLK   CTR  POS."
@@ -120,7 +121,7 @@ const navigationHint = (view: View) => view === "home"
     ? "Mouse drag copies section   ↑↓ select day   ←→ navigate sections   s switch site   r reload   q quit"
     : `Mouse drag copies section   ↑↓ select ${view === "registry" ? "target" : view === "log" ? "entry" : "opportunity"}   ←→ navigate sections   s switch site   Enter open page   r reload   q quit`
 
-const historyChart = (days: readonly ReturnType<typeof historyWithPending>[number][], selected: number, width = 23) => {
+const historyChart = (days: readonly HistoryDay[], selected: number, width = 23) => {
   const height = 8
   const values = days.map((day) => day.impressions)
   const maximum = Math.max(...values, 1)
@@ -151,17 +152,21 @@ const historyChart = (days: readonly ReturnType<typeof historyWithPending>[numbe
   ].join("\n")
 }
 
-export const showTui = async (initialStatus?: string, backgroundRefresh?: () => Promise<string>) => {
+export const showTui = async (initialStatus?: string, backgroundRefresh?: (site: Site) => Promise<string>) => {
   const renderer = await createCliRenderer({ exitOnCtrlC: true, consoleMode: "disabled", useMouse: true })
   const sites = [...await loadSites()]
   let siteIndex = 0
   let activeSiteId = sites[siteIndex]?.id ?? "sleevy"
   const inSite = <T>(work: () => T): T => withSite(sites[siteIndex] ?? activeSiteId, work)
-  let registry = await inSite(() => loadRegistry())
-  let sitemapPages = await inSite(() => loadCachedSitemapPages())
-  let digest = inSite(() => opportunityDigest(registry))
-  let registryTargets = inSite(() => registryTargetProgress(registry))
-  let logEntries = await inSite(() => logFeed())
+  // Synthetic site for the empty-config edge case, matching withSite's own
+  // string fallback so origin-dependent helpers stay consistent.
+  const activeSite = (): Site => sites[siteIndex] ?? { id: activeSiteId, name: activeSiteId, property: activeSiteId, origin: activeSiteId === "sleevy" ? "https://sleevy.app" : `https://${activeSiteId}`, sitemapUrl: "", brandTerms: [activeSiteId] }
+  // Where the rendered data comes from: direct SQLite/CSV when local, the HTTP
+  // API when a remote target is configured (ADR 0001, A1). Decided once; the
+  // provider then handles every site the same way.
+  const remote = await isRemoteMode()
+  const loadData = () => loadTuiData(activeSite(), remote)
+  let data = await loadData()
   let view: View = "home"
   let selected = 0
   let status = initialStatus ?? navigationHint("home")
@@ -209,7 +214,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: () => 
   app.add(footer)
   renderer.root.add(app)
 
-  const rows = () => view === "home" ? homeCategories : view === "opportunities" ? digest.signals : view === "history" ? inSite(() => historyWithPending()) : view === "log" ? logEntries : registryTargets
+  const rows = () => view === "home" ? homeCategories : view === "opportunities" ? data.digest.signals : view === "history" ? data.history : view === "log" ? data.logEntries : data.registryTargets
   const selectedRow = () => rows()[selected]
   const visibleRows = <T>(items: readonly T[]) => {
     const hasTableHeader = view === "registry" || view === "history" || view === "log" || (view === "opportunities" && renderer.width >= 120)
@@ -217,7 +222,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: () => 
     const start = Math.min(Math.max(0, selected - Math.floor(limit / 2)), Math.max(0, items.length - limit))
     return { start, items: items.slice(start, start + limit) }
   }
-  const setView = (next: View) => { view = next; selected = next === "history" ? Math.max(0, inSite(() => historyWithPending()).length - 1) : 0 }
+  const setView = (next: View) => { view = next; selected = next === "history" ? Math.max(0, data.history.length - 1) : 0 }
   const moveView = (direction: -1 | 1) => {
     const index = views.findIndex((item) => item.view === view)
     setView(views[(index + direction + views.length) % views.length]!.view)
@@ -233,11 +238,11 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: () => 
         return
       }
       if (kind === "sitemap-coverage") {
-        const gaps = unmappedSitemapPages(sitemapPages, registry)
+        const gaps = data.sitemapGaps
         status = gaps.length > 0 ? `${gaps.length} sitemap pages need registry rows.` : "Every sitemap page is represented in the registry."
         return
       }
-      const signalIndex = kind ? digest.signals.findIndex((signal) => signal.kind === kind) : -1
+      const signalIndex = kind ? data.digest.signals.findIndex((signal) => signal.kind === kind) : -1
       if (signalIndex >= 0) {
         view = "opportunities"
         selected = signalIndex
@@ -263,7 +268,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: () => 
     status = `Opened ${url}`
   })
   const render = () => inSite(() => {
-    const summary = snapshotSummary()
+    const summary = data.summary
     const activeView = views.findIndex((item) => item.view === view)
     detailSummary.height = renderer.width >= 120 ? 8 : 11
     const showGuide = view === "home" || view === "opportunities"
@@ -271,7 +276,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: () => 
     detailGuide.border = showGuide ? ["bottom"] : false
     detailGuideTitle.content = ""
     detailGuideBody.content = ""
-    const showBottomPanel = (view === "registry" && registryTargets.length > 0) || view === "history"
+    const showBottomPanel = (view === "registry" && data.registryTargets.length > 0) || view === "history"
     detailBottom.height = showBottomPanel
       ? view === "history" ? (renderer.height >= 32 ? 14 : 8) : (renderer.height >= 32 ? 8 : 5)
       : 0
@@ -281,15 +286,15 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: () => 
     nav.content = views.map((item, index) => `${index === activeView ? "[" : " "}${item.key} ${item.label}${index === activeView ? "]" : " "}`).join("  ")
     if (view === "home") {
       selected = Math.max(0, Math.min(selected, homeCategories.length - 1))
-      const grouped = new Map(opportunityKinds.map((kind) => [kind, digest.signals.filter((signal) => signal.kind === kind)]))
+      const grouped = new Map(opportunityKinds.map((kind) => [kind, data.digest.signals.filter((signal) => signal.kind === kind)]))
       const selectedKind = homeCategories[selected]!
-      const sitemapGaps = unmappedSitemapPages(sitemapPages, registry)
+      const sitemapGaps = data.sitemapGaps
       const selectedSignals = selectedKind === "sitemap-coverage" || selectedKind === "recent-activity" ? [] : grouped.get(selectedKind) ?? []
-      const recent = recentActions(3)
-      const actionCount = logEntries.filter((entry) => entry.isAction).length
+      const recent = data.recentActions
+      const actionCount = data.logEntries.filter((entry) => entry.isAction).length
       const expanded = renderer.height >= 32
       const labelFor = (kind: HomeCategory) => kind === "sitemap-coverage" ? "Unmapped sitemap pages" : kind === "recent-activity" ? "Recent activity" : opportunityLabels[kind]
-      masterTitle.content = `WEEKLY SIGNALS · ${digest.signals.length + sitemapGaps.length}`
+      masterTitle.content = `WEEKLY SIGNALS · ${data.digest.signals.length + sitemapGaps.length}`
       masterBody.content = homeCategories.flatMap((kind, index) => {
         const signals = kind === "sitemap-coverage" || kind === "recent-activity" ? [] : grouped.get(kind) ?? []
         const count = kind === "sitemap-coverage" ? sitemapGaps.length : kind === "recent-activity" ? actionCount : signals.length
@@ -304,9 +309,9 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: () => 
       }).join("\n")
       detailSummaryTitle.content = "REPORTING WINDOW"
       detailSummaryBody.content = [
-        `Current 28 days: ${digest.currentStart ?? "—"} → ${digest.latestDate ?? "—"}`,
-        `Previous 28 days: ${digest.previousStart ?? "—"} → ${digest.previousEnd ?? "—"}`,
-        `Sources: ${summary.rows} raw rows · ${sitemapPages.length} sitemap pages · ${registry.filter((entry) => entry.keyword.trim()).length} keywords`,
+        `Current 28 days: ${data.digest.currentStart ?? "—"} → ${data.digest.latestDate ?? "—"}`,
+        `Previous 28 days: ${data.digest.previousStart ?? "—"} → ${data.digest.previousEnd ?? "—"}`,
+        `Sources: ${summary.rows} raw rows · ${data.sitemapPageCount} sitemap pages · ${data.registry.filter((entry) => entry.keyword.trim()).length} keywords`,
       ].join("\n")
       if (selectedKind === "sitemap-coverage") {
         detailTitle.content = `Sitemap coverage · ${sitemapGaps.length} unmapped pages`
@@ -371,8 +376,8 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: () => 
       return
     }
     const items = rows()
-    const registryTargetWidth = Math.max("TARGET URL".length, ...registryTargets.map((target) => target.targetUrl.length))
-    const logTargetWidth = Math.min(renderer.width >= 120 ? 28 : 16, Math.max("TARGET".length, ...logEntries.map((entry) => entry.path.length)))
+    const registryTargetWidth = Math.max("TARGET URL".length, ...data.registryTargets.map((target) => target.targetUrl.length))
+    const logTargetWidth = Math.min(renderer.width >= 120 ? 28 : 16, Math.max("TARGET".length, ...data.logEntries.map((entry) => entry.path.length)))
     selected = Math.max(0, Math.min(selected, Math.max(0, items.length - 1)))
     const window = visibleRows(items as readonly unknown[])
     masterTitle.content = view === "opportunities"
@@ -390,7 +395,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: () => 
             ...(window.items as OpportunitySignal[]).map((signal, index) => opportunityRow(signal, window.start + index === selected, renderer.width >= 120)),
           ].join("\n")
         : view === "history"
-          ? historyTable(items as ReturnType<typeof historyWithPending>, window.items as ReturnType<typeof historyWithPending>, selected, window.start, renderer.width >= 120)
+          ? historyTable(items as readonly HistoryDay[], window.items as readonly HistoryDay[], selected, window.start, renderer.width >= 120)
           : view === "log"
             ? logTable(items as readonly LogFeedEntry[], window.items as readonly LogFeedEntry[], selected, window.start, renderer.width >= 120, logTargetWidth)
             : registryTable(window.items as readonly RegistryTargetProgress[], selected, window.start, renderer.width >= 120, registryTargetWidth)
@@ -402,7 +407,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: () => 
       detailBody.content = "Select a row to inspect it."
     } else if (view === "opportunities") {
       const signal = item as OpportunitySignal
-      const mapping = registryForSignal(signal, registry)
+      const mapping = registryForSignal(signal, data.registry)
       const delta = signal.previous ? signal.current.impressions - signal.previous.impressions : null
       const metricLine = (label: string, metrics: typeof signal.current, complete = true) => `${label}${complete ? "" : " (partial)"}: ${metrics.impressions} impressions · ${metrics.clicks} clicks · ${(metrics.ctr * 100).toFixed(1)}% CTR · position ${metrics.position.toFixed(1)}`
       detailSummaryTitle.content = signal.label
@@ -440,8 +445,8 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: () => 
         signalReason(signal),
       ].join("\n")
     } else if (view === "history") {
-      const row = item as ReturnType<typeof historyWithPending>[number]
-      const historyDays = items as ReturnType<typeof historyWithPending>
+      const row = item as HistoryDay
+      const historyDays = items as readonly HistoryDay[]
       const previousDay = historyDays[selected - 1]
       const signed = (value: number, digits = 0) => `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`
       detailSummaryTitle.content = `${row.date}${row.provisional ? "  ·  provisional" : ""}`
@@ -484,7 +489,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: () => 
       const entry = progress.entries[0]!
       const keywordEntries = progress.entries.filter((mapped) => mapped.keyword.trim())
       const inventoryOnly = keywordEntries.length === 0
-      const performance = targetPerformance(progress.targetUrl, inventoryOnly)
+      const performance = data.performance(progress.targetUrl, inventoryOnly)
       const momentum = performance.last7.impressions - performance.previous7.impressions
       const momentumLabel = performance.previous7.impressions > 0
         ? `${momentum >= 0 ? "+" : ""}${momentum} impressions (${momentum >= 0 ? "+" : ""}${((momentum / performance.previous7.impressions) * 100).toFixed(1)}%)`
@@ -529,7 +534,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: () => 
         `Daily impressions: ${impressionEndpoints.first}  ${sparkline(impressionValues)}  ${impressionEndpoints.last}`,
         `Daily position:    ${positionEndpoints.first}  ${sparkline(positionValues, true)}  ${positionEndpoints.last} · lower is better`,
       ].join("\n")
-      const activity = logEntries.filter((logged) => logged.path === progress.targetUrl)
+      const activity = data.logEntries.filter((logged) => logged.path === progress.targetUrl)
       const activityDetails = [
         `ACTIVITY · ${activity.length}`,
         ...(activity.length > 0
@@ -567,15 +572,11 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: () => 
   })
   render()
 
-  // Re-derive the in-memory views from local SQLite/CSV after data on disk
-  // changes (manual reload, or a completed background sync), preserving the
-  // user's current selection.
-  const reload = (nextStatus: string) => Promise.all([inSite(() => loadRegistry()), inSite(() => loadCachedSitemapPages()), inSite(() => logFeed())]).then(([nextRegistry, nextSitemapPages, nextLog]) => {
-    registry = nextRegistry
-    sitemapPages = nextSitemapPages
-    logEntries = nextLog
-    digest = inSite(() => opportunityDigest(registry))
-    registryTargets = inSite(() => registryTargetProgress(registry))
+  // Re-fetch the whole snapshot for the active site after its data changes
+  // (manual reload, or a completed background sync), preserving the user's
+  // current selection. The provider hides local-vs-remote.
+  const reload = (nextStatus: string) => loadData().then((next) => {
+    data = next
     selected = Math.max(0, Math.min(selected, Math.max(0, rows().length - 1)))
     status = nextStatus
     render()
@@ -584,7 +585,8 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: () => 
   // Startup sync runs without blocking the UI: the active site first for a fast
   // repaint, then every other configured site so all sites stay current without
   // a separate scheduled job. Only the site in view repaints; switching to
-  // another ('s') reloads its freshly-synced data from disk.
+  // another ('s') reloads its freshly-synced data. In remote mode the refresh
+  // just queues the server's own sync job (the server owns Google and data).
   if (backgroundRefresh) {
     const order = [...new Set([siteIndex, ...sites.map((_, index) => index)])]
     void (async () => {
@@ -593,7 +595,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: () => 
         if (!site) continue
         const viewing = () => site.id === sites[siteIndex]?.id
         try {
-          const message = await withSite(site, () => backgroundRefresh())
+          const message = await backgroundRefresh(site)
           if (viewing()) await reload(message)
         } catch (cause) {
           if (viewing()) { status = `Refresh failed; showing cached data. ${String(cause).split("\n")[0]}`; render() }
@@ -618,11 +620,11 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: () => 
       else if (key.name === "s") {
         siteIndex = (siteIndex + 1) % sites.length
         activeSiteId = sites[siteIndex]?.id ?? "sleevy"
-        void Promise.all([inSite(() => loadRegistry()), inSite(() => loadCachedSitemapPages()), inSite(() => logFeed())]).then(([nextRegistry, nextSitemapPages, nextLog]) => { registry = nextRegistry; sitemapPages = nextSitemapPages; logEntries = nextLog; digest = inSite(() => opportunityDigest(registry)); registryTargets = inSite(() => registryTargetProgress(registry)); selected = 0; status = `Switched to ${sites[siteIndex]?.name ?? activeSiteId}.`; render() })
+        void loadData().then((next) => { data = next; selected = 0; status = `Switched to ${sites[siteIndex]?.name ?? activeSiteId}.`; render() })
         return
       }
       else if (key.name === "r") {
-        void reload("Reloaded keyword registry, sitemap cache, and local SQLite history.")
+        void reload("Reloaded registry, sitemap coverage, opportunities, history, and the activity log.")
         return
       }
       else if (key.name === "q") { renderer.destroy(); resolve(); return }
