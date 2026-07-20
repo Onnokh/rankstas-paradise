@@ -163,4 +163,4 @@ Bun.serve({
     handle(request).catch((cause) => badRequest(cause instanceof Error ? cause.message : String(cause))),
 })
 
-console.log(`sleevy-seo server listening on http://127.0.0.1:${port} (${debugMode ? "debug" : "live"} mode)`)
+console.log(`Ranksta’s Paradise server listening on http://127.0.0.1:${port} (${debugMode ? "debug" : "live"} mode)`)

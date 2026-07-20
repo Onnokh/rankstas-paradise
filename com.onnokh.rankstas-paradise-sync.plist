@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.onnokh.sleevy-seo-sync</string>
+  <string>com.onnokh.rankstas-paradise-sync</string>
   <key>ProgramArguments</key>
   <array>
     <string>/Users/onnokleinhofmeijer/.nvm/versions/node/v24.1.0/bin/bun</string>
@@ -11,7 +11,7 @@
     <string>src/daily-job.ts</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/onnokleinhofmeijer/Documents/sleevy-seo</string>
+  <string>/Users/onnokleinhofmeijer/Documents/rankstas-paradise</string>
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
@@ -20,8 +20,8 @@
     <integer>15</integer>
   </dict>
   <key>StandardOutPath</key>
-  <string>/Users/onnokleinhofmeijer/Documents/sleevy-seo/data/sync.log</string>
+  <string>/Users/onnokleinhofmeijer/Documents/rankstas-paradise/data/sync.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/onnokleinhofmeijer/Documents/sleevy-seo/data/sync.error.log</string>
+  <string>/Users/onnokleinhofmeijer/Documents/rankstas-paradise/data/sync.error.log</string>
 </dict>
 </plist>

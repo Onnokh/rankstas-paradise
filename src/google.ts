@@ -111,7 +111,7 @@ export const connectGoogle = Effect.gen(function* () {
           return new Response("Authorization failed. You can close this tab.", { status: 400 })
         }
         resume(Effect.succeed({ code }))
-        return new Response("Sleevy SEO is connected. You can close this tab and return to the terminal.")
+        return new Response("Ranksta’s Paradise is connected. You can close this tab and return to the terminal.")
       },
     })
     Bun.spawn(["open", authorizationUrl.toString()])

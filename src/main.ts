@@ -13,8 +13,8 @@ if (cliArguments.length > 0) {
 
 const refreshBeforeTui = async () => {
   const label = debugMode
-    ? "Sleevy SEO · Loading isolated development data…"
-    : "Sleevy SEO · Fetching missing days and reconciling recent Search Console data…"
+    ? "Ranksta’s Paradise · Loading isolated development data…"
+    : "Ranksta’s Paradise · Fetching missing days and reconciling recent Search Console data…"
   if (process.stdout.isTTY) process.stdout.write(label)
   try {
     return await syncSearchConsole()

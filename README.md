@@ -1,4 +1,4 @@
-# Sleevy SEO (local only)
+# Ranksta’s Paradise (local only)
 
 This directory is deliberately outside the Sleevy repository. It holds a local Google OAuth token and SQLite Search Console history; neither should be committed or deployed.
 

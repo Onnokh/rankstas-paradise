@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.onnokh.sleevy-seo-weekly</string>
+  <string>com.onnokh.rankstas-paradise-weekly</string>
   <key>ProgramArguments</key>
   <array>
     <string>/Users/onnokleinhofmeijer/.nvm/versions/node/v24.1.0/bin/bun</string>
@@ -11,7 +11,7 @@
     <string>src/weekly-job.ts</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/onnokleinhofmeijer/Documents/sleevy-seo</string>
+  <string>/Users/onnokleinhofmeijer/Documents/rankstas-paradise</string>
   <key>StartCalendarInterval</key>
   <dict>
     <key>Weekday</key>
@@ -22,8 +22,8 @@
     <integer>30</integer>
   </dict>
   <key>StandardOutPath</key>
-  <string>/Users/onnokleinhofmeijer/Documents/sleevy-seo/data/weekly.log</string>
+  <string>/Users/onnokleinhofmeijer/Documents/rankstas-paradise/data/weekly.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/onnokleinhofmeijer/Documents/sleevy-seo/data/weekly.error.log</string>
+  <string>/Users/onnokleinhofmeijer/Documents/rankstas-paradise/data/weekly.error.log</string>
 </dict>
 </plist>

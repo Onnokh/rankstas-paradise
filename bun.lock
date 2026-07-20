@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "sleevy-seo",
+      "name": "rankstas-paradise",
       "dependencies": {
         "@opentui/core": "latest",
         "effect": "latest",

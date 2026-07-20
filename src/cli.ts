@@ -52,7 +52,7 @@ const numberFlag = (flags: Flags, name: string): number | undefined => {
   return parsed
 }
 
-const helpText = `Sleevy SEO agent CLI — every command prints one JSON document on stdout.
+const helpText = `Ranksta’s Paradise agent CLI — every command prints one JSON document on stdout.
 
 Usage: bun run seo [--debug] <command> [options]
 
