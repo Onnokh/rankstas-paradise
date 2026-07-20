@@ -1,0 +1,18 @@
+# Dependencies — reinstalled in the image from the lockfile.
+node_modules
+
+# VCS and tooling.
+.git
+.gitignore
+.claude
+
+# Local state must never enter the image; it lives on the volume.
+data
+*.sqlite
+*.sqlite-*
+google-token.json
+config.json
+
+# Cruft.
+*.log
+.DS_Store
