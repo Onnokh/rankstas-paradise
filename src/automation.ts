@@ -1,14 +1,17 @@
 import { Effect } from "effect"
 
-import { dataDirectory, debugMode, ensureDataDirectory } from "./config.ts"
+import { debugMode, ensureDataDirectory } from "./config.ts"
 import { debugDailyTotals, debugSnapshots } from "./debug.ts"
 import { fetchDailyTotals, fetchPageIndexStatuses, fetchSearchConsoleSnapshots } from "./google.ts"
 import { loadRegistry } from "./registry.ts"
 import { refreshSitemapPages } from "./sitemap.ts"
 import { currentSiteOrigin } from "./site.ts"
-import { missingDailyTotalDates, missingSnapshotDates, opportunityDigest, pruneIndexStatuses, recentlyInspectedUrls, recentlySyncedDates, saveDailyTotals, savePageIndexStatuses, saveSnapshots, snapshotDateRange } from "./storage.ts"
+import { finalizationCutoff, missingDailyTotalDates, missingSnapshotDates, pruneIndexStatuses, recentlyInspectedUrls, recentlySyncedDates, saveDailyTotals, savePageIndexStatuses, saveSnapshots, snapshotDateRange } from "./storage.ts"
 
 const today = new Date()
+// `count` consecutive dates ending at the finalization cutoff (today − 3; see
+// finalizationCutoff for why 3), newest first — the recently-finalized window we
+// reconcile on each sync to absorb Google's late processing.
 const datesBeforeToday = (count: number) => Array.from({ length: count }, (_, index) => {
   const date = new Date(today)
   date.setUTCDate(date.getUTCDate() - index - 3)
@@ -55,13 +58,20 @@ export const syncSearchConsole = async () => {
     return `Saved ${debugSnapshots.length} fake rows to the isolated debug database.`
   }
   const sitemapRefresh = Effect.runPromise(refreshSitemapPages).catch(() => [])
-  const finalizedThrough = datesBeforeToday(1)[0]!
+  const finalizedThrough = finalizationCutoff()
+  // Query-level breakdowns are only trusted through finalizedThrough (see
+  // finalizationCutoff). Daily totals, though, are fetched right up to yesterday
+  // and flagged provisional (dimmed) by the UI — we show whatever Google has
+  // rather than hiding the freshest days. These trailing days change daily, so
+  // they are always re-fetched instead of cached.
+  const freshestThrough = dateDaysBefore(finalizedThrough, -2)
+  const provisionalDates = datesBetween(dateDaysBefore(finalizedThrough, -1), freshestThrough)
   const tracked = snapshotDateRange()
   const trackingStart = tracked.first ?? dateDaysBefore(finalizedThrough, 27)
   const plan = fetchPlan(datesBetween(trackingStart, finalizedThrough))
   const snapshots = plan.dates.length > 0 ? await Effect.runPromise(fetchSearchConsoleSnapshots(plan.dates)) : []
   saveSnapshots(snapshots, plan.dates)
-  const totalDates = [...new Set([...plan.dates, ...missingDailyTotalDates(datesBetween(trackingStart, finalizedThrough))])]
+  const totalDates = [...new Set([...plan.dates, ...missingDailyTotalDates(datesBetween(trackingStart, finalizedThrough)), ...provisionalDates])]
   const totals = totalDates.length > 0 ? await Effect.runPromise(fetchDailyTotals(totalDates)) : { site: [], pages: [] }
   saveDailyTotals(totals, totalDates)
   const registry = await loadRegistry()
@@ -75,13 +85,13 @@ export const syncSearchConsole = async () => {
   const inspectionSummary = inspection.failed > 0
     ? `${inspection.inspections.length} indexed-status checks saved (${freshUrls.size} cached); ${inspection.failed} unavailable`
     : `${inspection.inspections.length} indexed-status checks saved (${freshUrls.size} cached)`
-  return `Saved ${snapshots.length} Search Console rows across ${plan.dates.length} finalized days (${plan.missing.length} missing, ${plan.recent.length} reconciled); daily totals for ${totalDates.length} days; ${inspectionSummary}; current through ${finalizedThrough}. Sitemap: ${sitemapPages.length || "cached"} pages.`
+  return `Saved ${snapshots.length} Search Console rows across ${plan.dates.length} finalized days (${plan.missing.length} missing, ${plan.recent.length} reconciled); daily totals for ${totalDates.length} days; ${inspectionSummary}; finalized through ${finalizedThrough}, provisional to ${freshestThrough}. Sitemap: ${sitemapPages.length || "cached"} pages.`
 }
 
 export const backfillSearchConsole = async (months = 16) => {
   if (debugMode) throw new Error("Backfill is unavailable in debug mode; the debug database already contains its full fake history.")
   await Effect.runPromise(ensureDataDirectory)
-  const finalizedThrough = datesBeforeToday(1)[0]!
+  const finalizedThrough = finalizationCutoff()
   const retentionStart = dateDaysBefore(finalizedThrough, Math.min(Math.round(months * 30.4), 485))
   const candidates = datesBetween(retentionStart, finalizedThrough)
   const missingSnapshots = missingSnapshotDates(candidates)
@@ -100,17 +110,4 @@ export const backfillSearchConsole = async (months = 16) => {
     saveDailyTotals(totals, chunk)
   }
   return `Backfilled ${missingSnapshots.length} days (${savedRows} rows) and daily totals for ${missingTotals.length} days back to ${retentionStart}; current through ${finalizedThrough}.`
-}
-
-export const buildWeeklyDigest = async () => {
-  await Effect.runPromise(ensureDataDirectory)
-  await Effect.runPromise(refreshSitemapPages).catch(() => [])
-  const dates = debugMode ? debugDates : fetchPlan(datesBeforeToday(56)).dates
-  const snapshots = debugMode ? debugSnapshots : await Effect.runPromise(fetchSearchConsoleSnapshots(dates))
-  saveSnapshots(snapshots, dates)
-  const registry = await loadRegistry()
-  const digest = opportunityDigest(registry)
-  const path = `${dataDirectory}/weekly-digest${debugMode ? ".debug" : ""}.json`
-  await Bun.write(path, `${JSON.stringify({ generatedAt: new Date().toISOString(), ...digest }, null, 2)}\n`)
-  return `Weekly digest saved: ${digest.signals.length} signals from ${digest.currentStart ?? "—"}–${digest.latestDate ?? "—"}.`
 }

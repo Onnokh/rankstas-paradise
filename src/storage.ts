@@ -331,10 +331,13 @@ export const history = (limit = 28): HistoryDay[] => {
   return rows.reverse()
 }
 
-// History for the dashboard: finalized days summed from query rows, plus any
-// newer days that already have site-level totals but no finalized query
-// breakdown yet. Those trailing days are flagged provisional so the UI can show
-// how current the data is while marking them as not-yet-counted.
+// History for the dashboard: every day for which we have data, from query-row
+// sums where a breakdown exists and from site-level totals otherwise (Google
+// suppresses query rows on low-volume days, so a settled day can legitimately
+// have totals but no breakdown). A day is flagged provisional purely by the
+// finalization window — anything after the cutoff is still being revised — so
+// settled-but-breakdown-less days show solid and only the genuinely fresh
+// trailing days are dimmed.
 export const historyWithPending = (limit = 28): HistoryDay[] => {
   const db = database()
   const finalRows = db.query<HistoryDay, []>(`
@@ -344,15 +347,15 @@ export const historyWithPending = (limit = 28): HistoryDay[] => {
     from search_snapshot
     group by date
   `).all()
-  const latestFinal = finalRows.reduce((latest, row) => (row.date > latest ? row.date : latest), "")
-  const pendingRows = db.query<HistoryDay, [string]>(`
-    select date, impressions, clicks, ctr, position from site_daily where date > ?
-  `).all(latestFinal)
+  const withBreakdown = new Set(finalRows.map((row) => row.date))
+  const totalsOnlyRows = db.query<HistoryDay, []>(`
+    select date, impressions, clicks, ctr, position from site_daily
+  `).all().filter((row) => !withBreakdown.has(row.date))
   db.close()
-  const days = [
-    ...finalRows.map((row) => ({ ...row, provisional: false })),
-    ...pendingRows.map((row) => ({ ...row, provisional: true })),
-  ].sort((left, right) => (left.date < right.date ? -1 : 1))
+  const cutoff = finalizationCutoff()
+  const days = [...finalRows, ...totalsOnlyRows]
+    .map((row) => ({ ...row, provisional: row.date > cutoff }))
+    .sort((left, right) => (left.date < right.date ? -1 : 1))
   return days.slice(-limit)
 }
 
@@ -361,6 +364,17 @@ export const dateDaysBefore = (date: string, days: number) => {
   value.setUTCDate(value.getUTCDate() - days)
   return value.toISOString().slice(0, 10)
 }
+
+// The last date whose numbers we trust as final. Search Console serves "fresh"
+// (incomplete, still-rising) data for roughly the last two days and keeps
+// revising it; three days is the conservative settle point. The extra day over
+// the usual two-day lag also absorbs a timezone gotcha: Search Console counts
+// days in Pacific time while we compute dates in UTC, so "yesterday UTC" can
+// still be an in-progress day in Google's calendar. Anything after this cutoff
+// is shown but flagged provisional so the UI can dim what is likely to change.
+// Single source of the window, shared by the sync (what to finalize vs. fetch
+// as provisional) and the dashboard (what to dim).
+export const finalizationCutoff = () => dateDaysBefore(new Date().toISOString().slice(0, 10), 3)
 
 const summariseMetrics = (days: readonly RegistryDay[]): Metrics => {
   const impressions = days.reduce((total, day) => total + day.impressions, 0)
