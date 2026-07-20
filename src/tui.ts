@@ -5,8 +5,8 @@ import { debugMode } from "./config.ts"
 import { type RegistryEntry } from "./registry.ts"
 import { logKindLabel, opportunityLabels, phaseFor, readableIntent, shortAction, signalExplanation, signalMeaning, signalReason, sparkline, type LogFeedEntry, type LogReadout } from "./service.ts"
 import { type HistoryDay, type OpportunityKind, type OpportunitySignal, type RegistryTargetProgress } from "./storage.ts"
-import { loadTuiData, type TuiData } from "./tuiData.ts"
-import { loadSites, withSite, type Site } from "./site.ts"
+import { loadSiteCatalog, loadTuiData, type TuiData } from "./tuiData.ts"
+import { withSite, type Site } from "./site.ts"
 
 type View = "home" | "opportunities" | "history" | "registry" | "log"
 type HomeCategory = OpportunityKind | "sitemap-coverage" | "recent-activity"
@@ -154,17 +154,17 @@ const historyChart = (days: readonly HistoryDay[], selected: number, width = 23)
 
 export const showTui = async (initialStatus?: string, backgroundRefresh?: (site: Site) => Promise<string>) => {
   const renderer = await createCliRenderer({ exitOnCtrlC: true, consoleMode: "disabled", useMouse: true })
-  const sites = [...await loadSites()]
+  // Where the rendered data comes from: direct SQLite/CSV when local, the HTTP
+  // API when a remote target is configured (ADR 0001, A1). Decided once, up
+  // front, because the site catalog is fetched over the same seam.
+  const remote = await isRemoteMode()
+  const sites = [...await loadSiteCatalog(remote)]
   let siteIndex = 0
   let activeSiteId = sites[siteIndex]?.id ?? "sleevy"
   const inSite = <T>(work: () => T): T => withSite(sites[siteIndex] ?? activeSiteId, work)
   // Synthetic site for the empty-config edge case, matching withSite's own
   // string fallback so origin-dependent helpers stay consistent.
   const activeSite = (): Site => sites[siteIndex] ?? { id: activeSiteId, name: activeSiteId, property: activeSiteId, origin: activeSiteId === "sleevy" ? "https://sleevy.app" : `https://${activeSiteId}`, sitemapUrl: "", brandTerms: [activeSiteId] }
-  // Where the rendered data comes from: direct SQLite/CSV when local, the HTTP
-  // API when a remote target is configured (ADR 0001, A1). Decided once; the
-  // provider then handles every site the same way.
-  const remote = await isRemoteMode()
   const loadData = () => loadTuiData(activeSite(), remote)
   let data = await loadData()
   let view: View = "home"

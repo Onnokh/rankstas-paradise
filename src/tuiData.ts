@@ -13,7 +13,7 @@
 // every keypress; a bundle keeps the remote round-trips out of the hot path.
 import { createApiClient } from "./apiClient.ts"
 import { dashboardSnapshot, type DashboardSnapshot } from "./service.ts"
-import { withSite, type Site } from "./site.ts"
+import { loadSites, withSite, type Site } from "./site.ts"
 import { type Metrics, type RegistryPerformance } from "./storage.ts"
 
 // The exact shape the renderer consumes: the dashboard snapshot, except the
@@ -47,3 +47,9 @@ const remoteTuiData = async (site: Site): Promise<TuiData> =>
 
 export const loadTuiData = (site: Site, remote: boolean): Promise<TuiData> =>
   remote ? remoteTuiData(site) : localTuiData(site)
+
+// The site catalog behind the same seam: the server's configured sites when
+// remote, the local config otherwise. Lets a config-less client still populate
+// its site switcher.
+export const loadSiteCatalog = (remote: boolean): Promise<readonly Site[]> =>
+  remote ? createApiClient().sites().then((result) => result.sites) : loadSites()

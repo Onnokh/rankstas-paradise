@@ -5,6 +5,7 @@
 import { loadClientConfig, type ClientConfig } from "./clientConfig.ts"
 import { type RegistryPatch } from "./registry.ts"
 import type { LogAddInput, QueriesOptions, RegistryAddInput } from "./service.ts"
+import type { Site } from "./site.ts"
 
 // Derive the report shapes straight from the service functions so the client
 // can never drift from them. `typeof import(...)` is a type-only query and is
@@ -50,6 +51,10 @@ export const createApiClient = (config?: ClientConfig) => {
   }
 
   return {
+    // The configured site catalog (server-side config.json) — the remote TUI's
+    // site switcher reads this instead of a local config.
+    sites: () => request<{ readonly sites: readonly Site[] }>("GET", "/api/sites", {}),
+
     // Reads — every method takes an optional site passed as ?site=.
     status: (site?: string) =>
       request<Report<"statusReport">>("GET", "/api/status", { site }),
