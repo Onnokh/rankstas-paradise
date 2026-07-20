@@ -65,5 +65,5 @@ New entry point `src/cli.ts` (main.ts dispatches: no args → TUI, args → CLI)
 
 ## Non-goals / deferred
 
-- **MCP server**: not needed — a JSON CLI is directly usable from a skill via Bash, with no extra process to manage. Revisit only if multiple concurrent agents need shared long-lived access.
+- **MCP server**: not needed — a JSON CLI is directly usable from a skill via Bash, with no extra process to manage. Revisit only if multiple concurrent agents need shared long-lived access. _(Superseded: autonomous opencode runs on Coolify are exactly that trigger. RP now moves to a hosted service with HTTP for apps and MCP for agents — see [adr/0001-rp-as-hosted-service.md](adr/0001-rp-as-hosted-service.md).)_
 - Natural-language question answering lives in the future skill, not here; this layer only guarantees the data and deterministic JSON views the skill will reason over.
