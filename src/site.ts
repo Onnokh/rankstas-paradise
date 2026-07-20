@@ -70,13 +70,12 @@ export const withSite = <T>(site: Site | string, work: () => T): T => {
 export const currentSiteOrigin = () => siteStorage.getStore()?.origin ?? "https://sleevy.app"
 export const currentBrandTerms = () => siteStorage.getStore()?.brandTerms ?? ["sleevy"]
 
-export const siteDataDirectory = (siteId = currentSiteId()) => {
-  if (siteId === defaultSiteId) return dataDirectory
-  return `${dataDirectory}/sites/${siteId}`
-}
+// Every site keeps its data in one place: data/sites/<id>/. Nothing lives
+// at the repo root or the top of data/ — that stays for global, non-site
+// files (the OAuth token, sync logs). The data/ tree is content, not
+// product, so it is gitignored in full.
+export const siteDataDirectory = (siteId = currentSiteId()) => `${dataDirectory}/sites/${siteId}`
 
 export const siteDatabasePath = (siteId = currentSiteId()) => `${siteDataDirectory(siteId)}/search-console${debugMode ? ".debug" : ""}.sqlite`
-export const siteRegistryPath = (siteId = currentSiteId()) => siteId === defaultSiteId && !debugMode
-  ? `${import.meta.dir}/../keyword-registry.csv`
-  : `${siteDataDirectory(siteId)}/keyword-registry.csv`
+export const siteRegistryPath = (siteId = currentSiteId()) => `${siteDataDirectory(siteId)}/keyword-registry.csv`
 export const siteSitemapPath = (siteId = currentSiteId()) => `${siteDataDirectory(siteId)}/sitemap.json`
