@@ -10,6 +10,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 
 import { backfillSearchConsole, syncSearchConsole } from "./automation.ts"
 import { debugMode } from "./config.ts"
+import { jobs, maybeEnqueueSync, runningJob, startJob } from "./jobs.ts"
 import { buildMcpServer } from "./mcp.ts"
 import { loadSites, siteFor, withSite } from "./site.ts"
 import { feedFor, type FeedView } from "./native-feed.ts"
@@ -30,44 +31,6 @@ import {
 } from "./service.ts"
 
 const port = Number(Bun.env.SEO_PORT ?? 8790)
-
-type JobName = "sync" | "backfill"
-
-type Job = {
-  readonly id: number
-  readonly name: JobName
-  readonly siteId: string
-  status: "running" | "done" | "failed"
-  readonly startedAt: string
-  finishedAt: string | null
-  message: string | null
-}
-
-// Google-touching jobs run one at a time: syncs use delete-then-insert
-// transactions that must not interleave.
-const jobs: Job[] = []
-let nextJobId = 1
-
-const runningJob = () => jobs.find((job) => job.status === "running")
-
-const startJob = (name: JobName, siteId: string, work: () => Promise<string>): Job | null => {
-  if (runningJob()) return null
-  const job: Job = { id: nextJobId++, name, siteId, status: "running", startedAt: new Date().toISOString(), finishedAt: null, message: null }
-  jobs.push(job)
-  work()
-    .then((message) => {
-      job.status = "done"
-      job.message = message
-    })
-    .catch((cause) => {
-      job.status = "failed"
-      job.message = cause instanceof Error ? cause.message : String(cause)
-    })
-    .finally(() => {
-      job.finishedAt = new Date().toISOString()
-    })
-  return job
-}
 
 const json = (payload: unknown, status = 200) =>
   new Response(JSON.stringify({ generatedAt: new Date().toISOString(), mode: debugMode ? "debug" : "live", ...(payload as object) }, null, 2), {
@@ -148,6 +111,11 @@ const handle = async (request: Request): Promise<Response> => {
   const siteId = url.searchParams.get("site")
   if (!siteId) return badRequest("site is required: add ?site=<id> (see GET /api/sites)")
   const site = await siteFor(siteId)
+  // Every read warms the site: if its data is stale, this kicks a background
+  // sync (see jobs.ts). Fire-and-forget — the response below never waits on it,
+  // and a fresh or already-syncing site no-ops. GET-only, so agent writes and
+  // the job POSTs don't trigger it; GET /api/jobs already returned above.
+  if (request.method === "GET") void maybeEnqueueSync(siteId)
   switch (route) {
     case "GET /api/status": return json(await withSite(site, () => statusReport()))
     // The whole interactive-dashboard model in one read — the TUI's remote data

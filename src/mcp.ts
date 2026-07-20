@@ -6,6 +6,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
 
+import { maybeEnqueueSync } from "./jobs.ts"
 import { siteFor, withSite } from "./site.ts"
 import type { RegistryPatch } from "./registry.ts"
 import {
@@ -31,6 +32,15 @@ const onSite = async <T>(siteId: string, work: () => T | Promise<T>): Promise<T>
   return withSite(site, work)
 }
 
+// Reads warm the site the same way the HTTP GET routes do: kick a background
+// sync if the data is stale (fire-and-forget, coalesced — see jobs.ts), then
+// serve current data immediately. Writes use plain onSite; recording an action
+// shouldn't trigger a fetch.
+const onSiteRead = <T>(siteId: string, work: () => T | Promise<T>): Promise<T> => {
+  void maybeEnqueueSync(siteId)
+  return onSite(siteId, work)
+}
+
 // The MCP tool result: the service DTO rendered as pretty JSON text, so an
 // agent reads the same document the HTTP API returns.
 const asReport = (payload: unknown) => ({
@@ -45,7 +55,7 @@ export const buildMcpServer = (): McpServer => {
   server.registerTool("status", {
     description: "Data range, row counts, and registry/sitemap coverage for the site.",
     inputSchema: { site },
-  }, async ({ site }) => asReport(await onSite(site, () => statusReport())))
+  }, async ({ site }) => asReport(await onSiteRead(site, () => statusReport())))
 
   server.registerTool("pages", {
     description: "Per-page metrics for the current and previous window, with verdicts and signals.",
@@ -53,7 +63,7 @@ export const buildMcpServer = (): McpServer => {
       site,
       window: z.number().int().positive().optional().describe("Window length in days (default 28)."),
     },
-  }, async ({ site, window }) => asReport(await onSite(site, () => pagesReport(window ?? 28))))
+  }, async ({ site, window }) => asReport(await onSiteRead(site, () => pagesReport(window ?? 28))))
 
   server.registerTool("page", {
     description: "Full report for one page: daily series, top queries, plan, baseline, and action log.",
@@ -61,7 +71,7 @@ export const buildMcpServer = (): McpServer => {
       site,
       path: z.string().describe("Page path starting with \"/\", e.g. \"/pricing\"."),
     },
-  }, async ({ site, path }) => asReport(await onSite(site, () => pageReport(path))))
+  }, async ({ site, path }) => asReport(await onSiteRead(site, () => pageReport(path))))
 
   server.registerTool("queries", {
     description: "Top search queries, optionally scoped to a page, with brand and mapping flags.",
@@ -74,7 +84,7 @@ export const buildMcpServer = (): McpServer => {
       limit: z.number().int().positive().optional().describe("Maximum number of query rows (default 50)."),
     },
   }, async ({ site, page, window, minImpressions, includeBrand, limit }) =>
-    asReport(await onSite(site, () => queriesReport({ page, windowDays: window, minImpressions, includeBrand, limit }))))
+    asReport(await onSiteRead(site, () => queriesReport({ page, windowDays: window, minImpressions, includeBrand, limit }))))
 
   server.registerTool("opportunities", {
     description: "The opportunity digest signals (striking-distance, ctr, new-demand, cannibalization).",
@@ -82,12 +92,12 @@ export const buildMcpServer = (): McpServer => {
       site,
       kind: z.string().optional().describe("Filter to one signal kind."),
     },
-  }, async ({ site, kind }) => asReport(await onSite(site, () => opportunitiesReport(kind))))
+  }, async ({ site, kind }) => asReport(await onSiteRead(site, () => opportunitiesReport(kind))))
 
   server.registerTool("registry", {
     description: "The keyword registry: every target URL with its phase, plan, and progress.",
     inputSchema: { site },
-  }, async ({ site }) => asReport(await onSite(site, () => registryList())))
+  }, async ({ site }) => asReport(await onSiteRead(site, () => registryList())))
 
   server.registerTool("log", {
     description: "The action log, site-wide or for one path, newest first.",
@@ -95,7 +105,7 @@ export const buildMcpServer = (): McpServer => {
       site,
       path: z.string().optional().describe("Restrict to a single page path."),
     },
-  }, async ({ site, path }) => asReport(await onSite(site, () => logList(path))))
+  }, async ({ site, path }) => asReport(await onSiteRead(site, () => logList(path))))
 
   server.registerTool("history", {
     description: "Daily true site totals (clicks, impressions, ctr, position) for the last N days.",
@@ -103,7 +113,7 @@ export const buildMcpServer = (): McpServer => {
       site,
       limit: z.number().int().positive().optional().describe("Number of days (default 28)."),
     },
-  }, async ({ site, limit }) => asReport(await onSite(site, () => historyReport(limit ?? 28))))
+  }, async ({ site, limit }) => asReport(await onSiteRead(site, () => historyReport(limit ?? 28))))
 
   server.registerTool("registry_add", {
     description: "Append a validated registry row (keyword mapping or inventory page).",

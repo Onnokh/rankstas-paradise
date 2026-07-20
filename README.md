@@ -49,7 +49,7 @@ bun run seo --local          # this machine's own data
 bun run seo --network status # the configured hosted server
 ```
 
-In hosted mode the TUI reads over HTTP and its refresh queues a server-side sync job rather than calling Google locally.
+In hosted mode the TUI reads over HTTP; startup and `r` force a server-side sync job and poll it to completion, then repaint with the synced data rather than calling Google locally.
 
 ## Agent CLI
 
@@ -67,7 +67,7 @@ When hosted, the service also exposes the read and write commands as MCP tools a
 
 Locally, launching the dashboard paints immediately from the ledger, then refreshes Search Console in the background — the active site first for a fast repaint, then every other configured site — so opening the TUI keeps all sites current without a scheduled job. Each sync fills finalized dates absent from the ledger and re-fetches the five newest finalized dates to absorb late Search Console processing. A sync can also be triggered on demand from the CLI (`sync`) or the server (`POST /api/jobs/sync`).
 
-When hosted, sync is not automatic — drive it with a scheduled task per site (see [docs/deploy.md](docs/deploy.md)).
+When hosted, sync is read-driven with a scheduled floor. Any read — an app over HTTP or an agent over MCP — warms the site: if its ledger hasn't been reconciled within the reconciliation window (6h), the read kicks a background sync and still returns current data immediately, so a warm site is never more than a few hours stale. Concurrent or in-flight syncs coalesce into a no-op, so bursty agent traffic can't stack jobs. A per-site daily scheduled task (see [docs/deploy.md](docs/deploy.md)) is the cold-start floor for sites nothing reads. Opening the TUI or pressing `r` forces a sync regardless of the window.
 
 Home and Opportunities classify striking-distance, CTR, new-demand, and cannibalization signals on demand, directly from SQLite and the registry CSV — comparing the current and preceding 28-day windows.
 

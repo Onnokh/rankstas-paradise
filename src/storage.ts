@@ -197,6 +197,19 @@ export const recentlySyncedDates = (dates: readonly string[], maxAgeHours: numbe
   return [...new Set(dates)].filter((date) => fresh.has(date))
 }
 
+// Has this site's ledger been reconciled at all within the window? Drives the
+// server's read-triggered warm sync (see jobs.ts maybeEnqueueSync): every sync
+// rewrites fetched_at on the newest finalized days, so a site synced within
+// maxAgeHours always has at least one fresh synced_day row.
+export const syncedWithinHours = (maxAgeHours: number): boolean => {
+  const db = database()
+  const row = db.query<{ readonly fresh: number }, [string]>(`
+    select exists(select 1 from synced_day where fetched_at > datetime('now', ?)) as fresh
+  `).get(`-${maxAgeHours} hours`)
+  db.close()
+  return row?.fresh === 1
+}
+
 export const recentlyInspectedUrls = (targetUrls: readonly string[], maxAgeHours: number): string[] => {
   const db = database()
   const fresh = new Set(db.query<{ readonly target_url: string }, [string]>(`

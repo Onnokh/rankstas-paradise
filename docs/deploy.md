@@ -89,9 +89,12 @@ Google Cloud Console → **APIs & Services → OAuth consent screen** → **Publ
 - In the Coolify service, add the domain (e.g. `rp.<your-domain>`).
 - Coolify's proxy terminates TLS and issues the certificate automatically. Point the DNS record at the Coolify server first.
 
-## 7. Scheduled sync
+## 7. Sync: read-driven, with a scheduled floor
 
-Sync is not automatic on the server — drive it with a Coolify **Scheduled Task** per site, daily. The task runs inside the container, so `localhost:$SEO_PORT` reaches the service and `$RP_TOKEN` is already in the environment.
+The server keeps data fresh two ways, and you configure only the second:
+
+- **Read-driven (automatic, no config).** Every read — an app over HTTP or an agent over MCP — warms the site: if its ledger hasn't been reconciled within the reconciliation window (6h), the read kicks a background sync and still returns current data immediately. Concurrent or in-flight syncs coalesce into a no-op (the single-job guard), so bursty agent traffic can't stack jobs or exhaust Google's quota. A warm site is never more than a few hours stale.
+- **Scheduled floor (you configure this).** The read path only fires when *something* reads. For a site nothing touches for a day, add a Coolify **Scheduled Task** per site, daily, as the cold-start floor. The task runs inside the container, so `localhost:$SEO_PORT` reaches the service and `$RP_TOKEN` is already in the environment.
 
 One command per configured site id:
 
@@ -100,7 +103,9 @@ curl -fsS -X POST "http://localhost:8790/api/jobs/sync?site=<site-id>" \
   -H "Authorization: Bearer $RP_TOKEN"
 ```
 
-- Schedule daily, e.g. `0 6 * * *`. Stagger the two by a few minutes — only one job runs at a time (a second returns `409`).
+- Schedule daily, e.g. `0 6 * * *`. Stagger the sites by a few minutes — only one job runs at a time (a second returns `409`, which for the cron is harmless: it just means a read-triggered sync is already running).
+
+> The single-job guard is in-process, so it assumes **one** server instance. Don't scale the service to multiple replicas against the same volume without adding a shared lock — concurrent syncs would race the delete-then-insert writes.
 
 ## 8. Connecting afterwards
 
