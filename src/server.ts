@@ -1,10 +1,11 @@
 // HTTP API over the service layer, so any frontend (native app, web, agent)
-// can consume the same data the CLI and TUI show. Local-only by design:
-// binds 127.0.0.1 and reuses the local SQLite/CSV/token state.
+// can consume the same data the CLI and TUI show. Hosted as a Coolify service
+// (see ADR 0001): binds 0.0.0.0 behind the proxy, gated by a bearer token on
+// every request, and owns the SQLite/CSV/token state on a persistent volume.
 //
-// JSON endpoints live under /api/*. The /pages.txt endpoint serves a
-// pipe-delimited line format for the Native SDK app, whose app-core subset
-// has no JSON parser.
+// JSON endpoints live under /api/*, agents connect over MCP at /mcp, and the
+// /pages.txt endpoint serves a pipe-delimited line format for the Native SDK
+// app, whose app-core subset has no JSON parser.
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
 
 import { backfillSearchConsole, syncSearchConsole } from "./automation.ts"
