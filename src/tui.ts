@@ -583,24 +583,39 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
     render()
   })
 
+  // Sync one site and, if it's the one in view, repaint with the fresh data.
+  // Locally the sync runs Google directly; remotely it forces the server's job
+  // and polls it to completion (see main.ts runServerSync), so either way the
+  // repaint lands on synced data. A single `refreshing` guard serializes the
+  // startup sweep against a manual reload — two overlapping local syncs would
+  // race the delete-then-insert transactions, and a manual reload mid-sweep
+  // would be redundant anyway.
+  let refreshing = false
+  const forceRefresh = async (site: Site) => {
+    if (refreshing || !backgroundRefresh) return
+    refreshing = true
+    const viewing = () => site.id === sites[siteIndex]?.id
+    if (viewing()) { status = `Syncing ${site.name}…`; render() }
+    try {
+      const message = await backgroundRefresh(site)
+      if (viewing()) await reload(message)
+    } catch (cause) {
+      if (viewing()) { status = `Refresh failed; showing cached data. ${String(cause).split("\n")[0]}`; render() }
+    } finally {
+      refreshing = false
+    }
+  }
+
   // Startup sync runs without blocking the UI: the active site first for a fast
   // repaint, then every other configured site so all sites stay current without
   // a separate scheduled job. Only the site in view repaints; switching to
-  // another ('s') reloads its freshly-synced data. In remote mode the refresh
-  // just queues the server's own sync job (the server owns Google and data).
+  // another ('s') reloads its freshly-synced data.
   if (backgroundRefresh) {
     const order = [...new Set([siteIndex, ...sites.map((_, index) => index)])]
     void (async () => {
       for (const index of order) {
         const site = sites[index]
-        if (!site) continue
-        const viewing = () => site.id === sites[siteIndex]?.id
-        try {
-          const message = await backgroundRefresh(site)
-          if (viewing()) await reload(message)
-        } catch (cause) {
-          if (viewing()) { status = `Refresh failed; showing cached data. ${String(cause).split("\n")[0]}`; render() }
-        }
+        if (site) await forceRefresh(site)
       }
     })()
   }
@@ -624,7 +639,11 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
         return
       }
       else if (key.name === "r") {
-        void reload("Reloaded registry, sitemap coverage, opportunities, history, and the activity log.")
+        // Reload always means "get fresh now": force a sync of the active site
+        // and repaint when it lands. With no refresh path (debug mode) just
+        // re-read the cached data as before.
+        if (backgroundRefresh) void forceRefresh(activeSite())
+        else void reload("Reloaded registry, sitemap coverage, opportunities, history, and the activity log.")
         return
       }
       else if (key.name === "q") { renderer.destroy(); resolve(); return }

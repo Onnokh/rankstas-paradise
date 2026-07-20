@@ -92,6 +92,10 @@ export const createApiClient = (config?: ClientConfig) => {
       request<Report<"logAdd">>("POST", "/api/log", { site }, body),
 
     // Jobs.
+    // The process-wide job history — polled by the TUI to watch a queued sync
+    // through to completion, then repaint (see main.ts). Not site-scoped.
+    jobs: () =>
+      request<{ readonly jobs: readonly SyncJob[] }>("GET", "/api/jobs", {}),
     syncJob: (site?: string) =>
       request<{ readonly job: SyncJob }>("POST", "/api/jobs/sync", { site }),
     backfillJob: (months?: number, site?: string) =>

@@ -37,7 +37,7 @@ const reconciliationDates = () => datesBeforeToday(5)
 
 // Search Console revises recent days and index verdicts change slowly, so data
 // refreshed within these windows is reused instead of re-fetched at startup.
-const reconciliationTtlHours = 6
+export const reconciliationTtlHours = 6
 const inspectionTtlHours = 24
 
 const fetchPlan = (candidateDates: readonly string[]) => {
