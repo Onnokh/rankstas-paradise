@@ -176,6 +176,18 @@ export const savePageIndexStatuses = (statuses: readonly PageIndexStatus[]) => {
   db.close()
 }
 
+// Drop cached index statuses for URLs no longer mapped in the registry, so a
+// removed or renamed target does not linger as a phantom row.
+export const pruneIndexStatuses = (targetUrls: readonly string[]): number => {
+  const db = database()
+  const keep = [...new Set(targetUrls)]
+  const result = keep.length > 0
+    ? db.prepare(`delete from page_index_status where target_url not in (${keep.map(() => "?").join(",")})`).run(...keep)
+    : db.prepare(`delete from page_index_status`).run()
+  db.close()
+  return result.changes
+}
+
 export const recentlySyncedDates = (dates: readonly string[], maxAgeHours: number): string[] => {
   const db = database()
   const fresh = new Set(db.query<{ readonly date: string }, [string]>(`

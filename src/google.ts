@@ -243,36 +243,35 @@ export const fetchDailyTotals = (dates: readonly string[]) => Effect.gen(functio
   return { site: siteTotals, pages } satisfies DailyTotals
 })
 
-// URL Inspection returns the state of Google's indexed version of a URL. We
-// inspect registry targets one at a time: the registry is small and this keeps
-// the request rate comfortably below the API's per-site limit.
+// URL Inspection returns the state of Google's indexed version of a URL. Each
+// call is slow (~seconds), so we inspect the registry targets concurrently. The
+// bounded concurrency keeps peak request rate well under the API's per-property
+// limit (600/minute) even for a full registry.
+const inspectionConcurrency = 8
+
 export const fetchPageIndexStatuses = (targetUrls: readonly string[]) => Effect.gen(function* () {
   const config = yield* loadConfig
   const site = yield* Effect.tryPromise({ try: () => siteFor(), catch: (cause) => new Error(String(cause)) })
   const accessToken = yield* Effect.tryPromise({ try: () => getAccessToken(config), catch: (cause) => new Error(String(cause)) })
-  const inspections: PageIndexStatus[] = []
-  let failed = 0
-  for (const targetUrl of [...new Set(targetUrls)]) {
-    const result = yield* Effect.tryPromise({
+  const results = yield* Effect.forEach([...new Set(targetUrls)], (targetUrl) =>
+    Effect.tryPromise({
       try: () => fetchJson<UrlInspectionResponse>("https://searchconsole.googleapis.com/v1/urlInspection/index:inspect", {
         method: "POST",
         headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
         body: JSON.stringify({ inspectionUrl: targetUrl, siteUrl: site.property, languageCode: "en-US" }),
       }),
       catch: () => null,
-    })
-    if (!result) {
-      failed += 1
-      continue
-    }
-    const indexStatus = result.inspectionResult?.indexStatusResult
-    const verdict = indexStatus?.verdict ?? "VERDICT_UNSPECIFIED"
-    inspections.push({
-      targetUrl,
-      status: verdict === "PASS" ? "indexed" : verdict === "FAIL" || verdict === "NEUTRAL" ? "not-indexed" : "unknown",
-      verdict,
-      coverageState: indexStatus?.coverageState ?? "",
-    })
-  }
-  return { inspections, failed }
+    }).pipe(Effect.map((result): PageIndexStatus | null => {
+      if (!result) return null
+      const indexStatus = result.inspectionResult?.indexStatusResult
+      const verdict = indexStatus?.verdict ?? "VERDICT_UNSPECIFIED"
+      return {
+        targetUrl,
+        status: verdict === "PASS" ? "indexed" : verdict === "FAIL" || verdict === "NEUTRAL" ? "not-indexed" : "unknown",
+        verdict,
+        coverageState: indexStatus?.coverageState ?? "",
+      }
+    })), { concurrency: inspectionConcurrency })
+  const inspections = results.filter((result): result is PageIndexStatus => result !== null)
+  return { inspections, failed: results.length - inspections.length }
 })

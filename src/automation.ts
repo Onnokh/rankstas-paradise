@@ -6,7 +6,7 @@ import { fetchDailyTotals, fetchPageIndexStatuses, fetchSearchConsoleSnapshots }
 import { loadRegistry } from "./registry.ts"
 import { refreshSitemapPages } from "./sitemap.ts"
 import { currentSiteOrigin } from "./site.ts"
-import { missingDailyTotalDates, missingSnapshotDates, opportunityDigest, recentlyInspectedUrls, recentlySyncedDates, saveDailyTotals, savePageIndexStatuses, saveSnapshots, snapshotDateRange } from "./storage.ts"
+import { missingDailyTotalDates, missingSnapshotDates, opportunityDigest, pruneIndexStatuses, recentlyInspectedUrls, recentlySyncedDates, saveDailyTotals, savePageIndexStatuses, saveSnapshots, snapshotDateRange } from "./storage.ts"
 
 const today = new Date()
 const datesBeforeToday = (count: number) => Array.from({ length: count }, (_, index) => {
@@ -35,7 +35,7 @@ const reconciliationDates = () => datesBeforeToday(5)
 // Search Console revises recent days and index verdicts change slowly, so data
 // refreshed within these windows is reused instead of re-fetched at startup.
 const reconciliationTtlHours = 6
-const inspectionTtlHours = 12
+const inspectionTtlHours = 24
 
 const fetchPlan = (candidateDates: readonly string[]) => {
   const candidates = [...new Set(candidateDates)]
@@ -70,6 +70,7 @@ export const syncSearchConsole = async () => {
   const staleUrls = targetUrls.filter((targetUrl) => !freshUrls.has(targetUrl))
   const inspection = staleUrls.length > 0 ? await Effect.runPromise(fetchPageIndexStatuses(staleUrls)) : { inspections: [], failed: 0 }
   savePageIndexStatuses(inspection.inspections)
+  pruneIndexStatuses(targetUrls)
   const sitemapPages = await sitemapRefresh
   const inspectionSummary = inspection.failed > 0
     ? `${inspection.inspections.length} indexed-status checks saved (${freshUrls.size} cached); ${inspection.failed} unavailable`
