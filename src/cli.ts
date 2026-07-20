@@ -17,7 +17,7 @@ import {
   type RegistryAddInput,
 } from "./service.ts"
 import { logKinds } from "./storage.ts"
-import { siteFor, withSite } from "./site.ts"
+import { loadSites, siteFor, withSite } from "./site.ts"
 
 // Command context: in remote mode `api` is the HTTP client (bound to a site by
 // id); in local mode it is null and commands call the service functions
@@ -69,7 +69,7 @@ or client.json), otherwise local SQLite/CSV. Force it with --local (direct local
 or --network (the configured remote server). In remote mode reads and writes hit the
 server; in local mode they touch this machine's data directly.
 
-All commands accept --site <id>; the default is sleevy. Use the configured ids from GET /api/sites (currently sleevy and missingmounts).
+All commands accept --site <id>; the default is the first configured site. List the ids via GET /api/sites or config.json.
 
 Read commands (never call Google — served from local data or the remote server):
   status                          Data freshness, coverage, registry and sitemap summary.
@@ -189,8 +189,14 @@ export const runCli = async (args: readonly string[]): Promise<number> => {
       return command === undefined ? 1 : 0
     }
     const mode = await resolveMode()
-    const siteId = stringFlag(flags, "site") ?? "sleevy"
-    const ctx: Context = { api: mode === "remote" ? createApiClient() : null, siteId }
+    const api = mode === "remote" ? createApiClient() : null
+    // No hardcoded default site: --site wins, otherwise fall back to the first
+    // configured site (from the server's catalog when remote, config.json when
+    // local). Erroring beats silently guessing which property to touch.
+    const siteId = stringFlag(flags, "site")
+      ?? (api ? (await api.sites()).sites[0]?.id : (await loadSites())[0]?.id)
+    if (!siteId) throw new Error("No sites configured. Add a site to config.json or pass --site <id>.")
+    const ctx: Context = { api, siteId }
     const run = (): unknown => {
       switch (command) {
         case "status": return ctx.api ? ctx.api.status(siteId) : statusReport()

@@ -35,8 +35,6 @@ import {
 } from "./storage.ts"
 import { currentBrandTerms, currentSiteOrigin } from "./site.ts"
 
-export const siteOrigin = "https://sleevy.app"
-
 export const tidy = (metrics: Metrics) => ({
   impressions: metrics.impressions,
   clicks: metrics.clicks,

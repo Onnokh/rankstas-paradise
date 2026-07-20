@@ -24,9 +24,10 @@ import {
 
 // Every tool scopes to a site exactly as the HTTP routes do: resolve the full
 // Site from config (origin, brand terms), then run the work inside its
-// AsyncLocalStorage context. Defaults to "sleevy" when omitted.
-const onSite = async <T>(siteId: string | undefined, work: () => T | Promise<T>): Promise<T> => {
-  const site = await siteFor(siteId ?? "sleevy")
+// AsyncLocalStorage context. The site is always explicit — there is no server
+// default (the agent names the site it is working on).
+const onSite = async <T>(siteId: string, work: () => T | Promise<T>): Promise<T> => {
+  const site = await siteFor(siteId)
   return withSite(site, work)
 }
 
@@ -36,7 +37,7 @@ const asReport = (payload: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
 })
 
-const site = z.string().optional().describe("Site id to scope the query to (defaults to \"sleevy\").")
+const site = z.string().describe("Site id to scope the query to (from the configured catalog).")
 
 export const buildMcpServer = (): McpServer => {
   const server = new McpServer({ name: "rankstas-paradise", version: "1.0.0" })

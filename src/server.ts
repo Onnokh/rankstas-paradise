@@ -140,7 +140,14 @@ const handle = async (request: Request): Promise<Response> => {
     await mcp.connect(transport)
     return transport.handleRequest(request)
   }
-  const site = await siteFor(url.searchParams.get("site") ?? "sleevy")
+  // Job history is process-wide, not site-scoped.
+  if (route === "GET /api/jobs") return json({ jobs })
+  // Every remaining route is site-scoped. The server has no default site — the
+  // client (TUI/desktop/CLI/agent) decides what it opens, so a missing ?site=
+  // is a 400 rather than a silent fallback.
+  const siteId = url.searchParams.get("site")
+  if (!siteId) return badRequest("site is required: add ?site=<id> (see GET /api/sites)")
+  const site = await siteFor(siteId)
   switch (route) {
     case "GET /api/status": return json(await withSite(site, () => statusReport()))
     // The whole interactive-dashboard model in one read — the TUI's remote data
@@ -178,7 +185,6 @@ const handle = async (request: Request): Promise<Response> => {
       return json(await withSite(site, () => logAdd(body)))
     }
     case "GET /api/history": return json(await withSite(site, () => historyReport(numberParam(url, "limit") ?? 28)))
-    case "GET /api/jobs": return json({ jobs })
     case "POST /api/jobs/sync": {
       const job = startJob("sync", site.id, () => withSite(site, syncSearchConsole))
       return job ? json({ job }, 202) : json({ error: `a ${runningJob()!.name} job is already running` }, 409)
