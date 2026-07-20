@@ -42,3 +42,15 @@ export const saveClientConfig = async (config: ClientConfig): Promise<void> => {
 // direct-vs-remote without catching a throw from loadClientConfig.
 export const isRemoteMode = async (): Promise<boolean> =>
   fromEnv() !== null || await Bun.file(clientConfigPath).exists()
+
+export type Mode = "local" | "remote"
+
+// The effective data source for the TUI and CLI. An explicit flag wins:
+// `--local` forces direct SQLite/CSV, `--network` (or `--remote`) forces the
+// HTTP client. With no flag, a configured client (env or client.json) means
+// remote, otherwise local — so a plain `bun run seo` keeps working offline.
+export const resolveMode = async (): Promise<Mode> => {
+  if (Bun.argv.includes("--local")) return "local"
+  if (Bun.argv.includes("--network") || Bun.argv.includes("--remote")) return "remote"
+  return (await isRemoteMode()) ? "remote" : "local"
+}

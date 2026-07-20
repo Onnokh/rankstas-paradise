@@ -1,6 +1,6 @@
 import { BoxRenderable, createCliRenderer, fg, StyledText, t, TextRenderable } from "@opentui/core"
 
-import { isRemoteMode } from "./clientConfig.ts"
+import { resolveMode } from "./clientConfig.ts"
 import { debugMode } from "./config.ts"
 import { type RegistryEntry } from "./registry.ts"
 import { logKindLabel, opportunityLabels, phaseFor, readableIntent, shortAction, signalExplanation, signalMeaning, signalReason, sparkline, type LogFeedEntry, type LogReadout } from "./service.ts"
@@ -155,9 +155,10 @@ const historyChart = (days: readonly HistoryDay[], selected: number, width = 23)
 export const showTui = async (initialStatus?: string, backgroundRefresh?: (site: Site) => Promise<string>) => {
   const renderer = await createCliRenderer({ exitOnCtrlC: true, consoleMode: "disabled", useMouse: true })
   // Where the rendered data comes from: direct SQLite/CSV when local, the HTTP
-  // API when a remote target is configured (ADR 0001, A1). Decided once, up
-  // front, because the site catalog is fetched over the same seam.
-  const remote = await isRemoteMode()
+  // API when remote (ADR 0001, A1). Auto-detected from client config, overridable
+  // with --local / --network. Decided once, up front, because the site catalog is
+  // fetched over the same seam.
+  const remote = (await resolveMode()) === "remote"
   const sites = [...await loadSiteCatalog(remote)]
   let siteIndex = 0
   let activeSiteId = sites[siteIndex]?.id ?? "sleevy"

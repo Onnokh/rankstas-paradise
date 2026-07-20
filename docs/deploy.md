@@ -109,5 +109,5 @@ curl -fsS -X POST "http://localhost:8790/api/jobs/sync?site=missingmounts" \
 
 ## 8. Connecting afterwards
 
-- **Mac CLI/TUI**: set `RP_API_URL=https://rp.<your-domain>` and `RP_TOKEN=<token>`, or run `rp init` to store them.
+- **Mac CLI/TUI**: set `RP_API_URL=https://rp.<your-domain>` and `RP_TOKEN=<token>`, or run `rp init` to store them. Once configured, `bun run seo` talks to the server by default; override per-run with `--local` (this machine's own data) or `--network` (force the server).
 - **opencode agents**: connect over MCP with the same `RP_TOKEN`.

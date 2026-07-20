@@ -94,6 +94,8 @@ export const createApiClient = (config?: ClientConfig) => {
     // Jobs.
     syncJob: (site?: string) =>
       request<{ readonly job: SyncJob }>("POST", "/api/jobs/sync", { site }),
+    backfillJob: (months?: number, site?: string) =>
+      request<{ readonly job: SyncJob }>("POST", "/api/jobs/backfill", { site }, { months }),
   }
 }
 
