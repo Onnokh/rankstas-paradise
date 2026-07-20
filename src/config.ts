@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises"
 import { homedir } from "node:os"
 
 import { Effect } from "effect"
@@ -39,6 +40,6 @@ export const loadConfig = Effect.tryPromise({
 })
 
 export const ensureDataDirectory = Effect.tryPromise({
-  try: () => Bun.write(`${dataDirectory}/.gitkeep`, ""),
+  try: () => mkdir(dataDirectory, { recursive: true }),
   catch: (cause) => new Error(`Could not create ${dataDirectory}: ${String(cause)}`),
 })
