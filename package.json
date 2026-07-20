@@ -8,8 +8,10 @@
     "server": "bun run src/server.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@opentui/core": "latest",
-    "effect": "latest"
+    "effect": "latest",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/bun": "latest",

@@ -5,8 +5,11 @@
 // JSON endpoints live under /api/*. The /pages.txt endpoint serves a
 // pipe-delimited line format for the Native SDK app, whose app-core subset
 // has no JSON parser.
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
+
 import { backfillSearchConsole, syncSearchConsole } from "./automation.ts"
 import { debugMode } from "./config.ts"
+import { buildMcpServer } from "./mcp.ts"
 import { loadSites, siteFor, withSite } from "./site.ts"
 import { feedFor, type FeedView } from "./native-feed.ts"
 import { type RegistryPatch } from "./registry.ts"
@@ -124,6 +127,16 @@ const handle = async (request: Request): Promise<Response> => {
   if (route === "GET /sites.txt") {
     const sites = await loadSites()
     return new Response(sites.map((candidate) => `${candidate.id}\t${candidate.name}`).join("\n"), { headers: { "content-type": "text/plain" } })
+  }
+  // MCP surface for agents (see mcp.ts and ADR 0001). requireBearer above
+  // already gated this, so the tools are bearer-protected for free. A fresh
+  // stateless server+transport per request keeps JSON-RPC state isolated; the
+  // Web Standard transport speaks Bun's Request/Response fetch model directly.
+  if (url.pathname === "/mcp") {
+    const mcp = buildMcpServer()
+    const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
+    await mcp.connect(transport)
+    return transport.handleRequest(request)
   }
   const site = await siteFor(url.searchParams.get("site") ?? "sleevy")
   switch (route) {
