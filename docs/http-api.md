@@ -16,15 +16,15 @@
 | `GET /api/log?path=` | `log list` |
 | `GET /api/history?limit=N` | — (TUI history view) |
 
-All site-scoped endpoints accept `?site=<id>`. The default is `sleevy`, preserving the original single-site behavior. For example:
+All site-scoped endpoints accept `?site=<id>`. The default is the first configured site. For example:
 
 ```text
-GET /api/pages?site=missingmounts&window=28
-GET /api/opportunities?site=sleevy
-GET /tui/home.txt?site=missingmounts
+GET /api/pages?site=<id>&window=28
+GET /api/opportunities?site=<id>
+GET /tui/home.txt?site=<id>
 ```
 
-The site catalog is configured in `config.json` under `sites`. Each site gets isolated SQLite, registry, and sitemap state. Sleevy keeps its existing data paths; additional sites use `data/sites/<id>/`.
+The site catalog is configured in `config.json` under `sites`. Each site gets isolated SQLite, registry, and sitemap state under `data/sites/<id>/`.
 
 ## Write endpoints
 
@@ -48,7 +48,7 @@ latest=2026-07-14|window=2026-06-17..2026-07-14
 /docs|0|4|0.0%|25.3
 ```
 
-Metrics prefer `trueTotals` and fall back to `allQueries` (current window). The native app lives at `~/Documents/sleevy-native-proto`.
+Metrics prefer `trueTotals` and fall back to `allQueries` (current window).
 
 `GET /tui/home.txt`, `/tui/opportunities.txt`, `/tui/history.txt`, `/tui/registry.txt`, `/tui/log.txt` — full TUI-mirroring view feeds ([src/native-feed.ts](../src/native-feed.ts)), tab-separated:
 

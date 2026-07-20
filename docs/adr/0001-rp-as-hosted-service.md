@@ -9,10 +9,10 @@ accepted
 The original design (see [agent-interface-design.md](../agent-interface-design.md)) deliberately made three choices, all justified by "this is a local-only tool driven by one person on one Mac":
 
 - **Local-only** — the HTTP API binds `127.0.0.1` with no auth; the OAuth token, SQLite, and registry CSV live under `~/.config/rankstas-paradise`.
-- **No daemon/cron** — sync was moved off launchd onto TUI startup, so data refreshes only when Onno opens the dashboard.
+- **No daemon/cron** — sync was moved off launchd onto TUI startup, so data refreshes only when someone opens the dashboard.
 - **MCP not needed** — "a JSON CLI is directly usable from a skill via Bash… Revisit only if multiple concurrent agents need shared long-lived access."
 
-A new requirement invalidates all three: **opencode agents running autonomously on a Coolify box** (`code.missingmounts.com`, "Digital Home" project) need to read SEO data, act on an opportunity by opening a PR in a *website* repo, and write the action back to RP — all while the Mac may be **asleep or off**. Opportunistic, Mac-tied sync and a loopback-only, unauthenticated API cannot serve an always-on remote caller.
+A new requirement invalidates all three: **opencode agents running autonomously on a Coolify box** need to read SEO data, act on an opportunity by opening a PR in a *website* repo, and write the action back to RP — all while the Mac may be **asleep or off**. Opportunistic, Mac-tied sync and a loopback-only, unauthenticated API cannot serve an always-on remote caller.
 
 ## Decision
 

@@ -93,15 +93,10 @@ Google Cloud Console → **APIs & Services → OAuth consent screen** → **Publ
 
 Sync is not automatic on the server — drive it with a Coolify **Scheduled Task** per site, daily. The task runs inside the container, so `localhost:$SEO_PORT` reaches the service and `$RP_TOKEN` is already in the environment.
 
-One command per configured site id (`sleevy`, `missingmounts`):
+One command per configured site id:
 
 ```sh
-curl -fsS -X POST "http://localhost:8790/api/jobs/sync?site=sleevy" \
-  -H "Authorization: Bearer $RP_TOKEN"
-```
-
-```sh
-curl -fsS -X POST "http://localhost:8790/api/jobs/sync?site=missingmounts" \
+curl -fsS -X POST "http://localhost:8790/api/jobs/sync?site=<site-id>" \
   -H "Authorization: Bearer $RP_TOKEN"
 ```
 
