@@ -151,7 +151,7 @@ const historyChart = (days: readonly ReturnType<typeof historyWithPending>[numbe
   ].join("\n")
 }
 
-export const showTui = async (initialStatus?: string) => {
+export const showTui = async (initialStatus?: string, backgroundRefresh?: () => Promise<string>) => {
   const renderer = await createCliRenderer({ exitOnCtrlC: true, consoleMode: "disabled", useMouse: true })
   const sites = [...await loadSites()]
   let siteIndex = 0
@@ -567,6 +567,41 @@ export const showTui = async (initialStatus?: string) => {
   })
   render()
 
+  // Re-derive the in-memory views from local SQLite/CSV after data on disk
+  // changes (manual reload, or a completed background sync), preserving the
+  // user's current selection.
+  const reload = (nextStatus: string) => Promise.all([inSite(() => loadRegistry()), inSite(() => loadCachedSitemapPages()), inSite(() => logFeed())]).then(([nextRegistry, nextSitemapPages, nextLog]) => {
+    registry = nextRegistry
+    sitemapPages = nextSitemapPages
+    logEntries = nextLog
+    digest = inSite(() => opportunityDigest(registry))
+    registryTargets = inSite(() => registryTargetProgress(registry))
+    selected = Math.max(0, Math.min(selected, Math.max(0, rows().length - 1)))
+    status = nextStatus
+    render()
+  })
+
+  // Startup sync runs without blocking the UI: the active site first for a fast
+  // repaint, then every other configured site so all sites stay current without
+  // a separate scheduled job. Only the site in view repaints; switching to
+  // another ('s') reloads its freshly-synced data from disk.
+  if (backgroundRefresh) {
+    const order = [...new Set([siteIndex, ...sites.map((_, index) => index)])]
+    void (async () => {
+      for (const index of order) {
+        const site = sites[index]
+        if (!site) continue
+        const viewing = () => site.id === sites[siteIndex]?.id
+        try {
+          const message = await withSite(site, () => backgroundRefresh())
+          if (viewing()) await reload(message)
+        } catch (cause) {
+          if (viewing()) { status = `Refresh failed; showing cached data. ${String(cause).split("\n")[0]}`; render() }
+        }
+      }
+    })()
+  }
+
   await new Promise<void>((resolve) => {
     renderer.once("destroy", resolve)
     renderer.keyInput.on("keypress", (key) => {
@@ -587,7 +622,7 @@ export const showTui = async (initialStatus?: string) => {
         return
       }
       else if (key.name === "r") {
-        void Promise.all([inSite(() => loadRegistry()), inSite(() => loadCachedSitemapPages()), inSite(() => logFeed())]).then(([nextRegistry, nextSitemapPages, nextLog]) => { registry = nextRegistry; sitemapPages = nextSitemapPages; logEntries = nextLog; digest = inSite(() => opportunityDigest(registry)); registryTargets = inSite(() => registryTargetProgress(registry)); status = "Reloaded keyword registry, sitemap cache, and local SQLite history."; render() })
+        void reload("Reloaded keyword registry, sitemap cache, and local SQLite history.")
         return
       }
       else if (key.name === "q") { renderer.destroy(); resolve(); return }
