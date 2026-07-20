@@ -2,19 +2,20 @@ import { BoxRenderable, createCliRenderer, fg, StyledText, t, TextRenderable } f
 
 import { debugMode } from "./config.ts"
 import { loadRegistry, type RegistryEntry } from "./registry.ts"
-import { opportunityLabels, phaseFor, readableIntent, shortAction, signalExplanation, signalMeaning, signalReason, sparkline } from "./service.ts"
+import { logFeed, logKindLabel, opportunityLabels, phaseFor, readableIntent, recentActions, shortAction, signalExplanation, signalMeaning, signalReason, sparkline, type LogFeedEntry, type LogReadout } from "./service.ts"
 import { loadCachedSitemapPages, unmappedSitemapPages } from "./sitemap.ts"
 import { historyWithPending, opportunityDigest, registryTargetProgress, snapshotSummary, targetPerformance, type OpportunityKind, type OpportunitySignal, type RegistryTargetProgress } from "./storage.ts"
 import { loadSites, withSite, type Site } from "./site.ts"
 
-type View = "home" | "opportunities" | "history" | "registry"
-type HomeCategory = OpportunityKind | "sitemap-coverage"
+type View = "home" | "opportunities" | "history" | "registry" | "log"
+type HomeCategory = OpportunityKind | "sitemap-coverage" | "recent-activity"
 
 const views: readonly { readonly view: View; readonly key: string; readonly label: string }[] = [
   { view: "home", key: "0", label: "Home" },
   { view: "opportunities", key: "1", label: "Opportunities" },
   { view: "history", key: "2", label: "History" },
   { view: "registry", key: "3", label: "Registry" },
+  { view: "log", key: "4", label: "Log" },
 ]
 
 const registryFor = (query: string, registry: readonly RegistryEntry[]) =>
@@ -26,7 +27,39 @@ const registryForSignal = (signal: OpportunitySignal, registry: readonly Registr
 }
 
 const opportunityKinds: readonly OpportunityKind[] = ["striking-distance", "ctr", "new-demand", "cannibalization"]
-const homeCategories: readonly HomeCategory[] = [...opportunityKinds, "sitemap-coverage"]
+const homeCategories: readonly HomeCategory[] = [...opportunityKinds, "sitemap-coverage", "recent-activity"]
+
+const readoutLine = (readout: LogReadout) => {
+  if (readout.state === "window") {
+    const delta = readout.after.impressions - readout.before.impressions
+    return `Before/after (${readout.scope === "non-brand" ? "non-brand" : "all queries"}): ${readout.before.impressions} → ${readout.after.impressions} impressions (${delta >= 0 ? "+" : ""}${delta})${readout.afterComplete ? "" : " · after window partial"}`
+  }
+  if (readout.state === "unavailable") return "No measured window around this date yet."
+  return ""
+}
+
+// Fit a URL path to a fixed column, keeping its end (the meaningful slug) and
+// marking the elided head with a leading ellipsis.
+const fitPathTail = (path: string, width: number) => path.length > width ? `…${path.slice(-(width - 1))}` : path.padEnd(width)
+
+const logRow = (entry: LogFeedEntry, selected: boolean, wide: boolean, targetWidth: number) => {
+  const note = entry.note || "—"
+  const kind = logKindLabel(entry.kind)
+  if (wide) return `${selected ? "▶" : " "} ${entry.date} ${kind.padEnd(14)} ${fitPathTail(entry.path, targetWidth)} ${note.slice(0, 32)}`
+  return `${selected ? "▶" : " "} ${entry.date.slice(5)} ${kind.slice(0, 10).padEnd(10)} ${fitPathTail(entry.path, targetWidth)}`
+}
+
+const logTable = (entries: readonly LogFeedEntry[], visible: readonly LogFeedEntry[], selected: number, start: number, wide: boolean, targetWidth: number) => {
+  const header = wide
+    ? `  DATE       ${"KIND".padEnd(14)} ${"TARGET".padEnd(targetWidth)} NOTE`
+    : `  DATE  ${"KIND".padEnd(10)} ${"TARGET".padEnd(targetWidth)}`
+  const chunks = [...t`${header}\n`.chunks]
+  visible.forEach((entry, index) => {
+    const row = logRow(entry, start + index === selected, wide, targetWidth)
+    chunks.push(...t`${entry.isAction ? row : fg("#718096")(row)}\n`.chunks)
+  })
+  return new StyledText(chunks)
+}
 
 const opportunityRow = (signal: OpportunitySignal, selected: boolean, wide: boolean) => {
   const typeWidth = wide ? 19 : 17
@@ -84,7 +117,7 @@ const navigationHint = (view: View) => view === "home"
   ? "Mouse drag copies section   ↑↓ select category   ←→ navigate sections   s switch site   Enter inspect signals   r reload   q quit"
   : view === "history"
     ? "Mouse drag copies section   ↑↓ select day   ←→ navigate sections   s switch site   r reload   q quit"
-    : `Mouse drag copies section   ↑↓ select ${view === "registry" ? "target" : "opportunity"}   ←→ navigate sections   s switch site   Enter open page   r reload   q quit`
+    : `Mouse drag copies section   ↑↓ select ${view === "registry" ? "target" : view === "log" ? "entry" : "opportunity"}   ←→ navigate sections   s switch site   Enter open page   r reload   q quit`
 
 const historyChart = (days: readonly ReturnType<typeof historyWithPending>[number][], selected: number, width = 23) => {
   const height = 8
@@ -127,6 +160,7 @@ export const showTui = async (initialStatus?: string) => {
   let sitemapPages = await inSite(() => loadCachedSitemapPages())
   let digest = inSite(() => opportunityDigest(registry))
   let registryTargets = inSite(() => registryTargetProgress(registry))
+  let logEntries = await inSite(() => logFeed())
   let view: View = "home"
   let selected = 0
   let status = initialStatus ?? navigationHint("home")
@@ -174,10 +208,10 @@ export const showTui = async (initialStatus?: string) => {
   app.add(footer)
   renderer.root.add(app)
 
-  const rows = () => view === "home" ? homeCategories : view === "opportunities" ? digest.signals : view === "history" ? inSite(() => historyWithPending()) : registryTargets
+  const rows = () => view === "home" ? homeCategories : view === "opportunities" ? digest.signals : view === "history" ? inSite(() => historyWithPending()) : view === "log" ? logEntries : registryTargets
   const selectedRow = () => rows()[selected]
   const visibleRows = <T>(items: readonly T[]) => {
-    const hasTableHeader = view === "registry" || view === "history" || (view === "opportunities" && renderer.width >= 120)
+    const hasTableHeader = view === "registry" || view === "history" || view === "log" || (view === "opportunities" && renderer.width >= 120)
     const limit = Math.max(1, renderer.height - 12 - (hasTableHeader ? 1 : 0))
     const start = Math.min(Math.max(0, selected - Math.floor(limit / 2)), Math.max(0, items.length - limit))
     return { start, items: items.slice(start, start + limit) }
@@ -191,6 +225,12 @@ export const showTui = async (initialStatus?: string) => {
     const item = selectedRow()
     if (view === "home") {
       const kind = item as HomeCategory | undefined
+      if (kind === "recent-activity") {
+        view = "log"
+        selected = 0
+        status = "Showing the full activity log."
+        return
+      }
       if (kind === "sitemap-coverage") {
         const gaps = unmappedSitemapPages(sitemapPages, registry)
         status = gaps.length > 0 ? `${gaps.length} sitemap pages need registry rows.` : "Every sitemap page is represented in the registry."
@@ -206,11 +246,14 @@ export const showTui = async (initialStatus?: string) => {
       }
       return
     }
+    const origin = sites[siteIndex]?.origin ?? "https://sleevy.app"
     const url = view === "opportunities"
       ? (item as OpportunitySignal | undefined)?.page
       : view === "registry"
-        ? `${sites[siteIndex]?.origin ?? "https://sleevy.app"}${(item as RegistryTargetProgress | undefined)?.targetUrl ?? ""}`
-        : undefined
+        ? `${origin}${(item as RegistryTargetProgress | undefined)?.targetUrl ?? ""}`
+        : view === "log"
+          ? (item as LogFeedEntry | undefined) ? `${origin}${(item as LogFeedEntry).path}` : undefined
+          : undefined
     if (!url) {
       status = view === "history" ? "History rows have no page destination. Use ←/→ to change workspace." : "Nothing selected."
       return
@@ -240,18 +283,22 @@ export const showTui = async (initialStatus?: string) => {
       const grouped = new Map(opportunityKinds.map((kind) => [kind, digest.signals.filter((signal) => signal.kind === kind)]))
       const selectedKind = homeCategories[selected]!
       const sitemapGaps = unmappedSitemapPages(sitemapPages, registry)
-      const selectedSignals = selectedKind === "sitemap-coverage" ? [] : grouped.get(selectedKind) ?? []
+      const selectedSignals = selectedKind === "sitemap-coverage" || selectedKind === "recent-activity" ? [] : grouped.get(selectedKind) ?? []
+      const recent = recentActions(3)
+      const actionCount = logEntries.filter((entry) => entry.isAction).length
       const expanded = renderer.height >= 32
+      const labelFor = (kind: HomeCategory) => kind === "sitemap-coverage" ? "Unmapped sitemap pages" : kind === "recent-activity" ? "Recent activity" : opportunityLabels[kind]
       masterTitle.content = `WEEKLY SIGNALS · ${digest.signals.length + sitemapGaps.length}`
       masterBody.content = homeCategories.flatMap((kind, index) => {
-        const signals = kind === "sitemap-coverage" ? [] : grouped.get(kind) ?? []
-        const count = kind === "sitemap-coverage" ? sitemapGaps.length : signals.length
-        const label = kind === "sitemap-coverage" ? "Unmapped sitemap pages" : opportunityLabels[kind]
-        const category = `${index === selected ? "▶" : " "} ${label.padEnd(20)} ${count.toString().padStart(3)}`
+        const signals = kind === "sitemap-coverage" || kind === "recent-activity" ? [] : grouped.get(kind) ?? []
+        const count = kind === "sitemap-coverage" ? sitemapGaps.length : kind === "recent-activity" ? actionCount : signals.length
+        const category = `${index === selected ? "▶" : " "} ${labelFor(kind).padEnd(20)} ${count.toString().padStart(3)}`
         if (!expanded) return [category]
         const previews = kind === "sitemap-coverage"
           ? sitemapGaps.slice(0, 2).map((page, pageIndex) => `  ${pageIndex === Math.min(1, sitemapGaps.length - 1) ? "└" : "├"} ${page.path}`)
-          : signals.slice(0, 2).map((signal, signalIndex) => `  ${signalIndex === Math.min(1, signals.length - 1) ? "└" : "├"} ${signal.label} · ${formatMetric(signal.current.impressions)} impressions`)
+          : kind === "recent-activity"
+            ? recent.slice(0, 2).map((entry, entryIndex) => `  ${entryIndex === Math.min(1, recent.length - 1) ? "└" : "├"} ${entry.date.slice(5)} ${logKindLabel(entry.kind)} · ${entry.path}`)
+            : signals.slice(0, 2).map((signal, signalIndex) => `  ${signalIndex === Math.min(1, signals.length - 1) ? "└" : "├"} ${signal.label} · ${formatMetric(signal.current.impressions)} impressions`)
         return [category, ...(previews.length > 0 ? previews : ["    No qualifying signals"]), ""]
       }).join("\n")
       detailSummaryTitle.content = "REPORTING WINDOW"
@@ -276,6 +323,25 @@ export const showTui = async (initialStatus?: string) => {
         detailBody.content = [
           "Unmapped pages",
           ...(sitemapGaps.length > 0 ? sitemapGaps.map((page) => page.path) : ["Every sitemap page is represented in the registry."]),
+        ].join("\n")
+      } else if (selectedKind === "recent-activity") {
+        detailTitle.content = `Recent activity · ${actionCount} actions logged`
+        detailGuideTitle.content = "RECENT ACTIVITY"
+        detailGuideBody.content = [
+          "WHAT IT MEANS",
+          "The most recent interventions logged across this site. Notes are excluded from this glance.",
+          "",
+          "RECOMMENDED ACTION",
+          "Press Enter to open the Log view for the full record, including notes and before/after readouts.",
+        ].join("\n")
+        detailBody.content = [
+          "Latest actions",
+          ...(recent.length > 0
+            ? recent.flatMap((entry) => [
+                `${entry.date} · ${logKindLabel(entry.kind)} · ${entry.path}`,
+                ...(entry.note ? [`   ${entry.note}`] : []),
+              ])
+            : ["No actions logged yet. Record one with the log CLI."]),
         ].join("\n")
       } else {
         detailTitle.content = `${opportunityLabels[selectedKind]} · ${selectedSignals.length} signals`
@@ -305,15 +371,18 @@ export const showTui = async (initialStatus?: string) => {
     }
     const items = rows()
     const registryTargetWidth = Math.max("TARGET URL".length, ...registryTargets.map((target) => target.targetUrl.length))
+    const logTargetWidth = Math.min(renderer.width >= 120 ? 28 : 16, Math.max("TARGET".length, ...logEntries.map((entry) => entry.path.length)))
     selected = Math.max(0, Math.min(selected, Math.max(0, items.length - 1)))
     const window = visibleRows(items as readonly unknown[])
     masterTitle.content = view === "opportunities"
       ? "OPPORTUNITIES"
       : view === "history"
         ? `DAILY SEARCH VISIBILITY · ${window.start + 1}–${Math.min(items.length, window.start + window.items.length)}/${items.length}`
-        : `REGISTRY · 28D  ${window.start + 1}–${Math.min(items.length, window.start + window.items.length)}/${items.length}`
+        : view === "log"
+          ? `ACTIVITY LOG · ${window.start + 1}–${Math.min(items.length, window.start + window.items.length)}/${items.length}`
+          : `REGISTRY · 28D  ${window.start + 1}–${Math.min(items.length, window.start + window.items.length)}/${items.length}`
     masterBody.content = items.length === 0
-      ? view === "opportunities" ? "No opportunities meet the current thresholds." : view === "history" ? "No finalized search activity is available." : "The keyword registry has no target pages."
+      ? view === "opportunities" ? "No opportunities meet the current thresholds." : view === "history" ? "No finalized search activity is available." : view === "log" ? "No actions or notes logged yet. Record one with the log CLI." : "The keyword registry has no target pages."
       : view === "opportunities"
         ? [
             ...(renderer.width >= 120 ? ["  TYPE                QUERY                            IMPRESSIONS"] : []),
@@ -321,7 +390,9 @@ export const showTui = async (initialStatus?: string) => {
           ].join("\n")
         : view === "history"
           ? historyTable(items as ReturnType<typeof historyWithPending>, window.items as ReturnType<typeof historyWithPending>, selected, window.start, renderer.width >= 120)
-          : registryTable(window.items as readonly RegistryTargetProgress[], selected, window.start, renderer.width >= 120, registryTargetWidth)
+          : view === "log"
+            ? logTable(items as readonly LogFeedEntry[], window.items as readonly LogFeedEntry[], selected, window.start, renderer.width >= 120, logTargetWidth)
+            : registryTable(window.items as readonly RegistryTargetProgress[], selected, window.start, renderer.width >= 120, registryTargetWidth)
     const item = selectedRow()
     if (!item) {
       detailSummaryTitle.content = "NO SELECTION"
@@ -391,6 +462,22 @@ export const showTui = async (initialStatus?: string) => {
       ].join("\n")
       detailBottomTitle.content = "28-DAY IMPRESSION CHART"
       detailBottomBody.content = historyChart(historyDays, selected, Math.max(23, Math.min(64, Math.floor(renderer.width * 0.42) - 10)))
+    } else if (view === "log") {
+      const entry = item as LogFeedEntry
+      detailSummaryTitle.content = `${logKindLabel(entry.kind)} · ${entry.date}`
+      detailSummaryBody.content = [
+        `Target: ${entry.path}`,
+        `Kind: ${logKindLabel(entry.kind)}${entry.isAction ? "" : " (annotation, not a change)"}`,
+        `Logged: ${entry.createdAt.slice(0, 10)}`,
+      ].join("\n")
+      detailTitle.content = "LOG ENTRY"
+      const readout = readoutLine(entry.readout)
+      detailBody.content = [
+        "NOTE",
+        entry.note || "No note recorded.",
+        "",
+        ...(readout ? ["BEFORE / AFTER", readout] : []),
+      ].join("\n")
     } else {
       const progress = item as RegistryTargetProgress
       const entry = progress.entries[0]!
@@ -441,7 +528,19 @@ export const showTui = async (initialStatus?: string) => {
         `Daily impressions: ${impressionEndpoints.first}  ${sparkline(impressionValues)}  ${impressionEndpoints.last}`,
         `Daily position:    ${positionEndpoints.first}  ${sparkline(positionValues, true)}  ${positionEndpoints.last} · lower is better`,
       ].join("\n")
-      detailBody.content = t`${measurementStatus}\n\n${fg("#F7FAFC")("WHY THIS IS AN OPPORTUNITY")}\n${entry.whyOpportunity || "No opportunity rationale has been recorded for this page."}\n\n${performanceDetails}`
+      const activity = logEntries.filter((logged) => logged.path === progress.targetUrl)
+      const activityDetails = [
+        `ACTIVITY · ${activity.length}`,
+        ...(activity.length > 0
+          ? activity.slice(0, 6).flatMap((logged) => {
+              const compact = logged.readout.state === "window"
+                ? ` · ${logged.readout.before.impressions} → ${logged.readout.after.impressions} impr${logged.readout.afterComplete ? "" : " (partial)"}`
+                : ""
+              return [`${logged.date} · ${logKindLabel(logged.kind)}${logged.note ? ` — ${logged.note}` : ""}${compact}`]
+            })
+          : ["No actions or notes logged for this page yet."]),
+      ].join("\n")
+      detailBody.content = t`${measurementStatus}\n\n${fg("#F7FAFC")("WHY THIS IS AN OPPORTUNITY")}\n${entry.whyOpportunity || "No opportunity rationale has been recorded for this page."}\n\n${performanceDetails}\n\n${fg("#F7FAFC")(activityDetails)}`
       detailBottomTitle.content = `KEYWORDS · ${keywordEntries.length}`
       detailBottomBody.content = keywordEntries.length > 0
         ? keywordEntries.map((mapped, index) => `${index + 1}. ${mapped.keyword}`).join("\n")
@@ -451,7 +550,9 @@ export const showTui = async (initialStatus?: string) => {
       ? "   ·   Dim rows: Google reports this page is not indexed."
       : view === "history"
         ? "   ·   Dim rows: site totals only; per-query data not finalized yet."
-        : ""
+        : view === "log"
+          ? "   ·   Dim rows: notes (annotations), not changes."
+          : ""
     footer.content = `${status === navigationHint(view) ? status : `${status}   ·   ${navigationHint(view)}`}${legend}`
   })
   renderer.on("selection", (selection) => {
@@ -477,14 +578,15 @@ export const showTui = async (initialStatus?: string) => {
       else if (key.name === "1") setView("opportunities")
       else if (key.name === "2") setView("history")
       else if (key.name === "3") setView("registry")
+      else if (key.name === "4") setView("log")
       else if (key.name === "s") {
         siteIndex = (siteIndex + 1) % sites.length
         activeSiteId = sites[siteIndex]?.id ?? "sleevy"
-        void Promise.all([inSite(() => loadRegistry()), inSite(() => loadCachedSitemapPages())]).then(([nextRegistry, nextSitemapPages]) => { registry = nextRegistry; sitemapPages = nextSitemapPages; digest = inSite(() => opportunityDigest(registry)); registryTargets = inSite(() => registryTargetProgress(registry)); selected = 0; status = `Switched to ${sites[siteIndex]?.name ?? activeSiteId}.`; render() })
+        void Promise.all([inSite(() => loadRegistry()), inSite(() => loadCachedSitemapPages()), inSite(() => logFeed())]).then(([nextRegistry, nextSitemapPages, nextLog]) => { registry = nextRegistry; sitemapPages = nextSitemapPages; logEntries = nextLog; digest = inSite(() => opportunityDigest(registry)); registryTargets = inSite(() => registryTargetProgress(registry)); selected = 0; status = `Switched to ${sites[siteIndex]?.name ?? activeSiteId}.`; render() })
         return
       }
       else if (key.name === "r") {
-        void Promise.all([inSite(() => loadRegistry()), inSite(() => loadCachedSitemapPages())]).then(([nextRegistry, nextSitemapPages]) => { registry = nextRegistry; sitemapPages = nextSitemapPages; digest = inSite(() => opportunityDigest(registry)); registryTargets = inSite(() => registryTargetProgress(registry)); status = "Reloaded keyword registry, sitemap cache, and local SQLite history."; render() })
+        void Promise.all([inSite(() => loadRegistry()), inSite(() => loadCachedSitemapPages()), inSite(() => logFeed())]).then(([nextRegistry, nextSitemapPages, nextLog]) => { registry = nextRegistry; sitemapPages = nextSitemapPages; logEntries = nextLog; digest = inSite(() => opportunityDigest(registry)); registryTargets = inSite(() => registryTargetProgress(registry)); status = "Reloaded keyword registry, sitemap cache, and local SQLite history."; render() })
         return
       }
       else if (key.name === "q") { renderer.destroy(); resolve(); return }

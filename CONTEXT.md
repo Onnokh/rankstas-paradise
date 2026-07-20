@@ -95,6 +95,9 @@ Whether Google's URL Inspection reports a target URL as in its index. Un-indexed
 
 ### Work record
 
+**Log**:
+The chronological record of Actions and Notes for a site (the `action_log` table). Each entry is attached to a **Target URL / Page** by its path — never to an individual keyword row, so many keyword rows sharing one target share one log. Surfaced site-wide, on a page's detail, and as a recent-activity glance on Home.
+
 **Action**:
 A concrete change made to a page to influence its ranking, recorded so before/after windows can be compared — one of `publish`, `content-update`, `title-change`, `internal-links`, or `consolidation`.
 _Avoid_: "intervention".

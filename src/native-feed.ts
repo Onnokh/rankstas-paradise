@@ -20,7 +20,7 @@
 // Dynamic text is scrubbed of tabs/newlines so the line format holds.
 import { debugMode } from "./config.ts"
 import { loadRegistry, type RegistryEntry } from "./registry.ts"
-import { opportunityLabels, phaseFor, readableIntent, shortAction, signalExplanation, signalMeaning, signalReason } from "./service.ts"
+import { logFeed, logKindLabel, opportunityLabels, phaseFor, readableIntent, recentActions, shortAction, signalExplanation, signalMeaning, signalReason, type LogFeedEntry, type LogReadout } from "./service.ts"
 import { currentSiteOrigin } from "./site.ts"
 import { loadCachedSitemapPages, unmappedSitemapPages } from "./sitemap.ts"
 import {
@@ -29,12 +29,13 @@ import {
   registryTargetProgress,
   snapshotSummary,
   targetPerformance,
+  type LogKind,
   type Metrics,
   type OpportunityKind,
   type OpportunitySignal,
 } from "./storage.ts"
 
-export type FeedView = "home" | "opportunities" | "history" | "registry"
+export type FeedView = "home" | "opportunities" | "history" | "registry" | "log"
 
 type Tone = "up" | "down" | "flat" | "warn" | ""
 
@@ -45,6 +46,15 @@ const kindIcons: Record<OpportunityKind, string> = {
   ctr: "eye",
   "new-demand": "search",
   cannibalization: "git-branch",
+}
+
+const logIcons: Record<LogKind, string> = {
+  publish: "rocket",
+  "content-update": "file-text",
+  "title-change": "type",
+  "internal-links": "link",
+  consolidation: "git-merge",
+  note: "message-square",
 }
 
 const scrub = (text: string) => text.replaceAll("\t", " ").replaceAll("\n", " ").replaceAll("\r", " ")
@@ -156,6 +166,58 @@ const registryForSignal = (signal: OpportunitySignal, registry: readonly Registr
   return byKeyword ?? registry.find((entry) => entry.targetUrl === new URL(signal.page).pathname)
 }
 
+// One-line before/after summary for an Action, e.g. "120 → 180 impr". Empty for
+// notes and unmeasurable actions — used inside dense list contexts (target rail).
+const compactReadout = (readout: LogReadout): string =>
+  readout.state === "window" ? `${readout.before.impressions} → ${readout.after.impressions} impr${readout.afterComplete ? "" : " (partial)"}` : ""
+
+// Detail-panel nodes for a single log entry, shared by the Log view and the
+// per-target activity section. `withTarget` adds the page when the surrounding
+// context doesn't already name it.
+const logDetailNodes = (entry: LogFeedEntry, withTarget: boolean): DetailNode[] => {
+  const nodes: DetailNode[] = [
+    title(`${logKindLabel(entry.kind)} · ${shortDate(entry.date)}`),
+    { kind: "dkv", label: "Date", value: entry.date },
+    { kind: "dkv", label: "Kind", value: logKindLabel(entry.kind), tone: entry.isAction ? "" : "flat" },
+  ]
+  if (withTarget) nodes.push({ kind: "dkv", label: "Target", value: entry.path })
+  nodes.push(sect("Note"), prose(entry.note || "No note recorded."))
+  const readout = entry.readout
+  if (readout.state === "window") {
+    const deltaImpressions = readout.after.impressions - readout.before.impressions
+    const deltaClicks = readout.after.clicks - readout.before.clicks
+    nodes.push(
+      sect(`Before / after · ${readout.scope === "non-brand" ? "non-brand" : "all queries"}`),
+      { kind: "dkv", label: "28 days before", value: `${readout.before.impressions} impressions · ${readout.before.clicks} clicks` },
+      { kind: "dkv", label: `28 days after${readout.afterComplete ? "" : " (partial)"}`, value: `${readout.after.impressions} impressions · ${readout.after.clicks} clicks` },
+      { kind: "dkv", label: "Change", value: `${signed(deltaImpressions)} impressions · ${signed(deltaClicks)} clicks`, tone: toneFor(deltaImpressions) },
+    )
+  } else if (entry.isAction) {
+    nodes.push(info("No measured window around this date yet."))
+  }
+  return nodes
+}
+
+export const logView = async (): Promise<string> => {
+  const entries = await logFeed()
+  const actionCount = entries.filter((entry) => entry.isAction).length
+  const meta: Meta[] = [
+    { label: "Log entries", value: String(entries.length) },
+    { label: "Actions", value: String(actionCount) },
+    { label: "Notes", value: String(entries.length - actionCount) },
+    { label: "Latest", value: entries[0] ? shortDate(entries[0].date) : "—" },
+  ]
+  const rows: FeedRow[] = entries.map((entry, index) => ({
+    id: index,
+    columns: [shortDate(entry.date), logKindLabel(entry.kind), entry.path, entry.note || "—", "", ""],
+    url: `${currentSiteOrigin()}${entry.path}`,
+    icon: logIcons[entry.kind],
+    tone: entry.isAction ? "" : "flat",
+    nodes: logDetailNodes(entry, true),
+  }))
+  return document(meta, ["DATE", "KIND", "TARGET", "NOTE", "", ""], rows)
+}
+
 export const homeFeed = async (): Promise<string> => {
   const registry = await loadRegistry()
   const sitemapPages = await loadCachedSitemapPages()
@@ -208,6 +270,24 @@ export const homeFeed = async (): Promise<string> => {
       prose("Add a page-only registry row, then assign keywords only when research or observed demand supports them."),
       sect("Unmapped pages"),
       ...(sitemapGaps.length > 0 ? sitemapGaps.map((page) => item(page.path)) : [prose("Every sitemap page is represented in the registry.")]),
+    ],
+  })
+  const recent = recentActions(3)
+  rows.push({
+    id: opportunityKinds.length + 1,
+    columns: ["Recent activity", recent.length, "", "", "", ""],
+    url: "",
+    icon: "history",
+    tone: "",
+    nodes: [
+      title("Recent activity"),
+      ...windowNodes,
+      sect("What it means"),
+      prose("The most recent interventions logged across this site. Notes are excluded from this glance — open the Log view for the full record with before/after readouts."),
+      sect(`Latest actions · ${recent.length}`),
+      ...(recent.length > 0
+        ? recent.map((entry) => item(`${shortDate(entry.date)} · ${logKindLabel(entry.kind)} · ${entry.path}${entry.note ? ` — ${entry.note}` : ""}`))
+        : [prose("No actions logged yet. Record one with the log CLI.")]),
     ],
   })
   return document(siteKpis(), ["SIGNAL CATEGORY", "COUNT", "", "", "", ""], rows)
@@ -304,6 +384,8 @@ export const historyFeed = (): string => {
 export const registryFeed = async (): Promise<string> => {
   const registry = await loadRegistry()
   const targets = registryTargetProgress(registry)
+  const logByTarget = new Map<string, LogFeedEntry[]>()
+  for (const entry of await logFeed()) logByTarget.set(entry.path, [...(logByTarget.get(entry.path) ?? []), entry])
   const liveCount = targets.filter((progress) => phaseFor(progress) === "LIVE").length
   const indexedCount = targets.filter((progress) => progress.indexStatus === "indexed").length
   const p0Count = targets.filter((progress) => (progress.entries[0]?.priority ?? "") === "P0").length
@@ -317,6 +399,7 @@ export const registryFeed = async (): Promise<string> => {
     const entry = progress.entries[0]!
     const keywordEntries = progress.entries.filter((mapped) => mapped.keyword.trim())
     const inventoryOnly = keywordEntries.length === 0
+    const activity = logByTarget.get(progress.targetUrl) ?? []
     const performance = targetPerformance(progress.targetUrl, inventoryOnly)
     const momentum = performance.last7.impressions - performance.previous7.impressions
     const momentumLabel = performance.previous7.impressions > 0
@@ -345,7 +428,9 @@ export const registryFeed = async (): Promise<string> => {
       ],
       url: `${currentSiteOrigin()}${progress.targetUrl}`,
       icon: "",
-      tone: "",
+      // Dim rows for pages Google has not confirmed indexed (not-indexed or
+      // unknown) so the list reads indexed-vs-not at a glance.
+      tone: progress.indexStatus === "indexed" ? "" : "flat",
       nodes: [
         title(progress.targetUrl),
         ...metricCards(performance.total),
@@ -370,6 +455,13 @@ export const registryFeed = async (): Promise<string> => {
         { kind: "dkv", label: "Last 7 days", value: `${performance.last7.impressions} impressions · ${performance.last7.clicks} clicks` },
         { kind: "dkv", label: "Previous 7 days", value: `${performance.previous7.impressions} impressions · ${performance.previous7.clicks} clicks` },
         { kind: "dkv", label: "Change", value: momentumLabel, tone: toneFor(momentum) },
+        sect(`Activity · ${activity.length}`),
+        ...(activity.length > 0
+          ? activity.map((entry) => {
+              const compact = compactReadout(entry.readout)
+              return item(`${shortDate(entry.date)} · ${logKindLabel(entry.kind)}${entry.note ? ` — ${entry.note}` : ""}${compact ? ` · ${compact}` : ""}`)
+            })
+          : [prose("No actions or notes logged for this page yet.")]),
         // An all-zero series renders as an empty strip under a label — skip
         // the chart node entirely until the page has impressions.
         ...(trendDays.some((day) => day.impressions > 0)
@@ -391,5 +483,6 @@ export const feedFor = (view: FeedView): Promise<string> | string => {
     case "opportunities": return opportunitiesFeed()
     case "history": return historyFeed()
     case "registry": return registryFeed()
+    case "log": return logView()
   }
 }

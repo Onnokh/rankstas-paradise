@@ -356,7 +356,7 @@ export const historyWithPending = (limit = 28): HistoryDay[] => {
   return days.slice(-limit)
 }
 
-const dateDaysBefore = (date: string, days: number) => {
+export const dateDaysBefore = (date: string, days: number) => {
   const value = new Date(`${date}T00:00:00.000Z`)
   value.setUTCDate(value.getUTCDate() - days)
   return value.toISOString().slice(0, 10)
@@ -778,6 +778,31 @@ export const listLog = (path?: string): LogEntry[] => {
   `).all(path ?? "", path ?? "")
   db.close()
   return rows.map(({ created_at, ...rest }) => ({ ...rest, createdAt: created_at }))
+}
+
+export const latestSnapshotDate = (): string | null => {
+  const db = database()
+  const date = db.query<{ readonly date: string | null }, []>(`select max(date) as date from search_snapshot`).get()?.date ?? null
+  db.close()
+  return date
+}
+
+// Sum a page's stored per-query metrics over an inclusive date range. Mirrors
+// the aggregation used by registryProgress / capturePageBaselines, but between
+// arbitrary dates — the primitive behind a log entry's before/after readout.
+export const metricsBetween = (targetUrl: string, start: string, end: string, includeBrand = false): Metrics => {
+  const db = database()
+  const row = db.query<Metrics, [string, string, string, number]>(`
+    select coalesce(sum(impressions), 0) as impressions,
+           coalesce(sum(clicks), 0) as clicks,
+           case when sum(impressions) > 0 then sum(clicks) * 1.0 / sum(impressions) else 0 end as ctr,
+           case when sum(impressions) > 0 then sum(position * impressions) * 1.0 / sum(impressions) else 0 end as position
+    from search_snapshot
+    where page = ? and date between ? and ?
+      and (? = 1 or lower(query) not like '${brandPattern()}')
+  `).get(`${currentSiteOrigin()}${targetUrl}`, start, end, includeBrand ? 1 : 0)!
+  db.close()
+  return row
 }
 
 export const capturePageBaselines = (entries: readonly RegistryEntry[], baselineDate: string) => {

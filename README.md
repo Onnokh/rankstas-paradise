@@ -20,7 +20,7 @@ Registry labels inventory-only rows as `PAGE` and reports all-query page visibil
 
 Registry uses the Google Search Console URL Inspection API to dim targets Google reports as unindexed. The daily sync refreshes this status for every registry target; failed inspections retain the most recent cached result.
 
-Open the application with `bun run seo`. It is a keyboard-first master-detail dashboard: use `↑`/`↓` to select a row, and `Enter` to open the selected target page in your browser. Use `1` for opportunities, `2` for daily history, `3` for the registry, `r` to reload local SQLite/CSV data, and `q` to quit.
+Open the application with `bun run seo`. It is a keyboard-first master-detail dashboard: use `↑`/`↓` to select a row, and `Enter` to open the selected target page in your browser. Use `1` for opportunities, `2` for daily history, `3` for the registry, `4` for the activity log, `r` to reload local SQLite/CSV data, and `q` to quit. The Log view lists every recorded Action and Note newest-first; each action's detail shows a before/after readout (28 days before the action date versus 28 days after, marked partial while fewer than 28 days have finalized). Home shows the latest few actions, and each registry target's detail lists its own activity.
 
 TUI startup keeps a local ledger of finalized dates, fetches every missing day through Google’s latest finalized date, and reconciles the five newest finalized days before building each view from SQLite. Reconciled days are replaced as a complete unit, so changed or removed rows are reflected. Dates returning zero rows are recorded too. If Google is temporarily unavailable, the dashboard still opens with cached data and reports the refresh failure in the footer.
 

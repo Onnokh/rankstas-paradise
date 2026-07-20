@@ -50,7 +50,7 @@ latest=2026-07-14|window=2026-06-17..2026-07-14
 
 Metrics prefer `trueTotals` and fall back to `allQueries` (current window). The native app lives at `~/Documents/sleevy-native-proto`.
 
-`GET /tui/home.txt`, `/tui/opportunities.txt`, `/tui/history.txt`, `/tui/registry.txt` — full TUI-mirroring view feeds ([src/native-feed.ts](../src/native-feed.ts)), tab-separated:
+`GET /tui/home.txt`, `/tui/opportunities.txt`, `/tui/history.txt`, `/tui/registry.txt`, `/tui/log.txt` — full TUI-mirroring view feeds ([src/native-feed.ts](../src/native-feed.ts)), tab-separated:
 
 ```
 header <TAB> <one header line>

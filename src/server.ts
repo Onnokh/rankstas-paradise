@@ -148,7 +148,8 @@ const handle = async (request: Request): Promise<Response> => {
     case "GET /tui/home.txt":
     case "GET /tui/opportunities.txt":
     case "GET /tui/history.txt":
-    case "GET /tui/registry.txt": {
+    case "GET /tui/registry.txt":
+    case "GET /tui/log.txt": {
       const view = url.pathname.slice("/tui/".length, -".txt".length) as FeedView
       return new Response(await withSite(site, () => feedFor(view)), { headers: { "content-type": "text/plain" } })
     }

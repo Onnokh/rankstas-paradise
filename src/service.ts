@@ -5,10 +5,14 @@
 import { appendRegistryEntry, loadRegistry, updateRegistryRows, type RegistryEntry, type RegistryPatch } from "./registry.ts"
 import { loadCachedSitemapPages, unmappedSitemapPages } from "./sitemap.ts"
 import {
+  actionKinds,
   addLogEntry,
+  dateDaysBefore,
   history,
+  latestSnapshotDate,
   listLog,
   logKinds,
+  metricsBetween,
   opportunityDigest,
   pagesWindowOverview,
   registryTargetProgress,
@@ -16,6 +20,8 @@ import {
   snapshotSummary,
   targetPerformance,
   topQueries,
+  type ActionKind,
+  type LogEntry,
   type LogKind,
   type Metrics,
   type OpportunityKind,
@@ -431,6 +437,70 @@ export const logAdd = (input: LogAddInput) => {
 }
 
 export const logList = (path?: string) => ({ actions: listLog(path) })
+
+// Human-readable label per log kind. Notes read as "Note"; actions read as a
+// past-tense-ish phrase. Shared by both front-ends so the wording never drifts.
+export const actionKindLabels: Record<ActionKind, string> = {
+  publish: "Published",
+  "content-update": "Content update",
+  "title-change": "Title change",
+  "internal-links": "Internal links",
+  consolidation: "Consolidation",
+}
+
+export const logKindLabel = (kind: LogKind): string => kind === "note" ? "Note" : actionKindLabels[kind]
+
+// A log entry's before/after readout: "none" for Notes (not a change), "window"
+// for Actions on a mapped target with data, "unavailable" when the target is
+// unmapped or no snapshot data brackets the action date. Windows are symmetric
+// 28/28 around the action date; the after window shrinks to available data and
+// is marked incomplete when fewer than 28 days have finalized since.
+export type LogReadout =
+  | { readonly state: "none" }
+  | { readonly state: "unavailable" }
+  | {
+      readonly state: "window"
+      readonly scope: "non-brand" | "all-queries"
+      readonly before: Metrics
+      readonly after: Metrics
+      readonly afterComplete: boolean
+    }
+
+export type LogFeedEntry = LogEntry & { readonly isAction: boolean; readonly readout: LogReadout }
+
+const zeroMetrics: Metrics = { impressions: 0, clicks: 0, ctr: 0, position: 0 }
+
+const readoutFor = (entry: LogEntry, registry: readonly RegistryEntry[], latestDate: string | null): LogReadout => {
+  if (entry.kind === "note") return { state: "none" }
+  const matches = registry.filter((mapped) => mapped.targetUrl === entry.path)
+  if (matches.length === 0 || !latestDate) return { state: "unavailable" }
+  const inventoryOnly = matches.every((mapped) => !mapped.keyword.trim())
+  const scope = inventoryOnly ? "all-queries" as const : "non-brand" as const
+  const beforeStart = dateDaysBefore(entry.date, 28)
+  const beforeEnd = dateDaysBefore(entry.date, 1)
+  const afterEndFull = dateDaysBefore(entry.date, -27)
+  const afterEnd = afterEndFull <= latestDate ? afterEndFull : latestDate
+  const before = metricsBetween(entry.path, beforeStart, beforeEnd, inventoryOnly)
+  const after = afterEnd >= entry.date ? metricsBetween(entry.path, entry.date, afterEnd, inventoryOnly) : zeroMetrics
+  if (before.impressions === 0 && after.impressions === 0) return { state: "unavailable" }
+  return { state: "window", scope, before, after, afterComplete: afterEndFull <= latestDate }
+}
+
+const enrichLog = (entries: readonly LogEntry[], registry: readonly RegistryEntry[]): LogFeedEntry[] => {
+  const latestDate = latestSnapshotDate()
+  return entries.map((entry) => ({ ...entry, isAction: entry.kind !== "note", readout: readoutFor(entry, registry, latestDate) }))
+}
+
+// Site-wide log (path omitted) or a single target's log, newest-first, each
+// entry enriched with its before/after readout. Both Actions and Notes.
+export const logFeed = async (path?: string): Promise<LogFeedEntry[]> => {
+  const registry = await loadRegistry()
+  return enrichLog(listLog(path), registry)
+}
+
+// The latest N Actions (Notes excluded) across the site — the Home glance.
+export const recentActions = (limit = 3): LogEntry[] =>
+  listLog().filter((entry) => entry.kind !== "note").slice(0, limit)
 
 export const sparkline = (values: readonly number[], lowerIsBetter = false) => {
   const observed = values.filter((value) => value > 0)
