@@ -96,14 +96,13 @@ The server keeps data fresh two ways, and you configure only the second:
 - **Read-driven (automatic, no config).** Every read — an app over HTTP or an agent over MCP — warms the site: if its ledger hasn't been reconciled within the reconciliation window (6h), the read kicks a background sync and still returns current data immediately. Concurrent or in-flight syncs coalesce into a no-op (the single-job guard), so bursty agent traffic can't stack jobs or exhaust Google's quota. A warm site is never more than a few hours stale.
 - **Scheduled floor (you configure this).** The read path only fires when *something* reads. For a site nothing touches for a day, add a Coolify **Scheduled Task** per site, daily, as the cold-start floor. The task runs inside the container, so `localhost:$SEO_PORT` reaches the service and `$RP_TOKEN` is already in the environment.
 
-One command per configured site id:
+One command per configured site id. The `oven/bun:1` image has no `curl`/`wget`, so poke the endpoint with Bun itself (always present as the runtime) rather than adding a client to the image:
 
 ```sh
-curl -fsS -X POST "http://localhost:8790/api/jobs/sync?site=<site-id>" \
-  -H "Authorization: Bearer $RP_TOKEN"
+bun -e 'const r=await fetch("http://localhost:8790/api/jobs/sync?site=<site-id>",{method:"POST",headers:{authorization:"Bearer "+process.env.RP_TOKEN}});console.log(r.status,await r.text());process.exit(r.ok||r.status===409?0:1)'
 ```
 
-- Schedule daily, e.g. `0 6 * * *`. Stagger the sites by a few minutes — only one job runs at a time (a second returns `409`, which for the cron is harmless: it just means a read-triggered sync is already running).
+- Schedule daily, e.g. `0 6 * * *`. Stagger the sites by a few minutes — only one job runs at a time (a second returns `409`, which for the cron is harmless: it just means a read-triggered sync is already running, so the command treats `409` as success).
 
 > The single-job guard is in-process, so it assumes **one** server instance. Don't scale the service to multiple replicas against the same volume without adding a shared lock — concurrent syncs would race the delete-then-insert writes.
 
