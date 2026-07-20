@@ -1,3 +1,5 @@
+import { homedir } from "node:os"
+
 import { Effect } from "effect"
 
 export type SeoConfig = {
@@ -14,8 +16,13 @@ export type SeoConfig = {
   }[]
 }
 
-const configPath = `${import.meta.dir}/../config.json`
-export const dataDirectory = `${import.meta.dir}/../data`
+// Config and data live in one XDG-style app home (~/.config/rankstas-paradise,
+// or $XDG_CONFIG_HOME/rankstas-paradise) — never next to the code. A global
+// or `npx` install runs from an ephemeral package directory, so anything the
+// tool reads or writes has to be anchored in the user's home instead.
+const configHome = process.env.XDG_CONFIG_HOME ?? `${homedir()}/.config`
+export const dataDirectory = `${configHome}/rankstas-paradise`
+const configPath = `${dataDirectory}/config.json`
 export const tokenPath = `${dataDirectory}/google-token.json`
 export const debugMode = Bun.argv.includes("--debug")
 
