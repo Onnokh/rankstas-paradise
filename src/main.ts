@@ -11,7 +11,7 @@ import { showTui } from "./tui.ts"
 // --debug and the mode flags are global switches, not commands/arguments; strip
 // them so `bun run seo --local status` still dispatches the "status" command
 // (and `bun run seo --local` with no command still opens the TUI).
-const globalFlags = new Set(["--debug", "--local", "--network", "--remote"])
+const globalFlags = new Set(["--debug", "--local", "--network"])
 const cliArguments = Bun.argv.slice(2).filter((argument) => !globalFlags.has(argument))
 if (cliArguments.length > 0) {
   const { runCli } = await import("./cli.ts")
