@@ -276,7 +276,7 @@ export const showTui = async (initialStatus?: string) => {
       : 0
     detailBottom.border = showBottomPanel ? ["top"] : false
     const site = sites[siteIndex]!
-    header.content = `${site.name} SEO  ·  ${site.origin}  ·  ${summary.rows} Search Console rows across ${summary.dates} finalized days  ·  ${debugMode ? "DEBUG" : "LIVE"}`
+    header.content = `Ranksta’s Paradise  ·  ${site.origin}  ·  ${summary.rows} Search Console rows across ${summary.dates} finalized days  ·  ${debugMode ? "DEBUG" : "LIVE"}`
     nav.content = views.map((item, index) => `${index === activeView ? "[" : " "}${item.key} ${item.label}${index === activeView ? "]" : " "}`).join("  ")
     if (view === "home") {
       selected = Math.max(0, Math.min(selected, homeCategories.length - 1))
