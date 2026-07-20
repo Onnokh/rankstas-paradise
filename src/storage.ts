@@ -237,6 +237,9 @@ export type HistoryDay = {
   readonly clicks: number
   readonly ctr: number
   readonly position: number
+  // True when the day has site-level totals but Google has not finalized the
+  // per-query breakdown yet, so it is not counted in query/page/opportunity views.
+  readonly provisional?: boolean
 }
 
 export type Metrics = {
@@ -326,6 +329,31 @@ export const history = (limit = 28): HistoryDay[] => {
   `).all(limit)
   db.close()
   return rows.reverse()
+}
+
+// History for the dashboard: finalized days summed from query rows, plus any
+// newer days that already have site-level totals but no finalized query
+// breakdown yet. Those trailing days are flagged provisional so the UI can show
+// how current the data is while marking them as not-yet-counted.
+export const historyWithPending = (limit = 28): HistoryDay[] => {
+  const db = database()
+  const finalRows = db.query<HistoryDay, []>(`
+    select date, sum(impressions) as impressions, sum(clicks) as clicks,
+           sum(clicks) * 1.0 / sum(impressions) as ctr,
+           sum(position * impressions) * 1.0 / sum(impressions) as position
+    from search_snapshot
+    group by date
+  `).all()
+  const latestFinal = finalRows.reduce((latest, row) => (row.date > latest ? row.date : latest), "")
+  const pendingRows = db.query<HistoryDay, [string]>(`
+    select date, impressions, clicks, ctr, position from site_daily where date > ?
+  `).all(latestFinal)
+  db.close()
+  const days = [
+    ...finalRows.map((row) => ({ ...row, provisional: false })),
+    ...pendingRows.map((row) => ({ ...row, provisional: true })),
+  ].sort((left, right) => (left.date < right.date ? -1 : 1))
+  return days.slice(-limit)
 }
 
 const dateDaysBefore = (date: string, days: number) => {

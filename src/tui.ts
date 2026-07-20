@@ -4,7 +4,7 @@ import { debugMode } from "./config.ts"
 import { loadRegistry, type RegistryEntry } from "./registry.ts"
 import { opportunityLabels, phaseFor, readableIntent, shortAction, signalExplanation, signalMeaning, signalReason, sparkline } from "./service.ts"
 import { loadCachedSitemapPages, unmappedSitemapPages } from "./sitemap.ts"
-import { history, opportunityDigest, registryTargetProgress, snapshotSummary, targetPerformance, type OpportunityKind, type OpportunitySignal, type RegistryTargetProgress } from "./storage.ts"
+import { historyWithPending, opportunityDigest, registryTargetProgress, snapshotSummary, targetPerformance, type OpportunityKind, type OpportunitySignal, type RegistryTargetProgress } from "./storage.ts"
 import { loadSites, withSite, type Site } from "./site.ts"
 
 type View = "home" | "opportunities" | "history" | "registry"
@@ -54,12 +54,24 @@ const registryTable = (targets: readonly RegistryTargetProgress[], selected: num
   return new StyledText(chunks)
 }
 
-const historyRow = (day: ReturnType<typeof history>[number], previous: ReturnType<typeof history>[number] | undefined, selected: boolean, wide: boolean) => {
+const historyRow = (day: ReturnType<typeof historyWithPending>[number], previous: ReturnType<typeof historyWithPending>[number] | undefined, selected: boolean, wide: boolean) => {
   const change = previous ? day.impressions - previous.impressions : null
   const changeLabel = change === null ? "—" : `${change >= 0 ? "+" : ""}${change}`
   return wide
     ? `${selected ? "▶" : " "} ${day.date} ${day.impressions.toString().padStart(11)} ${changeLabel.padStart(9)} ${day.clicks.toString().padStart(7)} ${`${(day.ctr * 100).toFixed(1)}%`.padStart(7)} ${day.position.toFixed(1).padStart(12)}`
     : `${selected ? "▶" : " "} ${day.date.slice(5)} ${day.impressions.toString().padStart(5)} ${changeLabel.padStart(5)} ${day.clicks.toString().padStart(4)} ${`${(day.ctr * 100).toFixed(1)}%`.padStart(5)} ${day.position.toFixed(1).padStart(5)}`
+}
+
+const historyTable = (allDays: readonly ReturnType<typeof historyWithPending>[number][], visible: readonly ReturnType<typeof historyWithPending>[number][], selected: number, start: number, wide: boolean) => {
+  const header = wide
+    ? "  DATE        IMPRESSIONS    CHANGE  CLICKS     CTR AVG. POSITION"
+    : "  DATE   IMPR.   Δ  CLK   CTR  POS."
+  const chunks = [...t`${header}\n`.chunks]
+  visible.forEach((day, index) => {
+    const row = historyRow(day, allDays[start + index - 1], start + index === selected, wide)
+    chunks.push(...t`${day.provisional ? fg("#718096")(row) : row}\n`.chunks)
+  })
+  return new StyledText(chunks)
 }
 
 const formatMetric = (value: number) => value >= 10_000
@@ -74,7 +86,7 @@ const navigationHint = (view: View) => view === "home"
     ? "Mouse drag copies section   ↑↓ select day   ←→ navigate sections   s switch site   r reload   q quit"
     : `Mouse drag copies section   ↑↓ select ${view === "registry" ? "target" : "opportunity"}   ←→ navigate sections   s switch site   Enter open page   r reload   q quit`
 
-const historyChart = (days: readonly ReturnType<typeof history>[number][], selected: number, width = 23) => {
+const historyChart = (days: readonly ReturnType<typeof historyWithPending>[number][], selected: number, width = 23) => {
   const height = 8
   const values = days.map((day) => day.impressions)
   const maximum = Math.max(...values, 1)
@@ -162,7 +174,7 @@ export const showTui = async (initialStatus?: string) => {
   app.add(footer)
   renderer.root.add(app)
 
-  const rows = () => view === "home" ? homeCategories : view === "opportunities" ? digest.signals : view === "history" ? inSite(() => history()) : registryTargets
+  const rows = () => view === "home" ? homeCategories : view === "opportunities" ? digest.signals : view === "history" ? inSite(() => historyWithPending()) : registryTargets
   const selectedRow = () => rows()[selected]
   const visibleRows = <T>(items: readonly T[]) => {
     const hasTableHeader = view === "registry" || view === "history" || (view === "opportunities" && renderer.width >= 120)
@@ -170,7 +182,7 @@ export const showTui = async (initialStatus?: string) => {
     const start = Math.min(Math.max(0, selected - Math.floor(limit / 2)), Math.max(0, items.length - limit))
     return { start, items: items.slice(start, start + limit) }
   }
-  const setView = (next: View) => { view = next; selected = next === "history" ? Math.max(0, inSite(() => history()).length - 1) : 0 }
+  const setView = (next: View) => { view = next; selected = next === "history" ? Math.max(0, inSite(() => historyWithPending()).length - 1) : 0 }
   const moveView = (direction: -1 | 1) => {
     const index = views.findIndex((item) => item.view === view)
     setView(views[(index + direction + views.length) % views.length]!.view)
@@ -308,10 +320,7 @@ export const showTui = async (initialStatus?: string) => {
             ...(window.items as OpportunitySignal[]).map((signal, index) => opportunityRow(signal, window.start + index === selected, renderer.width >= 120)),
           ].join("\n")
         : view === "history"
-          ? [
-              renderer.width >= 120 ? "  DATE        IMPRESSIONS    CHANGE  CLICKS     CTR AVG. POSITION" : "  DATE   IMPR.   Δ  CLK   CTR  POS.",
-              ...(window.items as ReturnType<typeof history>).map((day, index) => historyRow(day, (items as ReturnType<typeof history>)[window.start + index - 1], window.start + index === selected, renderer.width >= 120)),
-            ].join("\n")
+          ? historyTable(items as ReturnType<typeof historyWithPending>, window.items as ReturnType<typeof historyWithPending>, selected, window.start, renderer.width >= 120)
           : registryTable(window.items as readonly RegistryTargetProgress[], selected, window.start, renderer.width >= 120, registryTargetWidth)
     const item = selectedRow()
     if (!item) {
@@ -359,11 +368,11 @@ export const showTui = async (initialStatus?: string) => {
         signalReason(signal),
       ].join("\n")
     } else if (view === "history") {
-      const row = item as ReturnType<typeof history>[number]
-      const historyDays = items as ReturnType<typeof history>
+      const row = item as ReturnType<typeof historyWithPending>[number]
+      const historyDays = items as ReturnType<typeof historyWithPending>
       const previousDay = historyDays[selected - 1]
       const signed = (value: number, digits = 0) => `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`
-      detailSummaryTitle.content = row.date
+      detailSummaryTitle.content = `${row.date}${row.provisional ? "  ·  provisional" : ""}`
       detailSummaryBody.content = [
         `Impressions: ${row.impressions}`,
         `Clicks: ${row.clicks}`,
@@ -376,7 +385,9 @@ export const showTui = async (initialStatus?: string) => {
           ? `Compared with ${previousDay.date}: ${signed(row.impressions - previousDay.impressions)} impressions · ${signed(row.clicks - previousDay.clicks)} clicks · ${signed((row.ctr - previousDay.ctr) * 100, 1)} percentage points CTR.`
           : "This is the first stored reporting day, so no previous-day comparison is available.",
         "",
-        "Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.",
+        row.provisional
+          ? "Provisional: site-level totals only. Google has not finalized the per-query breakdown for this day, so it is not yet counted in query, page, or opportunity views."
+          : "Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.",
       ].join("\n")
       detailBottomTitle.content = "28-DAY IMPRESSION CHART"
       detailBottomBody.content = historyChart(historyDays, selected, Math.max(23, Math.min(64, Math.floor(renderer.width * 0.42) - 10)))
@@ -436,7 +447,12 @@ export const showTui = async (initialStatus?: string) => {
         ? keywordEntries.map((mapped, index) => `${index + 1}. ${mapped.keyword}`).join("\n")
         : "No keyword target assigned; this page is tracked as sitemap inventory."
     }
-    footer.content = `${status === navigationHint(view) ? status : `${status}   ·   ${navigationHint(view)}`}${view === "registry" ? "   ·   Dim rows: Google reports this page is not indexed." : ""}`
+    const legend = view === "registry"
+      ? "   ·   Dim rows: Google reports this page is not indexed."
+      : view === "history"
+        ? "   ·   Dim rows: site totals only; per-query data not finalized yet."
+        : ""
+    footer.content = `${status === navigationHint(view) ? status : `${status}   ·   ${navigationHint(view)}`}${legend}`
   })
   renderer.on("selection", (selection) => {
     const text = selection.getSelectedText()
