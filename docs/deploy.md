@@ -1,6 +1,6 @@
 # Deploy (Coolify)
 
-Ranksta's Paradise runs as a single Bun HTTP service. All state lives on one persistent volume; Google credentials are seeded onto that volume, never baked into the image. The ADR ([docs/adr/0001-rp-as-hosted-service.md](adr/0001-rp-as-hosted-service.md)) is the source of truth.
+Ranksta's Paradise runs as a single Bun HTTP service. State lives on one persistent volume; the bearer token and Google client credentials are env secrets, and the OAuth token is seeded onto the volume — nothing is baked into the image. The ADR ([docs/adr/0001-rp-as-hosted-service.md](adr/0001-rp-as-hosted-service.md)) is the source of truth.
 
 ## 1. Service
 
@@ -22,21 +22,23 @@ Without the volume the token and history are lost on every redeploy.
 | Var | Required | Notes |
 |---|---|---|
 | `RP_TOKEN` | yes (secret) | Bearer token required on every request. Use a long random value. |
+| `GOOGLE_CLIENT_ID` | yes (secret) | Desktop OAuth client id. Overrides `config.json` if both are set. |
+| `GOOGLE_CLIENT_SECRET` | yes (secret) | Desktop OAuth client secret. |
 | `XDG_CONFIG_HOME` | yes | Set to `/data` (see above). |
 | `SEO_PORT` | no | Defaults to 8790. |
 
-No Google secrets go in env — they live in `config.json` on the volume (next step).
+The Google **client id/secret** are static, so they go in env (Coolify secrets). Everything else Google/data-related is a file on the volume (next step). See [src/config.ts](../src/config.ts): env takes precedence, `config.json` is the fallback.
 
 ## 4. Seed the volume
 
-Google creds and the OAuth token are files under the app home, not env:
+Two files still live under the app home — they can't be env vars:
 
-- `config.json` — `googleClientId`, `googleClientSecret`, `siteUrl`, and the `sites` array (see [config.example.json](../config.example.json)).
-- `google-token.json` — minted once locally, refreshed headlessly thereafter.
+- `config.json` — only `siteUrl` and the `sites` array now (the client id/secret come from env). See [config.example.json](../config.example.json).
+- `google-token.json` — the OAuth token, **mutable** (the app rewrites it on every refresh), so it must be on a writable volume.
 
 Steps:
 
-1. On the Mac, with a valid `config.json`, run `bun run seo` once and complete Google's OAuth flow. This writes `~/.config/rankstas-paradise/google-token.json`.
+1. On the Mac, with a valid local `config.json`, run `bun run seo` once and complete Google's OAuth flow. This writes `~/.config/rankstas-paradise/google-token.json`.
 2. Copy both files onto the volume at `/data/rankstas-paradise/`:
    - Coolify file manager, or
    - `scp config.json google-token.json <server>:<volume-path>/rankstas-paradise/`
