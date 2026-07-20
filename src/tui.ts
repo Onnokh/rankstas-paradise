@@ -71,14 +71,15 @@ const registryRow = (progress: RegistryTargetProgress, selected: boolean, wide: 
   const keywordCount = progress.entries.filter((entry) => entry.keyword.trim()).length
   const phase = phaseFor(progress)
   const priority = progress.entries[0]?.priority ?? "—"
-  if (wide) return `${selected ? "▶" : " "} ${priority.padEnd(8)} ${progress.targetUrl.padEnd(targetWidth)} ${keywordCount.toString().padStart(8)} ${formatMetric(progress.target.impressions).padStart(11)} ${formatMetric(progress.target.clicks).padStart(7)} ${phase}`
-  return `${selected ? "▶" : " "} ${priority} ${progress.targetUrl.padEnd(targetWidth)} ${keywordCount.toString().padStart(2)} ${formatMetric(progress.target.impressions).padStart(4)} ${formatMetric(progress.target.clicks).padStart(3)} ${phase}`
+  const ctr = progress.target.impressions > 0 ? `${(progress.target.ctr * 100).toFixed(1)}%` : "—"
+  if (wide) return `${selected ? "▶" : " "} ${priority.padEnd(8)} ${progress.targetUrl.padEnd(targetWidth)} ${keywordCount.toString().padStart(8)} ${formatMetric(progress.target.impressions).padStart(11)} ${formatMetric(progress.target.clicks).padStart(7)} ${ctr.padStart(7)} ${phase}`
+  return `${selected ? "▶" : " "} ${priority} ${progress.targetUrl.padEnd(targetWidth)} ${keywordCount.toString().padStart(2)} ${formatMetric(progress.target.impressions).padStart(4)} ${formatMetric(progress.target.clicks).padStart(3)} ${ctr.padStart(6)} ${phase}`
 }
 
 const registryTable = (targets: readonly RegistryTargetProgress[], selected: number, start: number, wide: boolean, targetWidth: number) => {
   const header = wide
-    ? `  PRIORITY ${"TARGET URL".padEnd(targetWidth)} KEYWORDS IMPRESSIONS  CLICKS PHASE`
-    : `  PR ${"TARGET".padEnd(targetWidth)} KW  IMP CLK PHASE`
+    ? `  PRIORITY ${"TARGET URL".padEnd(targetWidth)} KEYWORDS IMPRESSIONS  CLICKS     CTR PHASE`
+    : `  PR ${"TARGET".padEnd(targetWidth)} KW  IMP CLK    CTR PHASE`
   const chunks = [...t`${header}\n`.chunks]
   for (const [index, progress] of targets.entries()) {
     const row = registryRow(progress, start + index === selected, wide, targetWidth)
