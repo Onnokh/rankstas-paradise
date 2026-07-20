@@ -1,1 +1,12 @@
 node_modules/
+
+# Local state and secrets live in the XDG app home, never in the repo — but
+# guard against an accidental copy landing next to the code.
+config.json
+google-token.json
+client.json
+*.sqlite
+*.sqlite-*
+.env
+.env.*
+data/
