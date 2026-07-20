@@ -43,3 +43,7 @@ Home and Opportunities classify striking-distance, CTR, new-demand, and cannibal
 ## Development dashboard
 
 Use `bun run seo --debug` to load an isolated database of realistic fake Search Console rows. Debug mode never calls Google and writes only to `data/search-console.debug.sqlite`.
+
+## Deployment
+
+To run the HTTP service as a hosted deployment on Coolify, see [docs/deploy.md](docs/deploy.md).
