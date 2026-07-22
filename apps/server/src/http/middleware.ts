@@ -10,6 +10,7 @@
 import { Effect } from "effect"
 import { HttpRouter, HttpServerRequest } from "effect/unstable/http"
 
+import { HEALTH_PATH } from "./health.ts"
 import { errorEnvelope } from "./response.ts"
 
 const BEARER_PREFIX = "Bearer "
@@ -18,13 +19,19 @@ export const bearerLayer = (debug: boolean) =>
   HttpRouter.middleware(
     (app) =>
       Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        // The liveness probe is exempt from auth (ported from the legacy
+        // `/health`, which returned before `requireBearer`): it must answer even
+        // when RP_TOKEN is unset, so the container health check works standalone.
+        if (request.url.split("?")[0] === HEALTH_PATH) {
+          return yield* app
+        }
         const expected = Bun.env.RP_TOKEN
         // Fail closed: if RP_TOKEN is unset the server refuses everything rather
         // than silently serving the data unauthenticated.
         if (!expected) {
           return errorEnvelope("server misconfigured: set RP_TOKEN", debug, 503)
         }
-        const request = yield* HttpServerRequest.HttpServerRequest
         const header = (request.headers as Record<string, string | undefined>)[
           "authorization"
         ]

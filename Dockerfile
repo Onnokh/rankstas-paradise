@@ -29,5 +29,11 @@ RUN bun install --frozen-lockfile
 # binds 0.0.0.0 in code so the container is reachable behind Coolify's proxy.
 EXPOSE 8790
 
+# Liveness probe against the unauthenticated /health route (see
+# apps/server/src/http/health.ts). Uses Bun rather than curl/wget, which aren't
+# in the base image.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD bun --eval "const p=Bun.env.SEO_PORT??8790; const r=await fetch(\`http://127.0.0.1:\${p}/health\`); process.exit(r.ok?0:1)"
+
 # Serve the HTTP API + MCP from the new server app.
 CMD ["bun", "run", "apps/server/src/main.ts"]

@@ -17,6 +17,7 @@ import { BunHttpServer } from "@effect/platform-bun"
 
 import { Api } from "./api.ts"
 import { makeApiGroup } from "./handlers.ts"
+import { healthRoute } from "./health.ts"
 import { bearerLayer } from "./middleware.ts"
 import { mcpRoute } from "./mcp.ts"
 import { makeServerContext, type ServerContext } from "./runtime.ts"
@@ -38,10 +39,11 @@ export const bootstrap = async (): Promise<Boot> => {
 
   const ctx = await makeServerContext()
 
-  // The API routes + their handlers, the raw `/mcp` mount, and a global bearer
-  // middleware that wraps every route so nothing is served unauthenticated.
+  // The API routes + their handlers, the raw `/mcp` mount, the unauthenticated
+  // `/health` liveness route, and a global bearer middleware that wraps every
+  // route so nothing (bar `/health`) is served unauthenticated.
   const apiLayer = HttpApiBuilder.layer(Api).pipe(Layer.provide(makeApiGroup(ctx)))
-  const appLayer = Layer.mergeAll(apiLayer, mcpRoute, bearerLayer(ctx.debug))
+  const appLayer = Layer.mergeAll(apiLayer, mcpRoute, healthRoute, bearerLayer(ctx.debug))
 
   // Bind 0.0.0.0 — the container sits behind Coolify's TLS proxy, so it must
   // listen on all interfaces rather than loopback (ported from the legacy serve).
