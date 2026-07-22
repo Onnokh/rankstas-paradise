@@ -1,0 +1,3712 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`JSON routes sites 1`] = `
+{
+  "generatedAt": "<normalized>",
+  "mode": "debug",
+  "sites": [
+    {
+      "brandTerms": [
+        "sleevy",
+      ],
+      "id": "sleevy",
+      "name": "Sleevy",
+      "origin": "https://sleevy.app",
+      "property": "https://sleevy.app",
+      "sitemapUrl": "https://sleevy.app/sitemap.xml",
+    },
+  ],
+}
+`;
+
+exports[`JSON routes status 1`] = `
+{
+  "actions": 0,
+  "data": {
+    "dailyTotalsDays": 56,
+    "firstDate": "2026-05-18",
+    "lastDate": "2026-07-12",
+    "note": "Snapshot rows exclude anonymized long-tail queries; daily totals are the true numbers.",
+    "snapshotRows": 728,
+    "syncedDays": 56,
+  },
+  "generatedAt": "<normalized>",
+  "mode": "debug",
+  "registry": {
+    "clusters": 0,
+    "keywords": 0,
+    "targets": 0,
+  },
+  "sitemap": {
+    "pages": 0,
+    "unmapped": [],
+  },
+}
+`;
+
+exports[`JSON routes dashboard 1`] = `
+{
+  "digest": {
+    "currentStart": "2026-06-15",
+    "latestDate": "2026-07-12",
+    "previousEnd": "2026-06-14",
+    "previousStart": "2026-05-18",
+    "signals": [
+      {
+        "current": {
+          "clicks": 240,
+          "ctr": 0.016839741790625876,
+          "impressions": 14252,
+          "page": "https://sleevy.app/chrome-extension",
+          "position": 4.477308447937132,
+          "query": "chrome read later extension",
+        },
+        "kind": "striking-distance",
+        "label": "chrome read later extension",
+        "mapped": false,
+        "page": "https://sleevy.app/chrome-extension",
+        "pages": [
+          "https://sleevy.app/chrome-extension",
+        ],
+        "previous": {
+          "clicks": 204,
+          "ctr": 0.0213657310431504,
+          "impressions": 9548,
+          "page": "https://sleevy.app/chrome-extension",
+          "position": 4.753519061583578,
+          "query": "chrome read later extension",
+        },
+        "query": "chrome read later extension",
+        "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+        "score": 235481.39999999997,
+      },
+      {
+        "current": {
+          "clicks": 176,
+          "ctr": 0.03501790688420215,
+          "impressions": 5026,
+          "page": "https://sleevy.app/pocket-alternative",
+          "position": 8.889136490250698,
+          "query": "pocket alternative",
+        },
+        "kind": "striking-distance",
+        "label": "pocket alternative",
+        "mapped": false,
+        "page": "https://sleevy.app/pocket-alternative",
+        "pages": [
+          "https://sleevy.app/pocket-alternative",
+        ],
+        "previous": {
+          "clicks": 107,
+          "ctr": 0.0400149588631264,
+          "impressions": 2674,
+          "page": "https://sleevy.app/pocket-alternative",
+          "position": 12.134031413612567,
+          "query": "pocket alternative",
+        },
+        "query": "pocket alternative",
+        "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+        "score": 60869.2,
+      },
+      {
+        "current": {
+          "clicks": 116,
+          "ctr": 0.03236607142857143,
+          "impressions": 3584,
+          "page": "https://sleevy.app/ios-app",
+          "position": 8.7732421875,
+          "query": "save links from iphone",
+        },
+        "kind": "striking-distance",
+        "label": "save links from iphone",
+        "mapped": false,
+        "page": "https://sleevy.app/ios-app",
+        "pages": [
+          "https://sleevy.app/ios-app",
+        ],
+        "previous": {
+          "clicks": 68,
+          "ctr": 0.03373015873015873,
+          "impressions": 2016,
+          "page": "https://sleevy.app/ios-app",
+          "position": 11.221874999999999,
+          "query": "save links from iphone",
+        },
+        "query": "save links from iphone",
+        "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+        "score": 43820.700000000004,
+      },
+      {
+        "current": {
+          "clicks": 44,
+          "ctr": 0.00882825040128411,
+          "impressions": 4984,
+          "page": "https://sleevy.app/pocket-alternative",
+          "position": 15.133033707865167,
+          "query": "raindrop alternative",
+        },
+        "kind": "striking-distance",
+        "label": "raindrop alternative",
+        "mapped": false,
+        "page": "https://sleevy.app/pocket-alternative",
+        "pages": [
+          "https://sleevy.app/pocket-alternative",
+        ],
+        "previous": {
+          "clicks": 8,
+          "ctr": 0.004329004329004329,
+          "impressions": 1848,
+          "page": "https://sleevy.app/pocket-alternative",
+          "position": 17.42909090909091,
+          "query": "raindrop alternative",
+        },
+        "query": "raindrop alternative",
+        "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+        "score": 29240.96000000001,
+      },
+      {
+        "current": {
+          "clicks": 106,
+          "ctr": 0.03291925465838509,
+          "impressions": 3220,
+          "page": "https://sleevy.app/pocket-alternative",
+          "position": 12.089217391304347,
+          "query": "pocket replacement",
+        },
+        "kind": "striking-distance",
+        "label": "pocket replacement",
+        "mapped": false,
+        "page": "https://sleevy.app/pocket-alternative",
+        "pages": [
+          "https://sleevy.app/pocket-alternative",
+        ],
+        "previous": {
+          "clicks": 66,
+          "ctr": 0.039951573849878935,
+          "impressions": 1652,
+          "page": "https://sleevy.app/pocket-alternative",
+          "position": 14.243050847457628,
+          "query": "pocket replacement",
+        },
+        "query": "pocket replacement",
+        "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+        "score": 28692.720000000005,
+      },
+      {
+        "current": {
+          "clicks": 106,
+          "ctr": 0.047619047619047616,
+          "impressions": 2226,
+          "page": "https://sleevy.app/ios-app",
+          "position": 8.530377358490567,
+          "query": "read later app",
+        },
+        "kind": "striking-distance",
+        "label": "read later app",
+        "mapped": false,
+        "page": "https://sleevy.app/ios-app",
+        "pages": [
+          "https://sleevy.app/ios-app",
+        ],
+        "previous": {
+          "clicks": 66,
+          "ctr": 0.04576976421636616,
+          "impressions": 1442,
+          "page": "https://sleevy.app/ios-app",
+          "position": 9.356990291262136,
+          "query": "read later app",
+        },
+        "query": "read later app",
+        "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+        "score": 27757.379999999997,
+      },
+      {
+        "current": {
+          "clicks": 40,
+          "ctr": 0.01078167115902965,
+          "impressions": 3710,
+          "page": "https://sleevy.app/",
+          "position": 15.061811320754718,
+          "query": "bookmark organizer mac",
+        },
+        "kind": "striking-distance",
+        "label": "bookmark organizer mac",
+        "mapped": false,
+        "page": "https://sleevy.app/",
+        "pages": [
+          "https://sleevy.app/",
+        ],
+        "previous": {
+          "clicks": 6,
+          "ctr": 0.004418262150220913,
+          "impressions": 1358,
+          "page": "https://sleevy.app/",
+          "position": 17.097113402061858,
+          "query": "bookmark organizer mac",
+        },
+        "query": "bookmark organizer mac",
+        "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+        "score": 22030.679999999997,
+      },
+      {
+        "current": {
+          "clicks": 70,
+          "ctr": 0.034482758620689655,
+          "impressions": 2030,
+          "page": "https://sleevy.app/chrome-extension",
+          "position": 10.652000000000001,
+          "query": "read later app",
+        },
+        "kind": "striking-distance",
+        "label": "read later app",
+        "mapped": false,
+        "page": "https://sleevy.app/chrome-extension",
+        "pages": [
+          "https://sleevy.app/chrome-extension",
+        ],
+        "previous": {
+          "clicks": 35,
+          "ctr": 0.028089887640449437,
+          "impressions": 1246,
+          "page": "https://sleevy.app/chrome-extension",
+          "position": 11.200674157303371,
+          "query": "read later app",
+        },
+        "query": "read later app",
+        "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+        "score": 21006.44,
+      },
+      {
+        "current": {
+          "clicks": 92,
+          "ctr": 0.04132973944294699,
+          "impressions": 2226,
+          "page": "https://sleevy.app/chrome-extension",
+          "position": 12.530377358490567,
+          "query": "save tabs for later chrome",
+        },
+        "kind": "striking-distance",
+        "label": "save tabs for later chrome",
+        "mapped": false,
+        "page": "https://sleevy.app/chrome-extension",
+        "pages": [
+          "https://sleevy.app/chrome-extension",
+        ],
+        "previous": {
+          "clicks": 60,
+          "ctr": 0.04160887656033287,
+          "impressions": 1442,
+          "page": "https://sleevy.app/chrome-extension",
+          "position": 13.356990291262138,
+          "query": "save tabs for later chrome",
+        },
+        "query": "save tabs for later chrome",
+        "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+        "score": 18853.379999999997,
+      },
+      {
+        "current": {
+          "clicks": 240,
+          "ctr": 0.016839741790625876,
+          "impressions": 14252,
+          "position": 4.477308447937132,
+        },
+        "kind": "new-demand",
+        "label": "chrome read later extension",
+        "mapped": false,
+        "page": "https://sleevy.app/chrome-extension",
+        "pages": [
+          "https://sleevy.app/chrome-extension",
+        ],
+        "previous": {
+          "clicks": 204,
+          "ctr": 0.0213657310431504,
+          "impressions": 9548,
+          "position": 4.753519061583578,
+        },
+        "query": "chrome read later extension",
+        "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+        "score": 14252,
+      },
+      {
+        "current": {
+          "clicks": 34,
+          "ctr": 0.01710261569416499,
+          "impressions": 1988,
+          "page": "https://sleevy.app/docs",
+          "position": 13.856161971830986,
+          "query": "read later api",
+        },
+        "kind": "striking-distance",
+        "label": "read later api",
+        "mapped": false,
+        "page": "https://sleevy.app/docs",
+        "pages": [
+          "https://sleevy.app/docs",
+        ],
+        "previous": {
+          "clicks": 3,
+          "ctr": 0.003694581280788177,
+          "impressions": 812,
+          "page": "https://sleevy.app/docs",
+          "position": 15.156465517241378,
+          "query": "read later api",
+        },
+        "query": "read later api",
+        "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+        "score": 14201.95,
+      },
+      {
+        "current": {
+          "clicks": 70,
+          "ctr": 0.04201680672268908,
+          "impressions": 1666,
+          "page": "https://sleevy.app/ios-app",
+          "position": 14.644201680672268,
+          "query": "ios share sheet read later app",
+        },
+        "kind": "striking-distance",
+        "label": "ios share sheet read later app",
+        "mapped": false,
+        "page": "https://sleevy.app/ios-app",
+        "pages": [
+          "https://sleevy.app/ios-app",
+        ],
+        "previous": {
+          "clicks": 35,
+          "ctr": 0.03968253968253968,
+          "impressions": 882,
+          "page": "https://sleevy.app/ios-app",
+          "position": 16.265714285714285,
+          "query": "ios share sheet read later app",
+        },
+        "query": "ios share sheet read later app",
+        "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+        "score": 10588.760000000002,
+      },
+      {
+        "current": {
+          "clicks": 176,
+          "ctr": 0.041353383458646614,
+          "impressions": 4256,
+          "position": 9.54233552631579,
+        },
+        "kind": "cannibalization",
+        "label": "read later app",
+        "mapped": false,
+        "page": "https://sleevy.app/chrome-extension",
+        "pages": [
+          "https://sleevy.app/chrome-extension",
+          "https://sleevy.app/ios-app",
+        ],
+        "previous": null,
+        "query": "read later app",
+        "recommendation": "Consolidate content and internal links, or clarify canonicals and page intent.",
+        "score": 8512,
+      },
+      {
+        "current": {
+          "clicks": 176,
+          "ctr": 0.03501790688420215,
+          "impressions": 5026,
+          "position": 8.889136490250698,
+        },
+        "kind": "new-demand",
+        "label": "pocket alternative",
+        "mapped": false,
+        "page": "https://sleevy.app/pocket-alternative",
+        "pages": [
+          "https://sleevy.app/pocket-alternative",
+        ],
+        "previous": {
+          "clicks": 107,
+          "ctr": 0.0400149588631264,
+          "impressions": 2674,
+          "position": 12.134031413612567,
+        },
+        "query": "pocket alternative",
+        "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+        "score": 5026,
+      },
+      {
+        "current": {
+          "clicks": 44,
+          "ctr": 0.00882825040128411,
+          "impressions": 4984,
+          "position": 15.133033707865167,
+        },
+        "kind": "new-demand",
+        "label": "raindrop alternative",
+        "mapped": false,
+        "page": "https://sleevy.app/pocket-alternative",
+        "pages": [
+          "https://sleevy.app/pocket-alternative",
+        ],
+        "previous": {
+          "clicks": 8,
+          "ctr": 0.004329004329004329,
+          "impressions": 1848,
+          "position": 17.42909090909091,
+        },
+        "query": "raindrop alternative",
+        "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+        "score": 4984,
+      },
+      {
+        "current": {
+          "clicks": 38,
+          "ctr": 0.026352288488210817,
+          "impressions": 1442,
+          "page": "https://sleevy.app/raycast",
+          "position": 17.789320388349516,
+          "query": "raycast save links",
+        },
+        "kind": "striking-distance",
+        "label": "raycast save links",
+        "mapped": false,
+        "page": "https://sleevy.app/raycast",
+        "pages": [
+          "https://sleevy.app/raycast",
+        ],
+        "previous": {
+          "clicks": 5,
+          "ctr": 0.007598784194528876,
+          "impressions": 658,
+          "page": "https://sleevy.app/raycast",
+          "position": 18.848936170212767,
+          "query": "raycast save links",
+        },
+        "query": "raycast save links",
+        "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+        "score": 4629.799999999997,
+      },
+      {
+        "current": {
+          "clicks": 176,
+          "ctr": 0.041353383458646614,
+          "impressions": 4256,
+          "position": 9.54233552631579,
+        },
+        "kind": "new-demand",
+        "label": "read later app",
+        "mapped": false,
+        "page": "https://sleevy.app/chrome-extension",
+        "pages": [
+          "https://sleevy.app/chrome-extension",
+          "https://sleevy.app/ios-app",
+        ],
+        "previous": {
+          "clicks": 101,
+          "ctr": 0.03757440476190476,
+          "impressions": 2688,
+          "position": 10.211614583333333,
+        },
+        "query": "read later app",
+        "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+        "score": 4256,
+      },
+      {
+        "current": {
+          "clicks": 40,
+          "ctr": 0.01078167115902965,
+          "impressions": 3710,
+          "position": 15.061811320754718,
+        },
+        "kind": "new-demand",
+        "label": "bookmark organizer mac",
+        "mapped": false,
+        "page": "https://sleevy.app/",
+        "pages": [
+          "https://sleevy.app/",
+        ],
+        "previous": {
+          "clicks": 6,
+          "ctr": 0.004418262150220913,
+          "impressions": 1358,
+          "position": 17.097113402061858,
+        },
+        "query": "bookmark organizer mac",
+        "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+        "score": 3710,
+      },
+      {
+        "current": {
+          "clicks": 116,
+          "ctr": 0.03236607142857143,
+          "impressions": 3584,
+          "position": 8.7732421875,
+        },
+        "kind": "new-demand",
+        "label": "save links from iphone",
+        "mapped": false,
+        "page": "https://sleevy.app/ios-app",
+        "pages": [
+          "https://sleevy.app/ios-app",
+        ],
+        "previous": {
+          "clicks": 68,
+          "ctr": 0.03373015873015873,
+          "impressions": 2016,
+          "position": 11.221874999999999,
+        },
+        "query": "save links from iphone",
+        "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+        "score": 3584,
+      },
+      {
+        "current": {
+          "clicks": 106,
+          "ctr": 0.03291925465838509,
+          "impressions": 3220,
+          "position": 12.089217391304347,
+        },
+        "kind": "new-demand",
+        "label": "pocket replacement",
+        "mapped": false,
+        "page": "https://sleevy.app/pocket-alternative",
+        "pages": [
+          "https://sleevy.app/pocket-alternative",
+        ],
+        "previous": {
+          "clicks": 66,
+          "ctr": 0.039951573849878935,
+          "impressions": 1652,
+          "position": 14.243050847457628,
+        },
+        "query": "pocket replacement",
+        "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+        "score": 3220,
+      },
+      {
+        "current": {
+          "clicks": 92,
+          "ctr": 0.04132973944294699,
+          "impressions": 2226,
+          "position": 12.530377358490567,
+        },
+        "kind": "new-demand",
+        "label": "save tabs for later chrome",
+        "mapped": false,
+        "page": "https://sleevy.app/chrome-extension",
+        "pages": [
+          "https://sleevy.app/chrome-extension",
+        ],
+        "previous": {
+          "clicks": 60,
+          "ctr": 0.04160887656033287,
+          "impressions": 1442,
+          "position": 13.356990291262138,
+        },
+        "query": "save tabs for later chrome",
+        "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+        "score": 2226,
+      },
+      {
+        "current": {
+          "clicks": 34,
+          "ctr": 0.01710261569416499,
+          "impressions": 1988,
+          "position": 13.856161971830986,
+        },
+        "kind": "new-demand",
+        "label": "read later api",
+        "mapped": false,
+        "page": "https://sleevy.app/docs",
+        "pages": [
+          "https://sleevy.app/docs",
+        ],
+        "previous": {
+          "clicks": 3,
+          "ctr": 0.003694581280788177,
+          "impressions": 812,
+          "position": 15.156465517241378,
+        },
+        "query": "read later api",
+        "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+        "score": 1988,
+      },
+      {
+        "current": {
+          "clicks": 70,
+          "ctr": 0.04201680672268908,
+          "impressions": 1666,
+          "position": 14.644201680672268,
+        },
+        "kind": "new-demand",
+        "label": "ios share sheet read later app",
+        "mapped": false,
+        "page": "https://sleevy.app/ios-app",
+        "pages": [
+          "https://sleevy.app/ios-app",
+        ],
+        "previous": {
+          "clicks": 35,
+          "ctr": 0.03968253968253968,
+          "impressions": 882,
+          "position": 16.265714285714285,
+        },
+        "query": "ios share sheet read later app",
+        "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+        "score": 1666,
+      },
+      {
+        "current": {
+          "clicks": 38,
+          "ctr": 0.026352288488210817,
+          "impressions": 1442,
+          "position": 17.789320388349516,
+        },
+        "kind": "new-demand",
+        "label": "raycast save links",
+        "mapped": false,
+        "page": "https://sleevy.app/raycast",
+        "pages": [
+          "https://sleevy.app/raycast",
+        ],
+        "previous": {
+          "clicks": 5,
+          "ctr": 0.007598784194528876,
+          "impressions": 658,
+          "position": 18.848936170212767,
+        },
+        "query": "raycast save links",
+        "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+        "score": 1442,
+      },
+      {
+        "current": {
+          "clicks": 240,
+          "ctr": 0.016839741790625876,
+          "impressions": 14252,
+          "page": "https://sleevy.app/chrome-extension",
+          "position": 4.477308447937132,
+          "query": "chrome read later extension",
+        },
+        "kind": "ctr",
+        "label": "chrome read later extension",
+        "mapped": false,
+        "page": "https://sleevy.app/chrome-extension",
+        "pages": [
+          "https://sleevy.app/chrome-extension",
+        ],
+        "previous": {
+          "clicks": 204,
+          "ctr": 0.0213657310431504,
+          "impressions": 9548,
+          "page": "https://sleevy.app/chrome-extension",
+          "position": 4.753519061583578,
+          "query": "chrome read later extension",
+        },
+        "query": "chrome read later extension",
+        "recommendation": "Test title, description, and snippet alignment; do not repeat keywords.",
+        "score": 240.17822945682457,
+      },
+    ],
+  },
+  "generatedAt": "<normalized>",
+  "history": [
+    {
+      "clicks": 60,
+      "ctr": 0.042134831460674156,
+      "date": "2026-06-15",
+      "impressions": 1424,
+      "position": 9.625744382022472,
+      "provisional": false,
+    },
+    {
+      "clicks": 60,
+      "ctr": 0.04132231404958678,
+      "date": "2026-06-16",
+      "impressions": 1452,
+      "position": 9.603767217630853,
+      "provisional": false,
+    },
+    {
+      "clicks": 61,
+      "ctr": 0.041188386225523295,
+      "date": "2026-06-17",
+      "impressions": 1481,
+      "position": 9.583794733288318,
+      "provisional": false,
+    },
+    {
+      "clicks": 61,
+      "ctr": 0.04042412193505633,
+      "date": "2026-06-18",
+      "impressions": 1509,
+      "position": 9.559178263750828,
+      "provisional": false,
+    },
+    {
+      "clicks": 62,
+      "ctr": 0.04031209362808843,
+      "date": "2026-06-19",
+      "impressions": 1538,
+      "position": 9.536553966189857,
+      "provisional": false,
+    },
+    {
+      "clicks": 63,
+      "ctr": 0.040229885057471264,
+      "date": "2026-06-20",
+      "impressions": 1566,
+      "position": 9.509584929757343,
+      "provisional": false,
+    },
+    {
+      "clicks": 63,
+      "ctr": 0.03949843260188088,
+      "date": "2026-06-21",
+      "impressions": 1595,
+      "position": 9.48458934169279,
+      "provisional": false,
+    },
+    {
+      "clicks": 64,
+      "ctr": 0.039433148490449786,
+      "date": "2026-06-22",
+      "impressions": 1623,
+      "position": 9.455514479359211,
+      "provisional": false,
+    },
+    {
+      "clicks": 66,
+      "ctr": 0.039951573849878935,
+      "date": "2026-06-23",
+      "impressions": 1652,
+      "position": 9.428389830508475,
+      "provisional": false,
+    },
+    {
+      "clicks": 66,
+      "ctr": 0.039285714285714285,
+      "date": "2026-06-24",
+      "impressions": 1680,
+      "position": 9.397422619047619,
+      "provisional": false,
+    },
+    {
+      "clicks": 66,
+      "ctr": 0.03861907548273844,
+      "date": "2026-06-25",
+      "impressions": 1709,
+      "position": 9.36837916910474,
+      "provisional": false,
+    },
+    {
+      "clicks": 66,
+      "ctr": 0.037996545768566495,
+      "date": "2026-06-26",
+      "impressions": 1737,
+      "position": 9.335705238917674,
+      "provisional": false,
+    },
+    {
+      "clicks": 69,
+      "ctr": 0.039071347678369193,
+      "date": "2026-06-27",
+      "impressions": 1766,
+      "position": 9.304926387315968,
+      "provisional": false,
+    },
+    {
+      "clicks": 69,
+      "ctr": 0.038461538461538464,
+      "date": "2026-06-28",
+      "impressions": 1794,
+      "position": 9.270707915273134,
+      "provisional": false,
+    },
+    {
+      "clicks": 71,
+      "ctr": 0.038946791003839826,
+      "date": "2026-06-29",
+      "impressions": 1823,
+      "position": 9.2383543609435,
+      "provisional": false,
+    },
+    {
+      "clicks": 71,
+      "ctr": 0.03835764451647758,
+      "date": "2026-06-30",
+      "impressions": 1851,
+      "position": 9.202733657482444,
+      "provisional": false,
+    },
+    {
+      "clicks": 73,
+      "ctr": 0.038829787234042554,
+      "date": "2026-07-01",
+      "impressions": 1880,
+      "position": 9.168946808510638,
+      "provisional": false,
+    },
+    {
+      "clicks": 74,
+      "ctr": 0.03878406708595388,
+      "date": "2026-07-02",
+      "impressions": 1908,
+      "position": 9.13204926624738,
+      "provisional": false,
+    },
+    {
+      "clicks": 75,
+      "ctr": 0.03871966959215281,
+      "date": "2026-07-03",
+      "impressions": 1937,
+      "position": 9.09695405265875,
+      "provisional": false,
+    },
+    {
+      "clicks": 75,
+      "ctr": 0.03816793893129771,
+      "date": "2026-07-04",
+      "impressions": 1965,
+      "position": 9.05889058524173,
+      "provisional": false,
+    },
+    {
+      "clicks": 77,
+      "ctr": 0.03861584754262788,
+      "date": "2026-07-05",
+      "impressions": 1994,
+      "position": 9.022597793380141,
+      "provisional": false,
+    },
+    {
+      "clicks": 77,
+      "ctr": 0.0380811078140455,
+      "date": "2026-07-06",
+      "impressions": 2022,
+      "position": 8.983466864490603,
+      "provisional": false,
+    },
+    {
+      "clicks": 79,
+      "ctr": 0.03851779619697709,
+      "date": "2026-07-07",
+      "impressions": 2051,
+      "position": 8.946075085324233,
+      "provisional": false,
+    },
+    {
+      "clicks": 79,
+      "ctr": 0.037999037999038,
+      "date": "2026-07-08",
+      "impressions": 2079,
+      "position": 8.905964405964406,
+      "provisional": false,
+    },
+    {
+      "clicks": 79,
+      "ctr": 0.03747628083491461,
+      "date": "2026-07-09",
+      "impressions": 2108,
+      "position": 8.867561669829222,
+      "provisional": false,
+    },
+    {
+      "clicks": 79,
+      "ctr": 0.03698501872659176,
+      "date": "2026-07-10",
+      "impressions": 2136,
+      "position": 8.826549625468164,
+      "provisional": false,
+    },
+    {
+      "clicks": 81,
+      "ctr": 0.03741339491916859,
+      "date": "2026-07-11",
+      "impressions": 2165,
+      "position": 8.787214780600461,
+      "provisional": false,
+    },
+    {
+      "clicks": 83,
+      "ctr": 0.03784769721842225,
+      "date": "2026-07-12",
+      "impressions": 2193,
+      "position": 8.745371637026905,
+      "provisional": false,
+    },
+  ],
+  "logEntries": [],
+  "mode": "debug",
+  "performances": [],
+  "recentActions": [],
+  "registry": [],
+  "registryTargets": [],
+  "sitemapGaps": [],
+  "sitemapPageCount": 0,
+  "summary": {
+    "dates": 56,
+    "rows": 728,
+  },
+}
+`;
+
+exports[`JSON routes pages 1`] = `
+{
+  "generatedAt": "<normalized>",
+  "mode": "debug",
+  "note": "nonBrand/allQueries come from stored query rows (anonymized long tail excluded); trueTotals come from query-less daily totals and are the real numbers. Keyword targets are judged on nonBrand, inventory pages on allQueries.",
+  "pages": [
+    {
+      "allQueries": {
+        "current": {
+          "clicks": 1239,
+          "ctr": 0.0544,
+          "impressions": 22792,
+          "position": 5.4,
+        },
+        "deltaClicks": 259,
+        "deltaImpressions": 7840,
+        "previous": {
+          "clicks": 980,
+          "ctr": 0.0655,
+          "impressions": 14952,
+          "position": 5.7,
+        },
+      },
+      "baseline": null,
+      "clusters": [],
+      "indexed": "unknown",
+      "intent": null,
+      "keywords": [],
+      "mapped": false,
+      "nonBrand": {
+        "current": {
+          "clicks": 402,
+          "ctr": 0.0217,
+          "impressions": 18508,
+          "position": 6.1,
+        },
+        "deltaClicks": 103,
+        "deltaImpressions": 6272,
+        "previous": {
+          "clicks": 299,
+          "ctr": 0.0244,
+          "impressions": 12236,
+          "position": 6.4,
+        },
+      },
+      "path": "/chrome-extension",
+      "phase": "UNMAPPED",
+      "priority": null,
+      "publishedAt": null,
+      "reasons": [
+        ""chrome read later extension" ranks at position 4.5 with 14252 impressions — within striking distance of the top results.",
+        ""read later app" ranks at position 10.7 with 2030 impressions — within striking distance of the top results.",
+        ""save tabs for later chrome" ranks at position 12.5 with 2226 impressions — within striking distance of the top results.",
+        ""read later app" is split across 2 pages: /chrome-extension, /ios-app.",
+        ""chrome read later extension" ranks in the top 10 but earns fewer clicks than comparable results (1.7% CTR).",
+      ],
+      "signals": [
+        "striking-distance",
+        "striking-distance",
+        "striking-distance",
+        "new-demand",
+        "cannibalization",
+        "new-demand",
+        "new-demand",
+        "ctr",
+      ],
+      "status": null,
+      "trueTotals": {
+        "current": {
+          "clicks": 1239,
+          "ctr": 0.0435,
+          "impressions": 28490,
+          "position": 5.4,
+        },
+        "deltaClicks": 259,
+        "deltaImpressions": 9800,
+        "previous": {
+          "clicks": 980,
+          "ctr": 0.0524,
+          "impressions": 18690,
+          "position": 5.7,
+        },
+      },
+      "verdict": "needs-optimization",
+      "whyOpportunity": null,
+    },
+    {
+      "allQueries": {
+        "current": {
+          "clicks": 326,
+          "ctr": 0.0246,
+          "impressions": 13230,
+          "position": 12,
+        },
+        "deltaClicks": 145,
+        "deltaImpressions": 7056,
+        "previous": {
+          "clicks": 181,
+          "ctr": 0.0293,
+          "impressions": 6174,
+          "position": 14.3,
+        },
+      },
+      "baseline": null,
+      "clusters": [],
+      "indexed": "unknown",
+      "intent": null,
+      "keywords": [],
+      "mapped": false,
+      "nonBrand": {
+        "current": {
+          "clicks": 326,
+          "ctr": 0.0246,
+          "impressions": 13230,
+          "position": 12,
+        },
+        "deltaClicks": 145,
+        "deltaImpressions": 7056,
+        "previous": {
+          "clicks": 181,
+          "ctr": 0.0293,
+          "impressions": 6174,
+          "position": 14.3,
+        },
+      },
+      "path": "/pocket-alternative",
+      "phase": "UNMAPPED",
+      "priority": null,
+      "publishedAt": null,
+      "reasons": [
+        ""pocket alternative" ranks at position 8.9 with 5026 impressions — within striking distance of the top results.",
+        ""raindrop alternative" ranks at position 15.1 with 4984 impressions — within striking distance of the top results.",
+        ""pocket replacement" ranks at position 12.1 with 3220 impressions — within striking distance of the top results.",
+      ],
+      "signals": [
+        "striking-distance",
+        "striking-distance",
+        "striking-distance",
+        "new-demand",
+        "new-demand",
+        "new-demand",
+      ],
+      "status": null,
+      "trueTotals": {
+        "current": {
+          "clicks": 326,
+          "ctr": 0.0197,
+          "impressions": 16541,
+          "position": 12,
+        },
+        "deltaClicks": 145,
+        "deltaImpressions": 8820,
+        "previous": {
+          "clicks": 181,
+          "ctr": 0.0234,
+          "impressions": 7721,
+          "position": 14.3,
+        },
+      },
+      "verdict": "needs-optimization",
+      "whyOpportunity": null,
+    },
+    {
+      "allQueries": {
+        "current": {
+          "clicks": 292,
+          "ctr": 0.0391,
+          "impressions": 7476,
+          "position": 10,
+        },
+        "deltaClicks": 123,
+        "deltaImpressions": 3136,
+        "previous": {
+          "clicks": 169,
+          "ctr": 0.0389,
+          "impressions": 4340,
+          "position": 11.6,
+        },
+      },
+      "baseline": null,
+      "clusters": [],
+      "indexed": "unknown",
+      "intent": null,
+      "keywords": [],
+      "mapped": false,
+      "nonBrand": {
+        "current": {
+          "clicks": 292,
+          "ctr": 0.0391,
+          "impressions": 7476,
+          "position": 10,
+        },
+        "deltaClicks": 123,
+        "deltaImpressions": 3136,
+        "previous": {
+          "clicks": 169,
+          "ctr": 0.0389,
+          "impressions": 4340,
+          "position": 11.6,
+        },
+      },
+      "path": "/ios-app",
+      "phase": "UNMAPPED",
+      "priority": null,
+      "publishedAt": null,
+      "reasons": [
+        ""save links from iphone" ranks at position 8.8 with 3584 impressions — within striking distance of the top results.",
+        ""read later app" ranks at position 8.5 with 2226 impressions — within striking distance of the top results.",
+        ""ios share sheet read later app" ranks at position 14.6 with 1666 impressions — within striking distance of the top results.",
+        ""read later app" is split across 2 pages: /chrome-extension, /ios-app.",
+      ],
+      "signals": [
+        "striking-distance",
+        "striking-distance",
+        "striking-distance",
+        "cannibalization",
+        "new-demand",
+        "new-demand",
+        "new-demand",
+      ],
+      "status": null,
+      "trueTotals": {
+        "current": {
+          "clicks": 292,
+          "ctr": 0.0313,
+          "impressions": 9338,
+          "position": 10,
+        },
+        "deltaClicks": 123,
+        "deltaImpressions": 3920,
+        "previous": {
+          "clicks": 169,
+          "ctr": 0.0312,
+          "impressions": 5418,
+          "position": 11.6,
+        },
+      },
+      "verdict": "needs-optimization",
+      "whyOpportunity": null,
+    },
+    {
+      "allQueries": {
+        "current": {
+          "clicks": 40,
+          "ctr": 0.0108,
+          "impressions": 3710,
+          "position": 15.1,
+        },
+        "deltaClicks": 34,
+        "deltaImpressions": 2352,
+        "previous": {
+          "clicks": 6,
+          "ctr": 0.0044,
+          "impressions": 1358,
+          "position": 17.1,
+        },
+      },
+      "baseline": null,
+      "clusters": [],
+      "indexed": "unknown",
+      "intent": null,
+      "keywords": [],
+      "mapped": false,
+      "nonBrand": {
+        "current": {
+          "clicks": 40,
+          "ctr": 0.0108,
+          "impressions": 3710,
+          "position": 15.1,
+        },
+        "deltaClicks": 34,
+        "deltaImpressions": 2352,
+        "previous": {
+          "clicks": 6,
+          "ctr": 0.0044,
+          "impressions": 1358,
+          "position": 17.1,
+        },
+      },
+      "path": "/",
+      "phase": "UNMAPPED",
+      "priority": null,
+      "publishedAt": null,
+      "reasons": [
+        ""bookmark organizer mac" ranks at position 15.1 with 3710 impressions — within striking distance of the top results.",
+      ],
+      "signals": [
+        "striking-distance",
+        "new-demand",
+      ],
+      "status": null,
+      "trueTotals": {
+        "current": {
+          "clicks": 40,
+          "ctr": 0.0086,
+          "impressions": 4641,
+          "position": 15.1,
+        },
+        "deltaClicks": 34,
+        "deltaImpressions": 2940,
+        "previous": {
+          "clicks": 6,
+          "ctr": 0.0035,
+          "impressions": 1701,
+          "position": 17.1,
+        },
+      },
+      "verdict": "needs-optimization",
+      "whyOpportunity": null,
+    },
+    {
+      "allQueries": {
+        "current": {
+          "clicks": 34,
+          "ctr": 0.0171,
+          "impressions": 1988,
+          "position": 13.9,
+        },
+        "deltaClicks": 31,
+        "deltaImpressions": 1176,
+        "previous": {
+          "clicks": 3,
+          "ctr": 0.0037,
+          "impressions": 812,
+          "position": 15.2,
+        },
+      },
+      "baseline": null,
+      "clusters": [],
+      "indexed": "unknown",
+      "intent": null,
+      "keywords": [],
+      "mapped": false,
+      "nonBrand": {
+        "current": {
+          "clicks": 34,
+          "ctr": 0.0171,
+          "impressions": 1988,
+          "position": 13.9,
+        },
+        "deltaClicks": 31,
+        "deltaImpressions": 1176,
+        "previous": {
+          "clicks": 3,
+          "ctr": 0.0037,
+          "impressions": 812,
+          "position": 15.2,
+        },
+      },
+      "path": "/docs",
+      "phase": "UNMAPPED",
+      "priority": null,
+      "publishedAt": null,
+      "reasons": [
+        ""read later api" ranks at position 13.9 with 1988 impressions — within striking distance of the top results.",
+      ],
+      "signals": [
+        "striking-distance",
+        "new-demand",
+      ],
+      "status": null,
+      "trueTotals": {
+        "current": {
+          "clicks": 34,
+          "ctr": 0.0137,
+          "impressions": 2489,
+          "position": 13.9,
+        },
+        "deltaClicks": 31,
+        "deltaImpressions": 1471,
+        "previous": {
+          "clicks": 3,
+          "ctr": 0.0029,
+          "impressions": 1018,
+          "position": 15.2,
+        },
+      },
+      "verdict": "needs-optimization",
+      "whyOpportunity": null,
+    },
+    {
+      "allQueries": {
+        "current": {
+          "clicks": 38,
+          "ctr": 0.0264,
+          "impressions": 1442,
+          "position": 17.8,
+        },
+        "deltaClicks": 33,
+        "deltaImpressions": 784,
+        "previous": {
+          "clicks": 5,
+          "ctr": 0.0076,
+          "impressions": 658,
+          "position": 18.8,
+        },
+      },
+      "baseline": null,
+      "clusters": [],
+      "indexed": "unknown",
+      "intent": null,
+      "keywords": [],
+      "mapped": false,
+      "nonBrand": {
+        "current": {
+          "clicks": 38,
+          "ctr": 0.0264,
+          "impressions": 1442,
+          "position": 17.8,
+        },
+        "deltaClicks": 33,
+        "deltaImpressions": 784,
+        "previous": {
+          "clicks": 5,
+          "ctr": 0.0076,
+          "impressions": 658,
+          "position": 18.8,
+        },
+      },
+      "path": "/raycast",
+      "phase": "UNMAPPED",
+      "priority": null,
+      "publishedAt": null,
+      "reasons": [
+        ""raycast save links" ranks at position 17.8 with 1442 impressions — within striking distance of the top results.",
+      ],
+      "signals": [
+        "striking-distance",
+        "new-demand",
+      ],
+      "status": null,
+      "trueTotals": {
+        "current": {
+          "clicks": 38,
+          "ctr": 0.021,
+          "impressions": 1806,
+          "position": 17.8,
+        },
+        "deltaClicks": 33,
+        "deltaImpressions": 980,
+        "previous": {
+          "clicks": 5,
+          "ctr": 0.0061,
+          "impressions": 826,
+          "position": 18.8,
+        },
+      },
+      "verdict": "needs-optimization",
+      "whyOpportunity": null,
+    },
+  ],
+  "window": {
+    "currentEnd": "2026-07-12",
+    "currentStart": "2026-06-15",
+    "days": 28,
+    "previousEnd": "2026-06-14",
+    "previousStart": "2026-05-18",
+  },
+}
+`;
+
+exports[`JSON routes page 1`] = `
+{
+  "actions": [],
+  "baseline": null,
+  "generatedAt": "<normalized>",
+  "indexed": "unknown",
+  "inspectedAt": null,
+  "mapped": false,
+  "measuredFrom": null,
+  "mode": "debug",
+  "path": "/pocket-alternative",
+  "performance": {
+    "days": [
+      {
+        "clicks": 9,
+        "ctr": 0.0256,
+        "date": "2026-06-15",
+        "impressions": 351,
+        "position": 13.4,
+      },
+      {
+        "clicks": 9,
+        "ctr": 0.025,
+        "date": "2026-06-16",
+        "impressions": 360,
+        "position": 13.3,
+      },
+      {
+        "clicks": 9,
+        "ctr": 0.0244,
+        "date": "2026-06-17",
+        "impressions": 369,
+        "position": 13.2,
+      },
+      {
+        "clicks": 9,
+        "ctr": 0.0238,
+        "date": "2026-06-18",
+        "impressions": 378,
+        "position": 13.1,
+      },
+      {
+        "clicks": 9,
+        "ctr": 0.0233,
+        "date": "2026-06-19",
+        "impressions": 387,
+        "position": 13,
+      },
+      {
+        "clicks": 10,
+        "ctr": 0.0253,
+        "date": "2026-06-20",
+        "impressions": 396,
+        "position": 12.9,
+      },
+      {
+        "clicks": 10,
+        "ctr": 0.0247,
+        "date": "2026-06-21",
+        "impressions": 405,
+        "position": 12.8,
+      },
+      {
+        "clicks": 10,
+        "ctr": 0.0242,
+        "date": "2026-06-22",
+        "impressions": 414,
+        "position": 12.7,
+      },
+      {
+        "clicks": 11,
+        "ctr": 0.026,
+        "date": "2026-06-23",
+        "impressions": 423,
+        "position": 12.6,
+      },
+      {
+        "clicks": 11,
+        "ctr": 0.0255,
+        "date": "2026-06-24",
+        "impressions": 432,
+        "position": 12.6,
+      },
+      {
+        "clicks": 11,
+        "ctr": 0.0249,
+        "date": "2026-06-25",
+        "impressions": 441,
+        "position": 12.5,
+      },
+      {
+        "clicks": 11,
+        "ctr": 0.0244,
+        "date": "2026-06-26",
+        "impressions": 450,
+        "position": 12.4,
+      },
+      {
+        "clicks": 12,
+        "ctr": 0.0261,
+        "date": "2026-06-27",
+        "impressions": 459,
+        "position": 12.3,
+      },
+      {
+        "clicks": 12,
+        "ctr": 0.0256,
+        "date": "2026-06-28",
+        "impressions": 468,
+        "position": 12.2,
+      },
+      {
+        "clicks": 12,
+        "ctr": 0.0252,
+        "date": "2026-06-29",
+        "impressions": 477,
+        "position": 12.1,
+      },
+      {
+        "clicks": 12,
+        "ctr": 0.0247,
+        "date": "2026-06-30",
+        "impressions": 486,
+        "position": 12,
+      },
+      {
+        "clicks": 13,
+        "ctr": 0.0263,
+        "date": "2026-07-01",
+        "impressions": 495,
+        "position": 11.9,
+      },
+      {
+        "clicks": 13,
+        "ctr": 0.0258,
+        "date": "2026-07-02",
+        "impressions": 504,
+        "position": 11.8,
+      },
+      {
+        "clicks": 13,
+        "ctr": 0.0253,
+        "date": "2026-07-03",
+        "impressions": 513,
+        "position": 11.7,
+      },
+      {
+        "clicks": 13,
+        "ctr": 0.0249,
+        "date": "2026-07-04",
+        "impressions": 522,
+        "position": 11.6,
+      },
+      {
+        "clicks": 13,
+        "ctr": 0.0245,
+        "date": "2026-07-05",
+        "impressions": 531,
+        "position": 11.5,
+      },
+      {
+        "clicks": 13,
+        "ctr": 0.0241,
+        "date": "2026-07-06",
+        "impressions": 540,
+        "position": 11.4,
+      },
+      {
+        "clicks": 13,
+        "ctr": 0.0237,
+        "date": "2026-07-07",
+        "impressions": 549,
+        "position": 11.4,
+      },
+      {
+        "clicks": 13,
+        "ctr": 0.0233,
+        "date": "2026-07-08",
+        "impressions": 558,
+        "position": 11.3,
+      },
+      {
+        "clicks": 13,
+        "ctr": 0.0229,
+        "date": "2026-07-09",
+        "impressions": 567,
+        "position": 11.2,
+      },
+      {
+        "clicks": 13,
+        "ctr": 0.0226,
+        "date": "2026-07-10",
+        "impressions": 576,
+        "position": 11.1,
+      },
+      {
+        "clicks": 14,
+        "ctr": 0.0239,
+        "date": "2026-07-11",
+        "impressions": 585,
+        "position": 11,
+      },
+      {
+        "clicks": 15,
+        "ctr": 0.0253,
+        "date": "2026-07-12",
+        "impressions": 594,
+        "position": 10.9,
+      },
+    ],
+    "last7": {
+      "clicks": 94,
+      "ctr": 0.0237,
+      "impressions": 3969,
+      "position": 11.2,
+    },
+    "previous7": {
+      "clicks": 89,
+      "ctr": 0.0252,
+      "impressions": 3528,
+      "position": 11.8,
+    },
+    "scope": "all-queries",
+    "total": {
+      "clicks": 326,
+      "ctr": 0.0246,
+      "impressions": 13230,
+      "position": 12,
+    },
+    "windowEnd": "2026-07-12",
+    "windowStart": "2026-06-15",
+  },
+  "phase": "UNMAPPED",
+  "plan": [],
+  "reasons": [
+    ""pocket alternative" ranks at position 8.9 with 5026 impressions — within striking distance of the top results.",
+    ""raindrop alternative" ranks at position 15.1 with 4984 impressions — within striking distance of the top results.",
+    ""pocket replacement" ranks at position 12.1 with 3220 impressions — within striking distance of the top results.",
+  ],
+  "signals": [
+    {
+      "current": {
+        "clicks": 176,
+        "ctr": 0.035,
+        "impressions": 5026,
+        "position": 8.9,
+      },
+      "kind": "striking-distance",
+      "mapped": false,
+      "page": "/pocket-alternative",
+      "pages": [
+        "/pocket-alternative",
+      ],
+      "previous": {
+        "clicks": 107,
+        "ctr": 0.04,
+        "impressions": 2674,
+        "position": 12.1,
+      },
+      "query": "pocket alternative",
+      "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+      "score": 60869,
+    },
+    {
+      "current": {
+        "clicks": 44,
+        "ctr": 0.0088,
+        "impressions": 4984,
+        "position": 15.1,
+      },
+      "kind": "striking-distance",
+      "mapped": false,
+      "page": "/pocket-alternative",
+      "pages": [
+        "/pocket-alternative",
+      ],
+      "previous": {
+        "clicks": 8,
+        "ctr": 0.0043,
+        "impressions": 1848,
+        "position": 17.4,
+      },
+      "query": "raindrop alternative",
+      "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+      "score": 29241,
+    },
+    {
+      "current": {
+        "clicks": 106,
+        "ctr": 0.0329,
+        "impressions": 3220,
+        "position": 12.1,
+      },
+      "kind": "striking-distance",
+      "mapped": false,
+      "page": "/pocket-alternative",
+      "pages": [
+        "/pocket-alternative",
+      ],
+      "previous": {
+        "clicks": 66,
+        "ctr": 0.04,
+        "impressions": 1652,
+        "position": 14.2,
+      },
+      "query": "pocket replacement",
+      "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+      "score": 28693,
+    },
+    {
+      "current": {
+        "clicks": 176,
+        "ctr": 0.035,
+        "impressions": 5026,
+        "position": 8.9,
+      },
+      "kind": "new-demand",
+      "mapped": false,
+      "page": "/pocket-alternative",
+      "pages": [
+        "/pocket-alternative",
+      ],
+      "previous": {
+        "clicks": 107,
+        "ctr": 0.04,
+        "impressions": 2674,
+        "position": 12.1,
+      },
+      "query": "pocket alternative",
+      "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+      "score": 5026,
+    },
+    {
+      "current": {
+        "clicks": 44,
+        "ctr": 0.0088,
+        "impressions": 4984,
+        "position": 15.1,
+      },
+      "kind": "new-demand",
+      "mapped": false,
+      "page": "/pocket-alternative",
+      "pages": [
+        "/pocket-alternative",
+      ],
+      "previous": {
+        "clicks": 8,
+        "ctr": 0.0043,
+        "impressions": 1848,
+        "position": 17.4,
+      },
+      "query": "raindrop alternative",
+      "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+      "score": 4984,
+    },
+    {
+      "current": {
+        "clicks": 106,
+        "ctr": 0.0329,
+        "impressions": 3220,
+        "position": 12.1,
+      },
+      "kind": "new-demand",
+      "mapped": false,
+      "page": "/pocket-alternative",
+      "pages": [
+        "/pocket-alternative",
+      ],
+      "previous": {
+        "clicks": 66,
+        "ctr": 0.04,
+        "impressions": 1652,
+        "position": 14.2,
+      },
+      "query": "pocket replacement",
+      "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+      "score": 3220,
+    },
+  ],
+  "state": null,
+  "topQueries": [
+    {
+      "brand": false,
+      "current": {
+        "clicks": 176,
+        "ctr": 0.035,
+        "impressions": 5026,
+        "position": 8.9,
+      },
+      "mapped": false,
+      "previous": {
+        "clicks": 107,
+        "ctr": 0.04,
+        "impressions": 2674,
+        "position": 12.1,
+      },
+      "query": "pocket alternative",
+    },
+    {
+      "brand": false,
+      "current": {
+        "clicks": 44,
+        "ctr": 0.0088,
+        "impressions": 4984,
+        "position": 15.1,
+      },
+      "mapped": false,
+      "previous": {
+        "clicks": 8,
+        "ctr": 0.0043,
+        "impressions": 1848,
+        "position": 17.4,
+      },
+      "query": "raindrop alternative",
+    },
+    {
+      "brand": false,
+      "current": {
+        "clicks": 106,
+        "ctr": 0.0329,
+        "impressions": 3220,
+        "position": 12.1,
+      },
+      "mapped": false,
+      "previous": {
+        "clicks": 66,
+        "ctr": 0.04,
+        "impressions": 1652,
+        "position": 14.2,
+      },
+      "query": "pocket replacement",
+    },
+  ],
+  "trueTotals": {
+    "current": {
+      "clicks": 326,
+      "ctr": 0.0197,
+      "impressions": 16541,
+      "position": 12,
+    },
+    "deltaClicks": 145,
+    "deltaImpressions": 8820,
+    "previous": {
+      "clicks": 181,
+      "ctr": 0.0234,
+      "impressions": 7721,
+      "position": 14.3,
+    },
+  },
+  "verdict": "needs-optimization",
+}
+`;
+
+exports[`JSON routes queries 1`] = `
+{
+  "generatedAt": "<normalized>",
+  "mode": "debug",
+  "queries": [
+    {
+      "brand": false,
+      "current": {
+        "clicks": 240,
+        "ctr": 0.0168,
+        "impressions": 14252,
+        "position": 4.5,
+      },
+      "mappedTarget": null,
+      "page": "/chrome-extension",
+      "previous": {
+        "clicks": 204,
+        "ctr": 0.0214,
+        "impressions": 9548,
+        "position": 4.8,
+      },
+      "query": "chrome read later extension",
+    },
+    {
+      "brand": false,
+      "current": {
+        "clicks": 176,
+        "ctr": 0.035,
+        "impressions": 5026,
+        "position": 8.9,
+      },
+      "mappedTarget": null,
+      "page": "/pocket-alternative",
+      "previous": {
+        "clicks": 107,
+        "ctr": 0.04,
+        "impressions": 2674,
+        "position": 12.1,
+      },
+      "query": "pocket alternative",
+    },
+    {
+      "brand": false,
+      "current": {
+        "clicks": 44,
+        "ctr": 0.0088,
+        "impressions": 4984,
+        "position": 15.1,
+      },
+      "mappedTarget": null,
+      "page": "/pocket-alternative",
+      "previous": {
+        "clicks": 8,
+        "ctr": 0.0043,
+        "impressions": 1848,
+        "position": 17.4,
+      },
+      "query": "raindrop alternative",
+    },
+    {
+      "brand": false,
+      "current": {
+        "clicks": 40,
+        "ctr": 0.0108,
+        "impressions": 3710,
+        "position": 15.1,
+      },
+      "mappedTarget": null,
+      "page": "/",
+      "previous": {
+        "clicks": 6,
+        "ctr": 0.0044,
+        "impressions": 1358,
+        "position": 17.1,
+      },
+      "query": "bookmark organizer mac",
+    },
+    {
+      "brand": false,
+      "current": {
+        "clicks": 116,
+        "ctr": 0.0324,
+        "impressions": 3584,
+        "position": 8.8,
+      },
+      "mappedTarget": null,
+      "page": "/ios-app",
+      "previous": {
+        "clicks": 68,
+        "ctr": 0.0337,
+        "impressions": 2016,
+        "position": 11.2,
+      },
+      "query": "save links from iphone",
+    },
+    {
+      "brand": false,
+      "current": {
+        "clicks": 106,
+        "ctr": 0.0329,
+        "impressions": 3220,
+        "position": 12.1,
+      },
+      "mappedTarget": null,
+      "page": "/pocket-alternative",
+      "previous": {
+        "clicks": 66,
+        "ctr": 0.04,
+        "impressions": 1652,
+        "position": 14.2,
+      },
+      "query": "pocket replacement",
+    },
+    {
+      "brand": false,
+      "current": {
+        "clicks": 106,
+        "ctr": 0.0476,
+        "impressions": 2226,
+        "position": 8.5,
+      },
+      "mappedTarget": null,
+      "page": "/ios-app",
+      "previous": {
+        "clicks": 66,
+        "ctr": 0.0458,
+        "impressions": 1442,
+        "position": 9.4,
+      },
+      "query": "read later app",
+    },
+    {
+      "brand": false,
+      "current": {
+        "clicks": 92,
+        "ctr": 0.0413,
+        "impressions": 2226,
+        "position": 12.5,
+      },
+      "mappedTarget": null,
+      "page": "/chrome-extension",
+      "previous": {
+        "clicks": 60,
+        "ctr": 0.0416,
+        "impressions": 1442,
+        "position": 13.4,
+      },
+      "query": "save tabs for later chrome",
+    },
+    {
+      "brand": false,
+      "current": {
+        "clicks": 70,
+        "ctr": 0.0345,
+        "impressions": 2030,
+        "position": 10.7,
+      },
+      "mappedTarget": null,
+      "page": "/chrome-extension",
+      "previous": {
+        "clicks": 35,
+        "ctr": 0.0281,
+        "impressions": 1246,
+        "position": 11.2,
+      },
+      "query": "read later app",
+    },
+    {
+      "brand": false,
+      "current": {
+        "clicks": 34,
+        "ctr": 0.0171,
+        "impressions": 1988,
+        "position": 13.9,
+      },
+      "mappedTarget": null,
+      "page": "/docs",
+      "previous": {
+        "clicks": 3,
+        "ctr": 0.0037,
+        "impressions": 812,
+        "position": 15.2,
+      },
+      "query": "read later api",
+    },
+    {
+      "brand": false,
+      "current": {
+        "clicks": 70,
+        "ctr": 0.042,
+        "impressions": 1666,
+        "position": 14.6,
+      },
+      "mappedTarget": null,
+      "page": "/ios-app",
+      "previous": {
+        "clicks": 35,
+        "ctr": 0.0397,
+        "impressions": 882,
+        "position": 16.3,
+      },
+      "query": "ios share sheet read later app",
+    },
+    {
+      "brand": false,
+      "current": {
+        "clicks": 38,
+        "ctr": 0.0264,
+        "impressions": 1442,
+        "position": 17.8,
+      },
+      "mappedTarget": null,
+      "page": "/raycast",
+      "previous": {
+        "clicks": 5,
+        "ctr": 0.0076,
+        "impressions": 658,
+        "position": 18.8,
+      },
+      "query": "raycast save links",
+    },
+  ],
+  "window": {
+    "currentEnd": "2026-07-12",
+    "currentStart": "2026-06-15",
+    "previousEnd": "2026-06-14",
+    "previousStart": "2026-05-18",
+  },
+}
+`;
+
+exports[`JSON routes opportunities 1`] = `
+{
+  "generatedAt": "<normalized>",
+  "mode": "debug",
+  "signals": [
+    {
+      "current": {
+        "clicks": 240,
+        "ctr": 0.0168,
+        "impressions": 14252,
+        "position": 4.5,
+      },
+      "kind": "striking-distance",
+      "mapped": false,
+      "page": "/chrome-extension",
+      "pages": [
+        "/chrome-extension",
+      ],
+      "previous": {
+        "clicks": 204,
+        "ctr": 0.0214,
+        "impressions": 9548,
+        "position": 4.8,
+      },
+      "query": "chrome read later extension",
+      "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+      "registry": null,
+      "score": 235481,
+    },
+    {
+      "current": {
+        "clicks": 176,
+        "ctr": 0.035,
+        "impressions": 5026,
+        "position": 8.9,
+      },
+      "kind": "striking-distance",
+      "mapped": false,
+      "page": "/pocket-alternative",
+      "pages": [
+        "/pocket-alternative",
+      ],
+      "previous": {
+        "clicks": 107,
+        "ctr": 0.04,
+        "impressions": 2674,
+        "position": 12.1,
+      },
+      "query": "pocket alternative",
+      "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+      "registry": null,
+      "score": 60869,
+    },
+    {
+      "current": {
+        "clicks": 116,
+        "ctr": 0.0324,
+        "impressions": 3584,
+        "position": 8.8,
+      },
+      "kind": "striking-distance",
+      "mapped": false,
+      "page": "/ios-app",
+      "pages": [
+        "/ios-app",
+      ],
+      "previous": {
+        "clicks": 68,
+        "ctr": 0.0337,
+        "impressions": 2016,
+        "position": 11.2,
+      },
+      "query": "save links from iphone",
+      "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+      "registry": null,
+      "score": 43821,
+    },
+    {
+      "current": {
+        "clicks": 44,
+        "ctr": 0.0088,
+        "impressions": 4984,
+        "position": 15.1,
+      },
+      "kind": "striking-distance",
+      "mapped": false,
+      "page": "/pocket-alternative",
+      "pages": [
+        "/pocket-alternative",
+      ],
+      "previous": {
+        "clicks": 8,
+        "ctr": 0.0043,
+        "impressions": 1848,
+        "position": 17.4,
+      },
+      "query": "raindrop alternative",
+      "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+      "registry": null,
+      "score": 29241,
+    },
+    {
+      "current": {
+        "clicks": 106,
+        "ctr": 0.0329,
+        "impressions": 3220,
+        "position": 12.1,
+      },
+      "kind": "striking-distance",
+      "mapped": false,
+      "page": "/pocket-alternative",
+      "pages": [
+        "/pocket-alternative",
+      ],
+      "previous": {
+        "clicks": 66,
+        "ctr": 0.04,
+        "impressions": 1652,
+        "position": 14.2,
+      },
+      "query": "pocket replacement",
+      "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+      "registry": null,
+      "score": 28693,
+    },
+    {
+      "current": {
+        "clicks": 106,
+        "ctr": 0.0476,
+        "impressions": 2226,
+        "position": 8.5,
+      },
+      "kind": "striking-distance",
+      "mapped": false,
+      "page": "/ios-app",
+      "pages": [
+        "/ios-app",
+      ],
+      "previous": {
+        "clicks": 66,
+        "ctr": 0.0458,
+        "impressions": 1442,
+        "position": 9.4,
+      },
+      "query": "read later app",
+      "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+      "registry": null,
+      "score": 27757,
+    },
+    {
+      "current": {
+        "clicks": 40,
+        "ctr": 0.0108,
+        "impressions": 3710,
+        "position": 15.1,
+      },
+      "kind": "striking-distance",
+      "mapped": false,
+      "page": "/",
+      "pages": [
+        "/",
+      ],
+      "previous": {
+        "clicks": 6,
+        "ctr": 0.0044,
+        "impressions": 1358,
+        "position": 17.1,
+      },
+      "query": "bookmark organizer mac",
+      "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+      "registry": null,
+      "score": 22031,
+    },
+    {
+      "current": {
+        "clicks": 70,
+        "ctr": 0.0345,
+        "impressions": 2030,
+        "position": 10.7,
+      },
+      "kind": "striking-distance",
+      "mapped": false,
+      "page": "/chrome-extension",
+      "pages": [
+        "/chrome-extension",
+      ],
+      "previous": {
+        "clicks": 35,
+        "ctr": 0.0281,
+        "impressions": 1246,
+        "position": 11.2,
+      },
+      "query": "read later app",
+      "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+      "registry": null,
+      "score": 21006,
+    },
+    {
+      "current": {
+        "clicks": 92,
+        "ctr": 0.0413,
+        "impressions": 2226,
+        "position": 12.5,
+      },
+      "kind": "striking-distance",
+      "mapped": false,
+      "page": "/chrome-extension",
+      "pages": [
+        "/chrome-extension",
+      ],
+      "previous": {
+        "clicks": 60,
+        "ctr": 0.0416,
+        "impressions": 1442,
+        "position": 13.4,
+      },
+      "query": "save tabs for later chrome",
+      "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+      "registry": null,
+      "score": 18853,
+    },
+    {
+      "current": {
+        "clicks": 240,
+        "ctr": 0.0168,
+        "impressions": 14252,
+        "position": 4.5,
+      },
+      "kind": "new-demand",
+      "mapped": false,
+      "page": "/chrome-extension",
+      "pages": [
+        "/chrome-extension",
+      ],
+      "previous": {
+        "clicks": 204,
+        "ctr": 0.0214,
+        "impressions": 9548,
+        "position": 4.8,
+      },
+      "query": "chrome read later extension",
+      "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+      "registry": null,
+      "score": 14252,
+    },
+    {
+      "current": {
+        "clicks": 34,
+        "ctr": 0.0171,
+        "impressions": 1988,
+        "position": 13.9,
+      },
+      "kind": "striking-distance",
+      "mapped": false,
+      "page": "/docs",
+      "pages": [
+        "/docs",
+      ],
+      "previous": {
+        "clicks": 3,
+        "ctr": 0.0037,
+        "impressions": 812,
+        "position": 15.2,
+      },
+      "query": "read later api",
+      "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+      "registry": null,
+      "score": 14202,
+    },
+    {
+      "current": {
+        "clicks": 70,
+        "ctr": 0.042,
+        "impressions": 1666,
+        "position": 14.6,
+      },
+      "kind": "striking-distance",
+      "mapped": false,
+      "page": "/ios-app",
+      "pages": [
+        "/ios-app",
+      ],
+      "previous": {
+        "clicks": 35,
+        "ctr": 0.0397,
+        "impressions": 882,
+        "position": 16.3,
+      },
+      "query": "ios share sheet read later app",
+      "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+      "registry": null,
+      "score": 10589,
+    },
+    {
+      "current": {
+        "clicks": 176,
+        "ctr": 0.0414,
+        "impressions": 4256,
+        "position": 9.5,
+      },
+      "kind": "cannibalization",
+      "mapped": false,
+      "page": "/chrome-extension",
+      "pages": [
+        "/chrome-extension",
+        "/ios-app",
+      ],
+      "previous": null,
+      "query": "read later app",
+      "recommendation": "Consolidate content and internal links, or clarify canonicals and page intent.",
+      "registry": null,
+      "score": 8512,
+    },
+    {
+      "current": {
+        "clicks": 176,
+        "ctr": 0.035,
+        "impressions": 5026,
+        "position": 8.9,
+      },
+      "kind": "new-demand",
+      "mapped": false,
+      "page": "/pocket-alternative",
+      "pages": [
+        "/pocket-alternative",
+      ],
+      "previous": {
+        "clicks": 107,
+        "ctr": 0.04,
+        "impressions": 2674,
+        "position": 12.1,
+      },
+      "query": "pocket alternative",
+      "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+      "registry": null,
+      "score": 5026,
+    },
+    {
+      "current": {
+        "clicks": 44,
+        "ctr": 0.0088,
+        "impressions": 4984,
+        "position": 15.1,
+      },
+      "kind": "new-demand",
+      "mapped": false,
+      "page": "/pocket-alternative",
+      "pages": [
+        "/pocket-alternative",
+      ],
+      "previous": {
+        "clicks": 8,
+        "ctr": 0.0043,
+        "impressions": 1848,
+        "position": 17.4,
+      },
+      "query": "raindrop alternative",
+      "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+      "registry": null,
+      "score": 4984,
+    },
+    {
+      "current": {
+        "clicks": 38,
+        "ctr": 0.0264,
+        "impressions": 1442,
+        "position": 17.8,
+      },
+      "kind": "striking-distance",
+      "mapped": false,
+      "page": "/raycast",
+      "pages": [
+        "/raycast",
+      ],
+      "previous": {
+        "clicks": 5,
+        "ctr": 0.0076,
+        "impressions": 658,
+        "position": 18.8,
+      },
+      "query": "raycast save links",
+      "recommendation": "Check whether the ranking page satisfies intent before adding a new page.",
+      "registry": null,
+      "score": 4630,
+    },
+    {
+      "current": {
+        "clicks": 176,
+        "ctr": 0.0414,
+        "impressions": 4256,
+        "position": 9.5,
+      },
+      "kind": "new-demand",
+      "mapped": false,
+      "page": "/chrome-extension",
+      "pages": [
+        "/chrome-extension",
+        "/ios-app",
+      ],
+      "previous": {
+        "clicks": 101,
+        "ctr": 0.0376,
+        "impressions": 2688,
+        "position": 10.2,
+      },
+      "query": "read later app",
+      "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+      "registry": null,
+      "score": 4256,
+    },
+    {
+      "current": {
+        "clicks": 40,
+        "ctr": 0.0108,
+        "impressions": 3710,
+        "position": 15.1,
+      },
+      "kind": "new-demand",
+      "mapped": false,
+      "page": "/",
+      "pages": [
+        "/",
+      ],
+      "previous": {
+        "clicks": 6,
+        "ctr": 0.0044,
+        "impressions": 1358,
+        "position": 17.1,
+      },
+      "query": "bookmark organizer mac",
+      "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+      "registry": null,
+      "score": 3710,
+    },
+    {
+      "current": {
+        "clicks": 116,
+        "ctr": 0.0324,
+        "impressions": 3584,
+        "position": 8.8,
+      },
+      "kind": "new-demand",
+      "mapped": false,
+      "page": "/ios-app",
+      "pages": [
+        "/ios-app",
+      ],
+      "previous": {
+        "clicks": 68,
+        "ctr": 0.0337,
+        "impressions": 2016,
+        "position": 11.2,
+      },
+      "query": "save links from iphone",
+      "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+      "registry": null,
+      "score": 3584,
+    },
+    {
+      "current": {
+        "clicks": 106,
+        "ctr": 0.0329,
+        "impressions": 3220,
+        "position": 12.1,
+      },
+      "kind": "new-demand",
+      "mapped": false,
+      "page": "/pocket-alternative",
+      "pages": [
+        "/pocket-alternative",
+      ],
+      "previous": {
+        "clicks": 66,
+        "ctr": 0.04,
+        "impressions": 1652,
+        "position": 14.2,
+      },
+      "query": "pocket replacement",
+      "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+      "registry": null,
+      "score": 3220,
+    },
+    {
+      "current": {
+        "clicks": 92,
+        "ctr": 0.0413,
+        "impressions": 2226,
+        "position": 12.5,
+      },
+      "kind": "new-demand",
+      "mapped": false,
+      "page": "/chrome-extension",
+      "pages": [
+        "/chrome-extension",
+      ],
+      "previous": {
+        "clicks": 60,
+        "ctr": 0.0416,
+        "impressions": 1442,
+        "position": 13.4,
+      },
+      "query": "save tabs for later chrome",
+      "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+      "registry": null,
+      "score": 2226,
+    },
+    {
+      "current": {
+        "clicks": 34,
+        "ctr": 0.0171,
+        "impressions": 1988,
+        "position": 13.9,
+      },
+      "kind": "new-demand",
+      "mapped": false,
+      "page": "/docs",
+      "pages": [
+        "/docs",
+      ],
+      "previous": {
+        "clicks": 3,
+        "ctr": 0.0037,
+        "impressions": 812,
+        "position": 15.2,
+      },
+      "query": "read later api",
+      "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+      "registry": null,
+      "score": 1988,
+    },
+    {
+      "current": {
+        "clicks": 70,
+        "ctr": 0.042,
+        "impressions": 1666,
+        "position": 14.6,
+      },
+      "kind": "new-demand",
+      "mapped": false,
+      "page": "/ios-app",
+      "pages": [
+        "/ios-app",
+      ],
+      "previous": {
+        "clicks": 35,
+        "ctr": 0.0397,
+        "impressions": 882,
+        "position": 16.3,
+      },
+      "query": "ios share sheet read later app",
+      "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+      "registry": null,
+      "score": 1666,
+    },
+    {
+      "current": {
+        "clicks": 38,
+        "ctr": 0.0264,
+        "impressions": 1442,
+        "position": 17.8,
+      },
+      "kind": "new-demand",
+      "mapped": false,
+      "page": "/raycast",
+      "pages": [
+        "/raycast",
+      ],
+      "previous": {
+        "clicks": 5,
+        "ctr": 0.0076,
+        "impressions": 658,
+        "position": 18.8,
+      },
+      "query": "raycast save links",
+      "recommendation": "Cluster the phrase and map it only if no existing page satisfies the intent.",
+      "registry": null,
+      "score": 1442,
+    },
+    {
+      "current": {
+        "clicks": 240,
+        "ctr": 0.0168,
+        "impressions": 14252,
+        "position": 4.5,
+      },
+      "kind": "ctr",
+      "mapped": false,
+      "page": "/chrome-extension",
+      "pages": [
+        "/chrome-extension",
+      ],
+      "previous": {
+        "clicks": 204,
+        "ctr": 0.0214,
+        "impressions": 9548,
+        "position": 4.8,
+      },
+      "query": "chrome read later extension",
+      "recommendation": "Test title, description, and snippet alignment; do not repeat keywords.",
+      "registry": null,
+      "score": 240,
+    },
+  ],
+  "window": {
+    "currentEnd": "2026-07-12",
+    "currentStart": "2026-06-15",
+    "previousEnd": "2026-06-14",
+    "previousStart": "2026-05-18",
+  },
+}
+`;
+
+exports[`JSON routes registry 1`] = `
+{
+  "generatedAt": "<normalized>",
+  "mode": "debug",
+  "targets": [],
+}
+`;
+
+exports[`JSON routes log 1`] = `
+{
+  "actions": [],
+  "generatedAt": "<normalized>",
+  "mode": "debug",
+}
+`;
+
+exports[`JSON routes history 1`] = `
+{
+  "days": [
+    {
+      "clicks": 60,
+      "ctr": 0.0421,
+      "date": "2026-06-15",
+      "impressions": 1424,
+      "position": 9.6,
+    },
+    {
+      "clicks": 60,
+      "ctr": 0.0413,
+      "date": "2026-06-16",
+      "impressions": 1452,
+      "position": 9.6,
+    },
+    {
+      "clicks": 61,
+      "ctr": 0.0412,
+      "date": "2026-06-17",
+      "impressions": 1481,
+      "position": 9.6,
+    },
+    {
+      "clicks": 61,
+      "ctr": 0.0404,
+      "date": "2026-06-18",
+      "impressions": 1509,
+      "position": 9.6,
+    },
+    {
+      "clicks": 62,
+      "ctr": 0.0403,
+      "date": "2026-06-19",
+      "impressions": 1538,
+      "position": 9.5,
+    },
+    {
+      "clicks": 63,
+      "ctr": 0.0402,
+      "date": "2026-06-20",
+      "impressions": 1566,
+      "position": 9.5,
+    },
+    {
+      "clicks": 63,
+      "ctr": 0.0395,
+      "date": "2026-06-21",
+      "impressions": 1595,
+      "position": 9.5,
+    },
+    {
+      "clicks": 64,
+      "ctr": 0.0394,
+      "date": "2026-06-22",
+      "impressions": 1623,
+      "position": 9.5,
+    },
+    {
+      "clicks": 66,
+      "ctr": 0.04,
+      "date": "2026-06-23",
+      "impressions": 1652,
+      "position": 9.4,
+    },
+    {
+      "clicks": 66,
+      "ctr": 0.0393,
+      "date": "2026-06-24",
+      "impressions": 1680,
+      "position": 9.4,
+    },
+    {
+      "clicks": 66,
+      "ctr": 0.0386,
+      "date": "2026-06-25",
+      "impressions": 1709,
+      "position": 9.4,
+    },
+    {
+      "clicks": 66,
+      "ctr": 0.038,
+      "date": "2026-06-26",
+      "impressions": 1737,
+      "position": 9.3,
+    },
+    {
+      "clicks": 69,
+      "ctr": 0.0391,
+      "date": "2026-06-27",
+      "impressions": 1766,
+      "position": 9.3,
+    },
+    {
+      "clicks": 69,
+      "ctr": 0.0385,
+      "date": "2026-06-28",
+      "impressions": 1794,
+      "position": 9.3,
+    },
+    {
+      "clicks": 71,
+      "ctr": 0.0389,
+      "date": "2026-06-29",
+      "impressions": 1823,
+      "position": 9.2,
+    },
+    {
+      "clicks": 71,
+      "ctr": 0.0384,
+      "date": "2026-06-30",
+      "impressions": 1851,
+      "position": 9.2,
+    },
+    {
+      "clicks": 73,
+      "ctr": 0.0388,
+      "date": "2026-07-01",
+      "impressions": 1880,
+      "position": 9.2,
+    },
+    {
+      "clicks": 74,
+      "ctr": 0.0388,
+      "date": "2026-07-02",
+      "impressions": 1908,
+      "position": 9.1,
+    },
+    {
+      "clicks": 75,
+      "ctr": 0.0387,
+      "date": "2026-07-03",
+      "impressions": 1937,
+      "position": 9.1,
+    },
+    {
+      "clicks": 75,
+      "ctr": 0.0382,
+      "date": "2026-07-04",
+      "impressions": 1965,
+      "position": 9.1,
+    },
+    {
+      "clicks": 77,
+      "ctr": 0.0386,
+      "date": "2026-07-05",
+      "impressions": 1994,
+      "position": 9,
+    },
+    {
+      "clicks": 77,
+      "ctr": 0.0381,
+      "date": "2026-07-06",
+      "impressions": 2022,
+      "position": 9,
+    },
+    {
+      "clicks": 79,
+      "ctr": 0.0385,
+      "date": "2026-07-07",
+      "impressions": 2051,
+      "position": 8.9,
+    },
+    {
+      "clicks": 79,
+      "ctr": 0.038,
+      "date": "2026-07-08",
+      "impressions": 2079,
+      "position": 8.9,
+    },
+    {
+      "clicks": 79,
+      "ctr": 0.0375,
+      "date": "2026-07-09",
+      "impressions": 2108,
+      "position": 8.9,
+    },
+    {
+      "clicks": 79,
+      "ctr": 0.037,
+      "date": "2026-07-10",
+      "impressions": 2136,
+      "position": 8.8,
+    },
+    {
+      "clicks": 81,
+      "ctr": 0.0374,
+      "date": "2026-07-11",
+      "impressions": 2165,
+      "position": 8.8,
+    },
+    {
+      "clicks": 83,
+      "ctr": 0.0378,
+      "date": "2026-07-12",
+      "impressions": 2193,
+      "position": 8.7,
+    },
+  ],
+  "generatedAt": "<normalized>",
+  "mode": "debug",
+}
+`;
+
+exports[`JSON routes jobs 1`] = `
+{
+  "generatedAt": "<normalized>",
+  "jobs": [
+    {
+      "finishedAt": "<normalized>",
+      "id": 1,
+      "message": "Saved 728 fake rows to the isolated debug database.",
+      "name": "sync",
+      "siteId": "sleevy",
+      "startedAt": "<normalized>",
+      "status": "done",
+    },
+  ],
+  "mode": "debug",
+}
+`;
+
+exports[`text feeds sites.txt 1`] = `"sleevy	Sleevy"`;
+
+exports[`text feeds pages.txt 1`] = `
+"latest=2026-07-12|window=2026-06-15..2026-07-12
+/chrome-extension|1239|28490|4.3%|5.4
+/pocket-alternative|326|16541|2.0%|12.0
+/ios-app|292|9338|3.1%|10.0
+/|40|4641|0.9%|15.1
+/docs|34|2489|1.4%|13.9
+/raycast|38|1806|2.1%|17.8"
+`;
+
+exports[`text feeds tui-home 1`] = `
+"header	728 rows · 56 days · DEBUG
+meta	Impressions · 28d	50638	+22344 vs prev	up
+meta	Clicks · 28d	1969	+625 vs prev	up
+meta	CTR · 28d	3.9%	4.8% prev	
+meta	Avg position	9.2	9.6 prev	
+head	SIGNAL CATEGORY	COUNT				
+row	0	Striking distance	12						arrow-up	
+row	1	CTR opportunity	1						eye	
+row	2	New demand	11						search	
+row	3	Cannibalization	1						git-branch	
+row	4	Unmapped sitemap pages	0						file-text	
+row	5	Recent activity	0						history	
+dtitle	0	main	Striking distance
+dkv	0	main	Current 28 days	Jun 15 – Jul 12	
+dkv	0	main	Previous 28 days	May 18 – Jun 14	
+dkv	0	main	Keywords tracked	0	
+dsect	0	main	WHAT IT MEANS
+dtext	0	main	This page is already visible and close to the first page. Improving the page may produce more traffic faster than publishing a new page.
+dsect	0	main	DETECTION RULE
+dtext	0	main	Current 28-day query row: 20+ impressions, position 4–20, and CTR under 10%. Brand queries are excluded.
+dsect	0	main	RECOMMENDED ACTION
+dtext	0	main	Improve the existing ranking page first: strengthen intent match, content depth, and internal links before creating a new page.
+dsect	0	main	TOP SIGNALS · 12
+dlist	0	main	chrome read later extension — /chrome-extension · 14252 impressions · position 4.5
+dlist	0	main	pocket alternative — /pocket-alternative · 5026 impressions · position 8.9
+dlist	0	main	save links from iphone — /ios-app · 3584 impressions · position 8.8
+dlist	0	main	raindrop alternative — /pocket-alternative · 4984 impressions · position 15.1
+dlist	0	main	pocket replacement — /pocket-alternative · 3220 impressions · position 12.1
+dlist	0	main	read later app — /ios-app · 2226 impressions · position 8.5
+dtitle	1	main	CTR opportunity
+dkv	1	main	Current 28 days	Jun 15 – Jul 12	
+dkv	1	main	Previous 28 days	May 18 – Jun 14	
+dkv	1	main	Keywords tracked	0	
+dsect	1	main	WHAT IT MEANS
+dtext	1	main	This page already ranks well, but its search result earns fewer clicks than similar results. The title, description, or intent match may need work.
+dsect	1	main	DETECTION RULE
+dtext	1	main	Current 28-day query row: 50+ impressions, position 1–10, and CTR below 80% of its benchmark. The benchmark is the same-band median when 3+ comparable rows exist; otherwise it is the site median.
+dsect	1	main	RECOMMENDED ACTION
+dtext	1	main	Test the title and description against the query intent; keep the page focused if its ranking is already strong.
+dsect	1	main	TOP SIGNALS · 1
+dlist	1	main	chrome read later extension — /chrome-extension · 14252 impressions · position 4.5
+dtitle	2	main	New demand
+dkv	2	main	Current 28 days	Jun 15 – Jul 12	
+dkv	2	main	Previous 28 days	May 18 – Jun 14	
+dkv	2	main	Keywords tracked	0	
+dsect	2	main	WHAT IT MEANS
+dtext	2	main	People are searching for a phrase your plan does not cover. First decide whether an existing page satisfies that intent; only then create a new mapping or page.
+dsect	2	main	DETECTION RULE
+dtext	2	main	After grouping current 28-day rows by query: 20+ impressions and no exact case-insensitive registry keyword match. Brand queries are excluded.
+dsect	2	main	RECOMMENDED ACTION
+dtext	2	main	Check existing pages first. Map the keyword only when the intent fits; create a page only when no current page fits.
+dsect	2	main	TOP SIGNALS · 11
+dlist	2	main	chrome read later extension — /chrome-extension · 14252 impressions · position 4.5
+dlist	2	main	pocket alternative — /pocket-alternative · 5026 impressions · position 8.9
+dlist	2	main	raindrop alternative — /pocket-alternative · 4984 impressions · position 15.1
+dlist	2	main	read later app — /chrome-extension · 4256 impressions · position 9.5
+dlist	2	main	bookmark organizer mac — / · 3710 impressions · position 15.1
+dlist	2	main	save links from iphone — /ios-app · 3584 impressions · position 8.8
+dtitle	3	main	Cannibalization
+dkv	3	main	Current 28 days	Jun 15 – Jul 12	
+dkv	3	main	Previous 28 days	May 18 – Jun 14	
+dkv	3	main	Keywords tracked	0	
+dsect	3	main	WHAT IT MEANS
+dtext	3	main	Google is dividing one query between multiple pages on this site. That can weaken both pages because neither has a clear primary target.
+dsect	3	main	DETECTION RULE
+dtext	3	main	After grouping current 28-day rows by query: the query has rows for 2+ different page URLs. Brand queries are excluded.
+dsect	3	main	RECOMMENDED ACTION
+dtext	3	main	Choose one primary page, then consolidate, redirect, or clarify the competing pages and their internal links.
+dsect	3	main	TOP SIGNALS · 1
+dlist	3	main	read later app — /chrome-extension · 4256 impressions · position 9.5
+dtitle	4	main	Unmapped sitemap pages
+dkv	4	main	Current 28 days	Jun 15 – Jul 12	
+dkv	4	main	Previous 28 days	May 18 – Jun 14	
+dkv	4	main	Keywords tracked	0	
+dsect	4	main	WHAT IT MEANS
+dtext	4	main	A published URL appears in sitemap.xml but has no target-page row in keyword-registry.csv.
+dsect	4	main	DETECTION RULE
+dtext	4	main	Compare every sitemap URL path with the registry target_url column. Keywords may be blank for inventory-only pages.
+dsect	4	main	RECOMMENDED ACTION
+dtext	4	main	Add a page-only registry row, then assign keywords only when research or observed demand supports them.
+dsect	4	main	UNMAPPED PAGES
+dtext	4	main	Every sitemap page is represented in the registry.
+dtitle	5	main	Recent activity
+dkv	5	main	Current 28 days	Jun 15 – Jul 12	
+dkv	5	main	Previous 28 days	May 18 – Jun 14	
+dkv	5	main	Keywords tracked	0	
+dsect	5	main	WHAT IT MEANS
+dtext	5	main	The most recent interventions logged across this site. Notes are excluded from this glance — open the Log view for the full record with before/after readouts.
+dsect	5	main	LATEST ACTIONS · 0
+dtext	5	main	No actions logged yet. Record one with the log CLI."
+`;
+
+exports[`text feeds tui-opportunities 1`] = `
+"header	728 rows · 56 days · DEBUG
+meta	Impressions · 28d	50638	+22344 vs prev	up
+meta	Clicks · 28d	1969	+625 vs prev	up
+meta	CTR · 28d	3.9%	4.8% prev	
+meta	Avg position	9.2	9.6 prev	
+head	TYPE	QUERY	IMPR	CLICKS	POS	SCORE
+row	0	Striking distance	chrome read later extension	14252	240	4.5	235481	https://sleevy.app/chrome-extension	arrow-up	
+row	1	Striking distance	pocket alternative	5026	176	8.9	60869	https://sleevy.app/pocket-alternative	arrow-up	
+row	2	Striking distance	save links from iphone	3584	116	8.8	43821	https://sleevy.app/ios-app	arrow-up	
+row	3	Striking distance	raindrop alternative	4984	44	15.1	29241	https://sleevy.app/pocket-alternative	arrow-up	
+row	4	Striking distance	pocket replacement	3220	106	12.1	28693	https://sleevy.app/pocket-alternative	arrow-up	
+row	5	Striking distance	read later app	2226	106	8.5	27757	https://sleevy.app/ios-app	arrow-up	
+row	6	Striking distance	bookmark organizer mac	3710	40	15.1	22031	https://sleevy.app/	arrow-up	
+row	7	Striking distance	read later app	2030	70	10.7	21006	https://sleevy.app/chrome-extension	arrow-up	
+row	8	Striking distance	save tabs for later chrome	2226	92	12.5	18853	https://sleevy.app/chrome-extension	arrow-up	
+row	9	New demand	chrome read later extension	14252	240	4.5	14252	https://sleevy.app/chrome-extension	search	
+row	10	Striking distance	read later api	1988	34	13.9	14202	https://sleevy.app/docs	arrow-up	
+row	11	Striking distance	ios share sheet read later app	1666	70	14.6	10589	https://sleevy.app/ios-app	arrow-up	
+row	12	Cannibalization	read later app	4256	176	9.5	8512	https://sleevy.app/chrome-extension	git-branch	
+row	13	New demand	pocket alternative	5026	176	8.9	5026	https://sleevy.app/pocket-alternative	search	
+row	14	New demand	raindrop alternative	4984	44	15.1	4984	https://sleevy.app/pocket-alternative	search	
+row	15	Striking distance	raycast save links	1442	38	17.8	4630	https://sleevy.app/raycast	arrow-up	
+row	16	New demand	read later app	4256	176	9.5	4256	https://sleevy.app/chrome-extension	search	
+row	17	New demand	bookmark organizer mac	3710	40	15.1	3710	https://sleevy.app/	search	
+row	18	New demand	save links from iphone	3584	116	8.8	3584	https://sleevy.app/ios-app	search	
+row	19	New demand	pocket replacement	3220	106	12.1	3220	https://sleevy.app/pocket-alternative	search	
+row	20	New demand	save tabs for later chrome	2226	92	12.5	2226	https://sleevy.app/chrome-extension	search	
+row	21	New demand	read later api	1988	34	13.9	1988	https://sleevy.app/docs	search	
+row	22	New demand	ios share sheet read later app	1666	70	14.6	1666	https://sleevy.app/ios-app	search	
+row	23	New demand	raycast save links	1442	38	17.8	1442	https://sleevy.app/raycast	search	
+row	24	CTR opportunity	chrome read later extension	14252	240	4.5	240	https://sleevy.app/chrome-extension	eye	
+dtitle	0	main	chrome read later extension
+dmetric	0	main	Impr.	14252	+4704	up
+dmetric	0	main	Clicks	240	+36	up
+dmetric	0	main	CTR	1.7%		
+dmetric	0	main	Position	4.5		
+dmetric	0	main	Score	235481		
+dkv	0	main	Type	Striking distance	
+dkv	0	main	Page	/chrome-extension	
+dkv	0	main	Query	chrome read later extension	
+dkv	0	main	Registry	Unmapped	
+dsect	0	main	WHY THIS MATCHES THE RULE
+dtext	0	main	“chrome read later extension” is ranking at position 4.5 with 14252 impressions and a 1.7% CTR. It is visible, but there is room to earn more clicks.
+dsect	0	main	RECOMMENDED ACTION
+dtext	0	main	Improve the existing ranking page first: strengthen intent match, content depth, and internal links before creating a new page.
+dtitle	1	main	pocket alternative
+dmetric	1	main	Impr.	5026	+2352	up
+dmetric	1	main	Clicks	176	+69	up
+dmetric	1	main	CTR	3.5%		
+dmetric	1	main	Position	8.9		
+dmetric	1	main	Score	60869		
+dkv	1	main	Type	Striking distance	
+dkv	1	main	Page	/pocket-alternative	
+dkv	1	main	Query	pocket alternative	
+dkv	1	main	Registry	Unmapped	
+dsect	1	main	WHY THIS MATCHES THE RULE
+dtext	1	main	“pocket alternative” is ranking at position 8.9 with 5026 impressions and a 3.5% CTR. It is visible, but there is room to earn more clicks.
+dsect	1	main	RECOMMENDED ACTION
+dtext	1	main	Improve the existing ranking page first: strengthen intent match, content depth, and internal links before creating a new page.
+dtitle	2	main	save links from iphone
+dmetric	2	main	Impr.	3584	+1568	up
+dmetric	2	main	Clicks	116	+48	up
+dmetric	2	main	CTR	3.2%		
+dmetric	2	main	Position	8.8		
+dmetric	2	main	Score	43821		
+dkv	2	main	Type	Striking distance	
+dkv	2	main	Page	/ios-app	
+dkv	2	main	Query	save links from iphone	
+dkv	2	main	Registry	Unmapped	
+dsect	2	main	WHY THIS MATCHES THE RULE
+dtext	2	main	“save links from iphone” is ranking at position 8.8 with 3584 impressions and a 3.2% CTR. It is visible, but there is room to earn more clicks.
+dsect	2	main	RECOMMENDED ACTION
+dtext	2	main	Improve the existing ranking page first: strengthen intent match, content depth, and internal links before creating a new page.
+dtitle	3	main	raindrop alternative
+dmetric	3	main	Impr.	4984	+3136	up
+dmetric	3	main	Clicks	44	+36	up
+dmetric	3	main	CTR	0.9%		
+dmetric	3	main	Position	15.1		
+dmetric	3	main	Score	29241		
+dkv	3	main	Type	Striking distance	
+dkv	3	main	Page	/pocket-alternative	
+dkv	3	main	Query	raindrop alternative	
+dkv	3	main	Registry	Unmapped	
+dsect	3	main	WHY THIS MATCHES THE RULE
+dtext	3	main	“raindrop alternative” is ranking at position 15.1 with 4984 impressions and a 0.9% CTR. It is visible, but there is room to earn more clicks.
+dsect	3	main	RECOMMENDED ACTION
+dtext	3	main	Improve the existing ranking page first: strengthen intent match, content depth, and internal links before creating a new page.
+dtitle	4	main	pocket replacement
+dmetric	4	main	Impr.	3220	+1568	up
+dmetric	4	main	Clicks	106	+40	up
+dmetric	4	main	CTR	3.3%		
+dmetric	4	main	Position	12.1		
+dmetric	4	main	Score	28693		
+dkv	4	main	Type	Striking distance	
+dkv	4	main	Page	/pocket-alternative	
+dkv	4	main	Query	pocket replacement	
+dkv	4	main	Registry	Unmapped	
+dsect	4	main	WHY THIS MATCHES THE RULE
+dtext	4	main	“pocket replacement” is ranking at position 12.1 with 3220 impressions and a 3.3% CTR. It is visible, but there is room to earn more clicks.
+dsect	4	main	RECOMMENDED ACTION
+dtext	4	main	Improve the existing ranking page first: strengthen intent match, content depth, and internal links before creating a new page.
+dtitle	5	main	read later app
+dmetric	5	main	Impr.	2226	+784	up
+dmetric	5	main	Clicks	106	+40	up
+dmetric	5	main	CTR	4.8%		
+dmetric	5	main	Position	8.5		
+dmetric	5	main	Score	27757		
+dkv	5	main	Type	Striking distance	
+dkv	5	main	Page	/ios-app	
+dkv	5	main	Query	read later app	
+dkv	5	main	Registry	Unmapped	
+dsect	5	main	WHY THIS MATCHES THE RULE
+dtext	5	main	“read later app” is ranking at position 8.5 with 2226 impressions and a 4.8% CTR. It is visible, but there is room to earn more clicks.
+dsect	5	main	RECOMMENDED ACTION
+dtext	5	main	Improve the existing ranking page first: strengthen intent match, content depth, and internal links before creating a new page.
+dtitle	6	main	bookmark organizer mac
+dmetric	6	main	Impr.	3710	+2352	up
+dmetric	6	main	Clicks	40	+34	up
+dmetric	6	main	CTR	1.1%		
+dmetric	6	main	Position	15.1		
+dmetric	6	main	Score	22031		
+dkv	6	main	Type	Striking distance	
+dkv	6	main	Page	/	
+dkv	6	main	Query	bookmark organizer mac	
+dkv	6	main	Registry	Unmapped	
+dsect	6	main	WHY THIS MATCHES THE RULE
+dtext	6	main	“bookmark organizer mac” is ranking at position 15.1 with 3710 impressions and a 1.1% CTR. It is visible, but there is room to earn more clicks.
+dsect	6	main	RECOMMENDED ACTION
+dtext	6	main	Improve the existing ranking page first: strengthen intent match, content depth, and internal links before creating a new page.
+dtitle	7	main	read later app
+dmetric	7	main	Impr.	2030	+784	up
+dmetric	7	main	Clicks	70	+35	up
+dmetric	7	main	CTR	3.4%		
+dmetric	7	main	Position	10.7		
+dmetric	7	main	Score	21006		
+dkv	7	main	Type	Striking distance	
+dkv	7	main	Page	/chrome-extension	
+dkv	7	main	Query	read later app	
+dkv	7	main	Registry	Unmapped	
+dsect	7	main	WHY THIS MATCHES THE RULE
+dtext	7	main	“read later app” is ranking at position 10.7 with 2030 impressions and a 3.4% CTR. It is visible, but there is room to earn more clicks.
+dsect	7	main	RECOMMENDED ACTION
+dtext	7	main	Improve the existing ranking page first: strengthen intent match, content depth, and internal links before creating a new page.
+dtitle	8	main	save tabs for later chrome
+dmetric	8	main	Impr.	2226	+784	up
+dmetric	8	main	Clicks	92	+32	up
+dmetric	8	main	CTR	4.1%		
+dmetric	8	main	Position	12.5		
+dmetric	8	main	Score	18853		
+dkv	8	main	Type	Striking distance	
+dkv	8	main	Page	/chrome-extension	
+dkv	8	main	Query	save tabs for later chrome	
+dkv	8	main	Registry	Unmapped	
+dsect	8	main	WHY THIS MATCHES THE RULE
+dtext	8	main	“save tabs for later chrome” is ranking at position 12.5 with 2226 impressions and a 4.1% CTR. It is visible, but there is room to earn more clicks.
+dsect	8	main	RECOMMENDED ACTION
+dtext	8	main	Improve the existing ranking page first: strengthen intent match, content depth, and internal links before creating a new page.
+dtitle	9	main	chrome read later extension
+dmetric	9	main	Impr.	14252	+4704	up
+dmetric	9	main	Clicks	240	+36	up
+dmetric	9	main	CTR	1.7%		
+dmetric	9	main	Position	4.5		
+dmetric	9	main	Score	14252		
+dkv	9	main	Type	New demand	
+dkv	9	main	Page	/chrome-extension	
+dkv	9	main	Query	chrome read later extension	
+dkv	9	main	Registry	Unmapped	
+dsect	9	main	WHY THIS MATCHES THE RULE
+dtext	9	main	“chrome read later extension” generated 14252 impressions, but it is not mapped to a keyword in the selected site's registry.
+dsect	9	main	RECOMMENDED ACTION
+dtext	9	main	Check existing pages first. Map the keyword only when the intent fits; create a page only when no current page fits.
+dtitle	10	main	read later api
+dmetric	10	main	Impr.	1988	+1176	up
+dmetric	10	main	Clicks	34	+31	up
+dmetric	10	main	CTR	1.7%		
+dmetric	10	main	Position	13.9		
+dmetric	10	main	Score	14202		
+dkv	10	main	Type	Striking distance	
+dkv	10	main	Page	/docs	
+dkv	10	main	Query	read later api	
+dkv	10	main	Registry	Unmapped	
+dsect	10	main	WHY THIS MATCHES THE RULE
+dtext	10	main	“read later api” is ranking at position 13.9 with 1988 impressions and a 1.7% CTR. It is visible, but there is room to earn more clicks.
+dsect	10	main	RECOMMENDED ACTION
+dtext	10	main	Improve the existing ranking page first: strengthen intent match, content depth, and internal links before creating a new page.
+dtitle	11	main	ios share sheet read later app
+dmetric	11	main	Impr.	1666	+784	up
+dmetric	11	main	Clicks	70	+35	up
+dmetric	11	main	CTR	4.2%		
+dmetric	11	main	Position	14.6		
+dmetric	11	main	Score	10589		
+dkv	11	main	Type	Striking distance	
+dkv	11	main	Page	/ios-app	
+dkv	11	main	Query	ios share sheet read later app	
+dkv	11	main	Registry	Unmapped	
+dsect	11	main	WHY THIS MATCHES THE RULE
+dtext	11	main	“ios share sheet read later app” is ranking at position 14.6 with 1666 impressions and a 4.2% CTR. It is visible, but there is room to earn more clicks.
+dsect	11	main	RECOMMENDED ACTION
+dtext	11	main	Improve the existing ranking page first: strengthen intent match, content depth, and internal links before creating a new page.
+dtitle	12	main	read later app
+dmetric	12	main	Impr.	4256		
+dmetric	12	main	Clicks	176		
+dmetric	12	main	CTR	4.1%		
+dmetric	12	main	Position	9.5		
+dmetric	12	main	Score	8512		
+dkv	12	main	Type	Cannibalization	
+dkv	12	main	Page	/chrome-extension	
+dkv	12	main	Query	read later app	
+dkv	12	main	Registry	Unmapped	
+dkv	12	main	Competing URLs	/chrome-extension, /ios-app	
+dsect	12	main	WHY THIS MATCHES THE RULE
+dtext	12	main	“read later app” is receiving impressions for 2 pages: /chrome-extension, /ios-app.
+dsect	12	main	RECOMMENDED ACTION
+dtext	12	main	Choose one primary page, then consolidate, redirect, or clarify the competing pages and their internal links.
+dtitle	13	main	pocket alternative
+dmetric	13	main	Impr.	5026	+2352	up
+dmetric	13	main	Clicks	176	+69	up
+dmetric	13	main	CTR	3.5%		
+dmetric	13	main	Position	8.9		
+dmetric	13	main	Score	5026		
+dkv	13	main	Type	New demand	
+dkv	13	main	Page	/pocket-alternative	
+dkv	13	main	Query	pocket alternative	
+dkv	13	main	Registry	Unmapped	
+dsect	13	main	WHY THIS MATCHES THE RULE
+dtext	13	main	“pocket alternative” generated 5026 impressions, but it is not mapped to a keyword in the selected site's registry.
+dsect	13	main	RECOMMENDED ACTION
+dtext	13	main	Check existing pages first. Map the keyword only when the intent fits; create a page only when no current page fits.
+dtitle	14	main	raindrop alternative
+dmetric	14	main	Impr.	4984	+3136	up
+dmetric	14	main	Clicks	44	+36	up
+dmetric	14	main	CTR	0.9%		
+dmetric	14	main	Position	15.1		
+dmetric	14	main	Score	4984		
+dkv	14	main	Type	New demand	
+dkv	14	main	Page	/pocket-alternative	
+dkv	14	main	Query	raindrop alternative	
+dkv	14	main	Registry	Unmapped	
+dsect	14	main	WHY THIS MATCHES THE RULE
+dtext	14	main	“raindrop alternative” generated 4984 impressions, but it is not mapped to a keyword in the selected site's registry.
+dsect	14	main	RECOMMENDED ACTION
+dtext	14	main	Check existing pages first. Map the keyword only when the intent fits; create a page only when no current page fits.
+dtitle	15	main	raycast save links
+dmetric	15	main	Impr.	1442	+784	up
+dmetric	15	main	Clicks	38	+33	up
+dmetric	15	main	CTR	2.6%		
+dmetric	15	main	Position	17.8		
+dmetric	15	main	Score	4630		
+dkv	15	main	Type	Striking distance	
+dkv	15	main	Page	/raycast	
+dkv	15	main	Query	raycast save links	
+dkv	15	main	Registry	Unmapped	
+dsect	15	main	WHY THIS MATCHES THE RULE
+dtext	15	main	“raycast save links” is ranking at position 17.8 with 1442 impressions and a 2.6% CTR. It is visible, but there is room to earn more clicks.
+dsect	15	main	RECOMMENDED ACTION
+dtext	15	main	Improve the existing ranking page first: strengthen intent match, content depth, and internal links before creating a new page.
+dtitle	16	main	read later app
+dmetric	16	main	Impr.	4256	+1568	up
+dmetric	16	main	Clicks	176	+75	up
+dmetric	16	main	CTR	4.1%		
+dmetric	16	main	Position	9.5		
+dmetric	16	main	Score	4256		
+dkv	16	main	Type	New demand	
+dkv	16	main	Page	/chrome-extension	
+dkv	16	main	Query	read later app	
+dkv	16	main	Registry	Unmapped	
+dkv	16	main	Competing URLs	/chrome-extension, /ios-app	
+dsect	16	main	WHY THIS MATCHES THE RULE
+dtext	16	main	“read later app” generated 4256 impressions, but it is not mapped to a keyword in the selected site's registry.
+dsect	16	main	RECOMMENDED ACTION
+dtext	16	main	Check existing pages first. Map the keyword only when the intent fits; create a page only when no current page fits.
+dtitle	17	main	bookmark organizer mac
+dmetric	17	main	Impr.	3710	+2352	up
+dmetric	17	main	Clicks	40	+34	up
+dmetric	17	main	CTR	1.1%		
+dmetric	17	main	Position	15.1		
+dmetric	17	main	Score	3710		
+dkv	17	main	Type	New demand	
+dkv	17	main	Page	/	
+dkv	17	main	Query	bookmark organizer mac	
+dkv	17	main	Registry	Unmapped	
+dsect	17	main	WHY THIS MATCHES THE RULE
+dtext	17	main	“bookmark organizer mac” generated 3710 impressions, but it is not mapped to a keyword in the selected site's registry.
+dsect	17	main	RECOMMENDED ACTION
+dtext	17	main	Check existing pages first. Map the keyword only when the intent fits; create a page only when no current page fits.
+dtitle	18	main	save links from iphone
+dmetric	18	main	Impr.	3584	+1568	up
+dmetric	18	main	Clicks	116	+48	up
+dmetric	18	main	CTR	3.2%		
+dmetric	18	main	Position	8.8		
+dmetric	18	main	Score	3584		
+dkv	18	main	Type	New demand	
+dkv	18	main	Page	/ios-app	
+dkv	18	main	Query	save links from iphone	
+dkv	18	main	Registry	Unmapped	
+dsect	18	main	WHY THIS MATCHES THE RULE
+dtext	18	main	“save links from iphone” generated 3584 impressions, but it is not mapped to a keyword in the selected site's registry.
+dsect	18	main	RECOMMENDED ACTION
+dtext	18	main	Check existing pages first. Map the keyword only when the intent fits; create a page only when no current page fits.
+dtitle	19	main	pocket replacement
+dmetric	19	main	Impr.	3220	+1568	up
+dmetric	19	main	Clicks	106	+40	up
+dmetric	19	main	CTR	3.3%		
+dmetric	19	main	Position	12.1		
+dmetric	19	main	Score	3220		
+dkv	19	main	Type	New demand	
+dkv	19	main	Page	/pocket-alternative	
+dkv	19	main	Query	pocket replacement	
+dkv	19	main	Registry	Unmapped	
+dsect	19	main	WHY THIS MATCHES THE RULE
+dtext	19	main	“pocket replacement” generated 3220 impressions, but it is not mapped to a keyword in the selected site's registry.
+dsect	19	main	RECOMMENDED ACTION
+dtext	19	main	Check existing pages first. Map the keyword only when the intent fits; create a page only when no current page fits.
+dtitle	20	main	save tabs for later chrome
+dmetric	20	main	Impr.	2226	+784	up
+dmetric	20	main	Clicks	92	+32	up
+dmetric	20	main	CTR	4.1%		
+dmetric	20	main	Position	12.5		
+dmetric	20	main	Score	2226		
+dkv	20	main	Type	New demand	
+dkv	20	main	Page	/chrome-extension	
+dkv	20	main	Query	save tabs for later chrome	
+dkv	20	main	Registry	Unmapped	
+dsect	20	main	WHY THIS MATCHES THE RULE
+dtext	20	main	“save tabs for later chrome” generated 2226 impressions, but it is not mapped to a keyword in the selected site's registry.
+dsect	20	main	RECOMMENDED ACTION
+dtext	20	main	Check existing pages first. Map the keyword only when the intent fits; create a page only when no current page fits.
+dtitle	21	main	read later api
+dmetric	21	main	Impr.	1988	+1176	up
+dmetric	21	main	Clicks	34	+31	up
+dmetric	21	main	CTR	1.7%		
+dmetric	21	main	Position	13.9		
+dmetric	21	main	Score	1988		
+dkv	21	main	Type	New demand	
+dkv	21	main	Page	/docs	
+dkv	21	main	Query	read later api	
+dkv	21	main	Registry	Unmapped	
+dsect	21	main	WHY THIS MATCHES THE RULE
+dtext	21	main	“read later api” generated 1988 impressions, but it is not mapped to a keyword in the selected site's registry.
+dsect	21	main	RECOMMENDED ACTION
+dtext	21	main	Check existing pages first. Map the keyword only when the intent fits; create a page only when no current page fits.
+dtitle	22	main	ios share sheet read later app
+dmetric	22	main	Impr.	1666	+784	up
+dmetric	22	main	Clicks	70	+35	up
+dmetric	22	main	CTR	4.2%		
+dmetric	22	main	Position	14.6		
+dmetric	22	main	Score	1666		
+dkv	22	main	Type	New demand	
+dkv	22	main	Page	/ios-app	
+dkv	22	main	Query	ios share sheet read later app	
+dkv	22	main	Registry	Unmapped	
+dsect	22	main	WHY THIS MATCHES THE RULE
+dtext	22	main	“ios share sheet read later app” generated 1666 impressions, but it is not mapped to a keyword in the selected site's registry.
+dsect	22	main	RECOMMENDED ACTION
+dtext	22	main	Check existing pages first. Map the keyword only when the intent fits; create a page only when no current page fits.
+dtitle	23	main	raycast save links
+dmetric	23	main	Impr.	1442	+784	up
+dmetric	23	main	Clicks	38	+33	up
+dmetric	23	main	CTR	2.6%		
+dmetric	23	main	Position	17.8		
+dmetric	23	main	Score	1442		
+dkv	23	main	Type	New demand	
+dkv	23	main	Page	/raycast	
+dkv	23	main	Query	raycast save links	
+dkv	23	main	Registry	Unmapped	
+dsect	23	main	WHY THIS MATCHES THE RULE
+dtext	23	main	“raycast save links” generated 1442 impressions, but it is not mapped to a keyword in the selected site's registry.
+dsect	23	main	RECOMMENDED ACTION
+dtext	23	main	Check existing pages first. Map the keyword only when the intent fits; create a page only when no current page fits.
+dtitle	24	main	chrome read later extension
+dmetric	24	main	Impr.	14252	+4704	up
+dmetric	24	main	Clicks	240	+36	up
+dmetric	24	main	CTR	1.7%		
+dmetric	24	main	Position	4.5		
+dmetric	24	main	Score	240		
+dkv	24	main	Type	CTR opportunity	
+dkv	24	main	Page	/chrome-extension	
+dkv	24	main	Query	chrome read later extension	
+dkv	24	main	Registry	Unmapped	
+dsect	24	main	WHY THIS MATCHES THE RULE
+dtext	24	main	“chrome read later extension” is ranking at position 4.5 with 14252 impressions, but its 1.7% CTR is below the expected rate for this ranking range.
+dsect	24	main	RECOMMENDED ACTION
+dtext	24	main	Test the title and description against the query intent; keep the page focused if its ranking is already strong."
+`;
+
+exports[`text feeds tui-history 1`] = `
+"header	728 rows · 56 days · DEBUG
+meta	Impressions · Jul 12	2193	+28 vs prev day	up
+meta	Clicks	83	+2 vs prev day	up
+meta	CTR	3.8%	—	
+meta	Position	8.7	—	
+head	DATE	IMPR	CHANGE	CLICKS	CTR	POS
+row	0	Jun 15	1424	—	60	4.2%	9.6			
+row	1	Jun 16	1452	+28	60	4.1%	9.6			up
+row	2	Jun 17	1481	+29	61	4.1%	9.6			up
+row	3	Jun 18	1509	+28	61	4.0%	9.6			up
+row	4	Jun 19	1538	+29	62	4.0%	9.5			up
+row	5	Jun 20	1566	+28	63	4.0%	9.5			up
+row	6	Jun 21	1595	+29	63	3.9%	9.5			up
+row	7	Jun 22	1623	+28	64	3.9%	9.5			up
+row	8	Jun 23	1652	+29	66	4.0%	9.4			up
+row	9	Jun 24	1680	+28	66	3.9%	9.4			up
+row	10	Jun 25	1709	+29	66	3.9%	9.4			up
+row	11	Jun 26	1737	+28	66	3.8%	9.3			up
+row	12	Jun 27	1766	+29	69	3.9%	9.3			up
+row	13	Jun 28	1794	+28	69	3.8%	9.3			up
+row	14	Jun 29	1823	+29	71	3.9%	9.2			up
+row	15	Jun 30	1851	+28	71	3.8%	9.2			up
+row	16	Jul 1	1880	+29	73	3.9%	9.2			up
+row	17	Jul 2	1908	+28	74	3.9%	9.1			up
+row	18	Jul 3	1937	+29	75	3.9%	9.1			up
+row	19	Jul 4	1965	+28	75	3.8%	9.1			up
+row	20	Jul 5	1994	+29	77	3.9%	9.0			up
+row	21	Jul 6	2022	+28	77	3.8%	9.0			up
+row	22	Jul 7	2051	+29	79	3.9%	8.9			up
+row	23	Jul 8	2079	+28	79	3.8%	8.9			up
+row	24	Jul 9	2108	+29	79	3.7%	8.9			up
+row	25	Jul 10	2136	+28	79	3.7%	8.8			up
+row	26	Jul 11	2165	+29	81	3.7%	8.8			up
+row	27	Jul 12	2193	+28	83	3.8%	8.7			up
+dtitle	0	main	Jun 15, 2026
+dmetric	0	main	Impr.	1424		
+dmetric	0	main	Clicks	60		
+dmetric	0	main	CTR	4.2%		
+dmetric	0	main	Position	9.6		
+dsect	0	main	DAILY COMPARISON
+dtext	0	main	This is the first stored reporting day, so no previous-day comparison is available.
+dinfo	0	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	1	main	Jun 16, 2026
+dmetric	1	main	Impr.	1452	+28	up
+dmetric	1	main	Clicks	60	+0	flat
+dmetric	1	main	CTR	4.1%		
+dmetric	1	main	Position	9.6		
+dsect	1	main	DAILY COMPARISON
+dtext	1	main	Compared with Jun 15: +28 impressions · +0 clicks · -0.1 percentage points CTR.
+dinfo	1	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	2	main	Jun 17, 2026
+dmetric	2	main	Impr.	1481	+29	up
+dmetric	2	main	Clicks	61	+1	up
+dmetric	2	main	CTR	4.1%		
+dmetric	2	main	Position	9.6		
+dsect	2	main	DAILY COMPARISON
+dtext	2	main	Compared with Jun 16: +29 impressions · +1 clicks · -0.0 percentage points CTR.
+dinfo	2	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	3	main	Jun 18, 2026
+dmetric	3	main	Impr.	1509	+28	up
+dmetric	3	main	Clicks	61	+0	flat
+dmetric	3	main	CTR	4.0%		
+dmetric	3	main	Position	9.6		
+dsect	3	main	DAILY COMPARISON
+dtext	3	main	Compared with Jun 17: +28 impressions · +0 clicks · -0.1 percentage points CTR.
+dinfo	3	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	4	main	Jun 19, 2026
+dmetric	4	main	Impr.	1538	+29	up
+dmetric	4	main	Clicks	62	+1	up
+dmetric	4	main	CTR	4.0%		
+dmetric	4	main	Position	9.5		
+dsect	4	main	DAILY COMPARISON
+dtext	4	main	Compared with Jun 18: +29 impressions · +1 clicks · -0.0 percentage points CTR.
+dinfo	4	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	5	main	Jun 20, 2026
+dmetric	5	main	Impr.	1566	+28	up
+dmetric	5	main	Clicks	63	+1	up
+dmetric	5	main	CTR	4.0%		
+dmetric	5	main	Position	9.5		
+dsect	5	main	DAILY COMPARISON
+dtext	5	main	Compared with Jun 19: +28 impressions · +1 clicks · -0.0 percentage points CTR.
+dinfo	5	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	6	main	Jun 21, 2026
+dmetric	6	main	Impr.	1595	+29	up
+dmetric	6	main	Clicks	63	+0	flat
+dmetric	6	main	CTR	3.9%		
+dmetric	6	main	Position	9.5		
+dsect	6	main	DAILY COMPARISON
+dtext	6	main	Compared with Jun 20: +29 impressions · +0 clicks · -0.1 percentage points CTR.
+dinfo	6	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	7	main	Jun 22, 2026
+dmetric	7	main	Impr.	1623	+28	up
+dmetric	7	main	Clicks	64	+1	up
+dmetric	7	main	CTR	3.9%		
+dmetric	7	main	Position	9.5		
+dsect	7	main	DAILY COMPARISON
+dtext	7	main	Compared with Jun 21: +28 impressions · +1 clicks · -0.0 percentage points CTR.
+dinfo	7	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	8	main	Jun 23, 2026
+dmetric	8	main	Impr.	1652	+29	up
+dmetric	8	main	Clicks	66	+2	up
+dmetric	8	main	CTR	4.0%		
+dmetric	8	main	Position	9.4		
+dsect	8	main	DAILY COMPARISON
+dtext	8	main	Compared with Jun 22: +29 impressions · +2 clicks · +0.1 percentage points CTR.
+dinfo	8	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	9	main	Jun 24, 2026
+dmetric	9	main	Impr.	1680	+28	up
+dmetric	9	main	Clicks	66	+0	flat
+dmetric	9	main	CTR	3.9%		
+dmetric	9	main	Position	9.4		
+dsect	9	main	DAILY COMPARISON
+dtext	9	main	Compared with Jun 23: +28 impressions · +0 clicks · -0.1 percentage points CTR.
+dinfo	9	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	10	main	Jun 25, 2026
+dmetric	10	main	Impr.	1709	+29	up
+dmetric	10	main	Clicks	66	+0	flat
+dmetric	10	main	CTR	3.9%		
+dmetric	10	main	Position	9.4		
+dsect	10	main	DAILY COMPARISON
+dtext	10	main	Compared with Jun 24: +29 impressions · +0 clicks · -0.1 percentage points CTR.
+dinfo	10	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	11	main	Jun 26, 2026
+dmetric	11	main	Impr.	1737	+28	up
+dmetric	11	main	Clicks	66	+0	flat
+dmetric	11	main	CTR	3.8%		
+dmetric	11	main	Position	9.3		
+dsect	11	main	DAILY COMPARISON
+dtext	11	main	Compared with Jun 25: +28 impressions · +0 clicks · -0.1 percentage points CTR.
+dinfo	11	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	12	main	Jun 27, 2026
+dmetric	12	main	Impr.	1766	+29	up
+dmetric	12	main	Clicks	69	+3	up
+dmetric	12	main	CTR	3.9%		
+dmetric	12	main	Position	9.3		
+dsect	12	main	DAILY COMPARISON
+dtext	12	main	Compared with Jun 26: +29 impressions · +3 clicks · +0.1 percentage points CTR.
+dinfo	12	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	13	main	Jun 28, 2026
+dmetric	13	main	Impr.	1794	+28	up
+dmetric	13	main	Clicks	69	+0	flat
+dmetric	13	main	CTR	3.8%		
+dmetric	13	main	Position	9.3		
+dsect	13	main	DAILY COMPARISON
+dtext	13	main	Compared with Jun 27: +28 impressions · +0 clicks · -0.1 percentage points CTR.
+dinfo	13	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	14	main	Jun 29, 2026
+dmetric	14	main	Impr.	1823	+29	up
+dmetric	14	main	Clicks	71	+2	up
+dmetric	14	main	CTR	3.9%		
+dmetric	14	main	Position	9.2		
+dsect	14	main	DAILY COMPARISON
+dtext	14	main	Compared with Jun 28: +29 impressions · +2 clicks · +0.0 percentage points CTR.
+dinfo	14	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	15	main	Jun 30, 2026
+dmetric	15	main	Impr.	1851	+28	up
+dmetric	15	main	Clicks	71	+0	flat
+dmetric	15	main	CTR	3.8%		
+dmetric	15	main	Position	9.2		
+dsect	15	main	DAILY COMPARISON
+dtext	15	main	Compared with Jun 29: +28 impressions · +0 clicks · -0.1 percentage points CTR.
+dinfo	15	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	16	main	Jul 1, 2026
+dmetric	16	main	Impr.	1880	+29	up
+dmetric	16	main	Clicks	73	+2	up
+dmetric	16	main	CTR	3.9%		
+dmetric	16	main	Position	9.2		
+dsect	16	main	DAILY COMPARISON
+dtext	16	main	Compared with Jun 30: +29 impressions · +2 clicks · +0.0 percentage points CTR.
+dinfo	16	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	17	main	Jul 2, 2026
+dmetric	17	main	Impr.	1908	+28	up
+dmetric	17	main	Clicks	74	+1	up
+dmetric	17	main	CTR	3.9%		
+dmetric	17	main	Position	9.1		
+dsect	17	main	DAILY COMPARISON
+dtext	17	main	Compared with Jul 1: +28 impressions · +1 clicks · -0.0 percentage points CTR.
+dinfo	17	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	18	main	Jul 3, 2026
+dmetric	18	main	Impr.	1937	+29	up
+dmetric	18	main	Clicks	75	+1	up
+dmetric	18	main	CTR	3.9%		
+dmetric	18	main	Position	9.1		
+dsect	18	main	DAILY COMPARISON
+dtext	18	main	Compared with Jul 2: +29 impressions · +1 clicks · -0.0 percentage points CTR.
+dinfo	18	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	19	main	Jul 4, 2026
+dmetric	19	main	Impr.	1965	+28	up
+dmetric	19	main	Clicks	75	+0	flat
+dmetric	19	main	CTR	3.8%		
+dmetric	19	main	Position	9.1		
+dsect	19	main	DAILY COMPARISON
+dtext	19	main	Compared with Jul 3: +28 impressions · +0 clicks · -0.1 percentage points CTR.
+dinfo	19	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	20	main	Jul 5, 2026
+dmetric	20	main	Impr.	1994	+29	up
+dmetric	20	main	Clicks	77	+2	up
+dmetric	20	main	CTR	3.9%		
+dmetric	20	main	Position	9.0		
+dsect	20	main	DAILY COMPARISON
+dtext	20	main	Compared with Jul 4: +29 impressions · +2 clicks · +0.0 percentage points CTR.
+dinfo	20	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	21	main	Jul 6, 2026
+dmetric	21	main	Impr.	2022	+28	up
+dmetric	21	main	Clicks	77	+0	flat
+dmetric	21	main	CTR	3.8%		
+dmetric	21	main	Position	9.0		
+dsect	21	main	DAILY COMPARISON
+dtext	21	main	Compared with Jul 5: +28 impressions · +0 clicks · -0.1 percentage points CTR.
+dinfo	21	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	22	main	Jul 7, 2026
+dmetric	22	main	Impr.	2051	+29	up
+dmetric	22	main	Clicks	79	+2	up
+dmetric	22	main	CTR	3.9%		
+dmetric	22	main	Position	8.9		
+dsect	22	main	DAILY COMPARISON
+dtext	22	main	Compared with Jul 6: +29 impressions · +2 clicks · +0.0 percentage points CTR.
+dinfo	22	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	23	main	Jul 8, 2026
+dmetric	23	main	Impr.	2079	+28	up
+dmetric	23	main	Clicks	79	+0	flat
+dmetric	23	main	CTR	3.8%		
+dmetric	23	main	Position	8.9		
+dsect	23	main	DAILY COMPARISON
+dtext	23	main	Compared with Jul 7: +28 impressions · +0 clicks · -0.1 percentage points CTR.
+dinfo	23	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	24	main	Jul 9, 2026
+dmetric	24	main	Impr.	2108	+29	up
+dmetric	24	main	Clicks	79	+0	flat
+dmetric	24	main	CTR	3.7%		
+dmetric	24	main	Position	8.9		
+dsect	24	main	DAILY COMPARISON
+dtext	24	main	Compared with Jul 8: +29 impressions · +0 clicks · -0.1 percentage points CTR.
+dinfo	24	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	25	main	Jul 10, 2026
+dmetric	25	main	Impr.	2136	+28	up
+dmetric	25	main	Clicks	79	+0	flat
+dmetric	25	main	CTR	3.7%		
+dmetric	25	main	Position	8.8		
+dsect	25	main	DAILY COMPARISON
+dtext	25	main	Compared with Jul 9: +28 impressions · +0 clicks · -0.0 percentage points CTR.
+dinfo	25	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	26	main	Jul 11, 2026
+dmetric	26	main	Impr.	2165	+29	up
+dmetric	26	main	Clicks	81	+2	up
+dmetric	26	main	CTR	3.7%		
+dmetric	26	main	Position	8.8		
+dsect	26	main	DAILY COMPARISON
+dtext	26	main	Compared with Jul 10: +29 impressions · +2 clicks · +0.0 percentage points CTR.
+dinfo	26	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions.
+dtitle	27	main	Jul 12, 2026
+dmetric	27	main	Impr.	2193	+28	up
+dmetric	27	main	Clicks	83	+2	up
+dmetric	27	main	CTR	3.8%		
+dmetric	27	main	Position	8.7		
+dsect	27	main	DAILY COMPARISON
+dtext	27	main	Compared with Jul 11: +28 impressions · +2 clicks · +0.0 percentage points CTR.
+dinfo	27	main	Search Console data is finalized with a short reporting delay; the daily sync refreshes recent dates to absorb revisions."
+`;
+
+exports[`text feeds tui-registry 1`] = `
+"header	728 rows · 56 days · DEBUG
+meta	Target pages	0	0 at P0	
+meta	Live	0	of 0 targets	
+meta	Indexed	0/0	0 not indexed	
+meta	Impressions · 28d	0	all targets combined	
+head	PRIORITY	TARGET URL	KW	IMPR	CLICKS	PHASE"
+`;
+
+exports[`text feeds tui-log 1`] = `
+"header	728 rows · 56 days · DEBUG
+meta	Log entries	0	—	
+meta	Actions	0	—	
+meta	Notes	0	—	
+meta	Latest	—	—	
+head	DATE	KIND	TARGET	NOTE		"
+`;
