@@ -10,7 +10,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 
 import { backfillSearchConsole, syncSearchConsole } from "./automation.ts"
 import { debugMode } from "./config.ts"
-import { jobs, maybeEnqueueSync, runningJob, startJob } from "./jobs.ts"
+import { jobs, maybeEnqueueSync, resyncAllSitesOnBoot, runningJob, startJob } from "./jobs.ts"
 import { buildMcpServer } from "./mcp.ts"
 import { loadSites, siteFor, withSite } from "./site.ts"
 import { feedFor, type FeedView } from "./native-feed.ts"
@@ -184,3 +184,7 @@ Bun.serve({
 })
 
 console.log(`Ranksta’s Paradise server listening on http://0.0.0.0:${port} (${debugMode ? "debug" : "live"} mode, ${Bun.env.RP_TOKEN ? "token configured" : "NO TOKEN — set RP_TOKEN"})`)
+
+// Refresh every site once on boot, so a deploy always lands current data
+// rather than waiting for a read or the daily cron. Fire-and-forget.
+resyncAllSitesOnBoot()

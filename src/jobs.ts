@@ -9,7 +9,7 @@
 // is a separate task, only worthwhile if server.ts moves to Effect wholesale.
 import { reconciliationTtlHours, syncSearchConsole } from "./automation.ts"
 import { debugMode } from "./config.ts"
-import { siteFor, withSite } from "./site.ts"
+import { loadSites, siteFor, withSite } from "./site.ts"
 import { syncedWithinHours } from "./storage.ts"
 
 export type JobName = "sync" | "backfill"
@@ -68,4 +68,27 @@ export const maybeEnqueueSync = async (siteId: string): Promise<void> => {
   } catch {
     // Warming is opportunistic; never surface its failure to the caller.
   }
+}
+
+// Force a fresh sync of every configured site once, at server boot. Read-driven
+// warming only covers sites something reads and only when they're stale; a
+// deploy should refresh everything, including sites nothing touches (which
+// otherwise wait for the daily cron floor). Fire-and-forget so it never blocks
+// the server from listening. Runs sites one at a time because syncs must not
+// interleave — waiting out any read-triggered warm via the shared single-job
+// lock — and swallows per-site failures so one bad site can't abort the rest.
+export const resyncAllSitesOnBoot = () => {
+  void (async () => {
+    if (debugMode) return
+    const idle = () => new Promise((resolve) => setTimeout(resolve, 250))
+    for (const site of await loadSites()) {
+      try {
+        while (runningJob()) await idle()
+        const job = startJob("sync", site.id, () => withSite(site, syncSearchConsole))
+        while (job?.status === "running") await idle()
+      } catch {
+        // Best-effort boot refresh; move on to the next site.
+      }
+    }
+  })()
 }
