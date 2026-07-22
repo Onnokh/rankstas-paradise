@@ -1,6 +1,6 @@
 # HTTP API
 
-`bun run server` starts a local-only HTTP API (`127.0.0.1`, port `SEO_PORT` or 8790) over the same service layer ([src/service.ts](../src/service.ts)) the CLI and TUI use. Payloads match the CLI's JSON documents; every response carries `generatedAt` and `mode` (`live`/`debug`).
+`bun run apps/server/src/main.ts` (or `bun --cwd apps/server run serve`) starts the HttpApi server. It binds `0.0.0.0` on port `SEO_PORT` (default 8790) and is bearer-gated: every request needs `Authorization: Bearer <RP_TOKEN>`. It is built on the `packages/domain` Effect services; payloads match the CLI's JSON documents, and every response carries `generatedAt` and `mode` (`live`/`debug`). Add `--debug` to serve the isolated fake fixture.
 
 ## Read endpoints (local data only, never call Google)
 
@@ -24,7 +24,7 @@ GET /api/opportunities?site=<id>
 GET /tui/home.txt?site=<id>
 ```
 
-The site catalog is configured in `config.json` under `sites`. Each site gets isolated SQLite, registry, and sitemap state under `data/sites/<id>/`.
+The site catalog is configured in `config.json` under `sites`. Each site gets isolated SQLite, registry, and sitemap state under `sites/<id>/` in the app home. On the server, each site is served by its own cached `ManagedRuntime` with the active site bound as `CurrentSite` (see [adr/0002-effect-v4-monorepo.md](adr/0002-effect-v4-monorepo.md)).
 
 ## Write endpoints
 
@@ -40,23 +40,12 @@ The site catalog is configured in `config.json` under `sites`. Each site gets is
 
 ## Native app format
 
-`GET /pages.txt?window=N` — pipe-delimited lines for the Native SDK frontend (its app-core subset has no JSON parser):
+The server also renders plain-text feeds for the native desktop client, whose
+app-core subset has no JSON parser:
 
-```
-latest=2026-07-14|window=2026-06-17..2026-07-14
-/|1|22|4.5%|4.5
-/docs|0|4|0.0%|25.3
-```
+- `GET /sites.txt` — the site catalog.
+- `GET /pages.txt?site=<id>&window=N` — pipe-delimited page lines.
+- `GET /tui/{home,opportunities,history,registry,log}.txt?site=<id>` — the full
+  TUI-mirroring view feeds (tab-separated, typed detail nodes).
 
-Metrics prefer `trueTotals` and fall back to `allQueries` (current window).
-
-`GET /tui/home.txt`, `/tui/opportunities.txt`, `/tui/history.txt`, `/tui/registry.txt`, `/tui/log.txt` — full TUI-mirroring view feeds ([src/native-feed.ts](../src/native-feed.ts)), tab-separated:
-
-```
-header <TAB> <one header line>
-head   <TAB> c0..c5 column titles
-row    <TAB> id <TAB> c0..c5 <TAB> url   (url empty when not openable)
-detail <TAB> id <TAB> <one detail line>  (repeated, ordered)
-```
-
-All report formatting happens server-side; the native app only splits bytes, routes row selection to the matching detail lines, and charts history impressions.
+These come from [apps/server/src/native-feed.ts](../apps/server/src/native-feed.ts). The complete wire grammar (line kinds, tones, slots) is documented in [native-app-contract.md](native-app-contract.md). All report formatting happens server-side; the native app only splits bytes.

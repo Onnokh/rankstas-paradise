@@ -2,7 +2,14 @@
 
 ## Status
 
-accepted
+accepted. The product decision below still holds; the _implementation_ it
+described (a flat `src/` of Effect-v3 module-global singletons) has been
+replaced by the Effect v4 monorepo — see
+[0002-effect-v4-monorepo.md](0002-effect-v4-monorepo.md). Where this ADR
+references `src/*.ts` files or the TUI's "refactored from direct SQLite reads to
+`fetch`", read those as the new layout: the SEO core is `packages/domain`, the
+server entry is `apps/server/src/main.ts`, and the TUI (`apps/tui`) is now a
+**remote-only** client over `packages/api-client` with no local data path at all.
 
 ## Context
 

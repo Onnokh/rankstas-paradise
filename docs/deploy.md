@@ -1,6 +1,6 @@
 # Deploy (Coolify)
 
-Ranksta's Paradise runs as a single Bun HTTP service. State lives on one persistent volume; the bearer token and Google client credentials are env secrets, and the OAuth token is seeded onto the volume — nothing is baked into the image. The ADR ([docs/adr/0001-rp-as-hosted-service.md](adr/0001-rp-as-hosted-service.md)) is the source of truth.
+Ranksta's Paradise runs as a single Bun HTTP service (entry `apps/server/src/main.ts`; the SEO core is `packages/domain`). State lives on one persistent volume; the bearer token and Google client credentials are env secrets, and the OAuth token is seeded onto the volume — nothing is baked into the image. The ADRs are the source of truth: [0001](adr/0001-rp-as-hosted-service.md) for the hosted-service decision, [0002](adr/0002-effect-v4-monorepo.md) for the Effect v4 monorepo shape.
 
 ## 1. Service
 
@@ -10,7 +10,7 @@ Ranksta's Paradise runs as a single Bun HTTP service. State lives on one persist
 
 ## 2. Persistent volume
 
-Everything the app reads or writes — OAuth token, SQLite, registry CSV, `config.json` — lives under one app home: `${XDG_CONFIG_HOME:-~/.config}/rankstas-paradise` (see [src/config.ts](../src/config.ts)).
+Everything the app reads or writes — OAuth token, SQLite, registry CSV, `config.json` — lives under one app home: `${XDG_CONFIG_HOME:-~/.config}/rankstas-paradise` (see [packages/domain/src/config/config.ts](../packages/domain/src/config/config.ts)).
 
 - Mount a Coolify **persistent volume** at `/data`.
 - Set env `XDG_CONFIG_HOME=/data`, so the app home is **`/data/rankstas-paradise`**.
@@ -27,14 +27,14 @@ Without the volume the token and history are lost on every redeploy.
 | `XDG_CONFIG_HOME` | yes | Set to `/data` (see above). |
 | `SEO_PORT` | no | Defaults to 8790. |
 
-The Google **client id/secret** are static, so they go in env (Coolify secrets). Everything else Google/data-related is a file on the volume (next step). See [src/config.ts](../src/config.ts): env takes precedence, `config.json` is the fallback.
+The Google **client id/secret** are static, so they go in env (Coolify secrets). Everything else Google/data-related is a file on the volume (next step). See [packages/domain/src/config/config.ts](../packages/domain/src/config/config.ts): env takes precedence, `config.json` is the fallback.
 
 ## 4. Google authentication — mint once, refresh headlessly
 
 Google OAuth has two phases, and **only the first needs a browser**:
 
-- **Interactive login (once, on your Mac).** `connectGoogle` ([src/google.ts](../src/google.ts)) opens a loopback callback + your browser, you approve the `webmasters.readonly` scope, and it writes `google-token.json` containing a long-lived **`refresh_token`**. This is a *desktop* OAuth flow (loopback redirect, macOS `open`) and **cannot run on the headless server** — it is only ever triggered from the Mac TUI ([src/main.ts](../src/main.ts)).
-- **Headless refresh (forever, on the server).** With that token file present, the server only ever calls `getAccessToken`: a server-to-server POST of `refresh_token` + client id/secret to Google, no browser. The refreshed token is rewritten to the file, which is why it must live on the writable volume. The server has **no code path that opens a browser** — a missing/revoked token just makes sync jobs fail cleanly (read endpoints keep serving).
+- **Interactive login (once, on your Mac).** `connectGoogle` (the `SearchConsole` domain service, [packages/domain/src/search-console/search-console.ts](../packages/domain/src/search-console/search-console.ts), ported from the legacy `src/google.ts`) opens a loopback callback + your browser, you approve the `webmasters.readonly` scope, and it writes `google-token.json` containing a long-lived **`refresh_token`**. This is a *desktop* OAuth flow (loopback redirect, macOS `open`) and **cannot run on the headless server** — it is a one-time bootstrap run locally on the Mac against the same `config.json` / Google client, then the token file is copied to the volume.
+- **Headless refresh (forever, on the server).** With that token file present, the server only ever refreshes: a server-to-server POST of `refresh_token` + client id/secret to Google, no browser. The refreshed token is rewritten to the file, which is why it must live on the writable volume. The running server ([apps/server/src/main.ts](../apps/server/src/main.ts)) has **no code path that opens a browser** — a missing/revoked token just makes sync jobs fail cleanly (read endpoints keep serving).
 
 So the login is a one-time bootstrap on your Mac; the server lives entirely off the copied refresh token.
 
@@ -45,7 +45,7 @@ So the login is a one-time bootstrap on your Mac; the server lives entirely off 
 
 Steps:
 
-1. On the Mac, with a valid local `config.json` (or the `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` env set), run `bun run seo` once and complete Google's OAuth flow. This writes `~/.config/rankstas-paradise/google-token.json`.
+1. On the Mac, with a valid local `config.json` (or the `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` env set), run the interactive `connectGoogle` bootstrap once and complete Google's OAuth flow in the browser. This writes `~/.config/rankstas-paradise/google-token.json`.
 2. Copy both files onto the volume at `/data/rankstas-paradise/`:
    - Coolify file manager, or
    - `scp config.json google-token.json <server>:<volume-path>/rankstas-paradise/`
@@ -109,5 +109,5 @@ curl -fsS -X POST "http://localhost:8790/api/jobs/sync?site=<site-id>" \
 
 ## 8. Connecting afterwards
 
-- **Mac CLI/TUI**: set `RP_API_URL=https://rp.<your-domain>` and `RP_TOKEN=<token>`, or run `rp init` to store them. Once configured, `bun run seo` talks to the server by default; override per-run with `--local` (this machine's own data) or `--network` (force the server).
-- **opencode agents**: connect over MCP with the same `RP_TOKEN`.
+- **Mac CLI/TUI** (`apps/tui`, remote-only): set `RP_API_URL=https://rp.<your-domain>` and `RP_TOKEN=<token>` (env wins), or run `rp init` to store them in `~/.config/rankstas-paradise/client.json`. Then `bun --cwd apps/tui run src/main.ts` opens the dashboard, or append a command for the agent CLI. There is no local-data mode anymore — the TUI always talks to the server.
+- **opencode agents**: connect over MCP at `/mcp` with the same `RP_TOKEN`.

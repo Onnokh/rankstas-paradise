@@ -1,0 +1,14 @@
+{
+  "name": "@rp/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "serve": "bun run src/main.ts",
+    "start": "bun run src/main.ts"
+  },
+  "dependencies": {
+    "@rp/domain": "workspace:*"
+  }
+}

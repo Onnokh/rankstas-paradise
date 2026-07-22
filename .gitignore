@@ -1,5 +1,9 @@
 node_modules/
 
+# TypeScript project-reference build output (declarations + build info).
+dist/
+*.tsbuildinfo
+
 # Local state and secrets live in the XDG app home, never in the repo — but
 # guard against an accidental copy landing next to the code.
 config.json

@@ -2,15 +2,16 @@
   "name": "rankstas-paradise",
   "private": true,
   "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "check": "tsc --noEmit",
-    "seo": "bun run src/main.ts",
-    "server": "bun run src/server.ts"
+    "check": "tsc --build"
   },
   "dependencies": {
+    "@effect/platform-bun": "4.0.0-beta.99",
+    "@effect/sql-sqlite-bun": "4.0.0-beta.99",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opentui/core": "latest",
-    "effect": "latest",
+    "effect": "4.0.0-beta.99",
     "zod": "^4.4.3"
   },
   "devDependencies": {
