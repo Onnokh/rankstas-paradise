@@ -24,7 +24,7 @@ import { logFeed, logKindLabel, opportunityLabels, phaseFor, readableIntent, rec
 import { currentSiteOrigin } from "./site.ts"
 import { loadCachedSitemapPages, unmappedSitemapPages } from "./sitemap.ts"
 import {
-  history,
+  historyWithPending,
   opportunityDigest,
   registryTargetProgress,
   snapshotSummary,
@@ -139,7 +139,7 @@ const sumWindow = (days: readonly Metrics[]): Metrics => {
 // Site-level KPI cards from stored query rows: current 28 days versus the
 // previous 28.
 const siteKpis = (): Meta[] => {
-  const days = history(56)
+  const days = historyWithPending(56)
   const current = sumWindow(days.slice(-28))
   const previous = sumWindow(days.slice(0, Math.max(0, days.length - 28)))
   const impressionsDelta = current.impressions - previous.impressions
@@ -340,7 +340,7 @@ export const opportunitiesFeed = async (): Promise<string> => {
 }
 
 export const historyFeed = (): string => {
-  const days = history()
+  const days = historyWithPending()
   const latest = days.at(-1)
   const previous = days.at(-2)
   const meta: Meta[] = latest
