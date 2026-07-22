@@ -1,0 +1,139 @@
+// Config service tests. Config is injected through a fake `ConfigProvider`
+// (the "environment"), and a real temp config.json plays the file — so the
+// env-wins-over-file precedence is exercised without touching the developer's
+// real ~/.config or process environment.
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { Cause, ConfigProvider, Effect, Exit, Redacted } from "effect"
+
+import { Config } from "./config.ts"
+import { ConfigLoadError } from "./schema.ts"
+
+let home: string
+let appHome: string
+
+beforeEach(async () => {
+  home = await mkdtemp(join(tmpdir(), "rp-config-"))
+  appHome = join(home, "rankstas-paradise")
+  await mkdir(appHome, { recursive: true })
+})
+
+afterEach(async () => {
+  await rm(home, { recursive: true, force: true })
+})
+
+const writeConfigFile = (contents: unknown) =>
+  writeFile(join(appHome, "config.json"), JSON.stringify(contents))
+
+// Build the Config service on top of an in-memory provider standing in for the
+// environment, always pointing XDG_CONFIG_HOME at the per-test temp home.
+const runWith = <A, E>(
+  env: Record<string, string>,
+  effect: Effect.Effect<A, E, Config.Service>,
+) =>
+  effect.pipe(
+    Effect.provide(
+      Config.layerFromProvider(
+        ConfigProvider.fromEnv({ env: { XDG_CONFIG_HOME: home, ...env } }),
+      ),
+    ),
+    Effect.runPromise,
+  )
+
+describe("Config.load precedence", () => {
+  test("environment wins over the file for shared keys", async () => {
+    await writeConfigFile({
+      googleClientId: "file-id",
+      googleClientSecret: "file-secret",
+      siteUrl: "https://file.example",
+    })
+
+    const config = await runWith(
+      { GOOGLE_CLIENT_ID: "env-id" },
+      Config.use.load(),
+    )
+
+    // env-provided id wins; the untouched keys fall back to the file.
+    expect(config.googleClientId).toBe("env-id")
+    expect(Redacted.value(config.googleClientSecret)).toBe("file-secret")
+    expect(config.siteUrl).toBe("https://file.example")
+  })
+
+  test("file values are used when the environment is silent", async () => {
+    await writeConfigFile({
+      googleClientId: "file-id",
+      googleClientSecret: "file-secret",
+      siteUrl: "https://file.example",
+      sites: [{ id: "a", siteUrl: "https://a.example" }],
+    })
+
+    const config = await runWith({}, Config.use.load())
+
+    expect(config.googleClientId).toBe("file-id")
+    expect(Redacted.value(config.googleClientSecret)).toBe("file-secret")
+    expect(config.sites).toEqual([{ id: "a", siteUrl: "https://a.example" }])
+  })
+})
+
+describe("Config.load secret handling", () => {
+  test("the secret never surfaces in string or JSON output", async () => {
+    await writeConfigFile({
+      googleClientId: "file-id",
+      googleClientSecret: "top-secret",
+      siteUrl: "https://file.example",
+    })
+
+    const config = await runWith({}, Config.use.load())
+
+    expect(String(config.googleClientSecret)).not.toContain("top-secret")
+    expect(JSON.stringify(config)).not.toContain("top-secret")
+    // Value is still recoverable for the OAuth client that needs it.
+    expect(Redacted.value(config.googleClientSecret)).toBe("top-secret")
+  })
+})
+
+describe("Config.load missing config", () => {
+  test("fails closed with ConfigLoadError when required fields are absent", async () => {
+    // No file written, empty environment: nothing satisfies the required keys.
+    const result = await Config.use
+      .load()
+      .pipe(
+        Effect.provide(
+          Config.layerFromProvider(
+            ConfigProvider.fromEnv({ env: { XDG_CONFIG_HOME: home } }),
+          ),
+        ),
+        Effect.runPromiseExit,
+      )
+
+    expect(Exit.isFailure(result)).toBe(true)
+    if (Exit.isFailure(result)) {
+      const failure = Cause.findErrorOption(result.cause)
+      expect(failure._tag).toBe("Some")
+      if (failure._tag === "Some") {
+        expect(failure.value).toBeInstanceOf(ConfigLoadError)
+      }
+    }
+  })
+})
+
+describe("Config.debugMode", () => {
+  test("reads DEBUG from config, defaulting to false", async () => {
+    const on = await runWith({ DEBUG: "true" }, Config.use.debugMode())
+    const off = await runWith({}, Config.use.debugMode())
+    expect(on).toBe(true)
+    expect(off).toBe(false)
+  })
+})
+
+describe("Config paths", () => {
+  test("derives the XDG data directory and token path", async () => {
+    const dataDir = await runWith({}, Config.use.dataDirectory())
+    const token = await runWith({}, Config.use.tokenPath())
+    expect(dataDir).toBe(appHome)
+    expect(token).toBe(join(appHome, "google-token.json"))
+  })
+})
