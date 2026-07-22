@@ -1,15 +1,10 @@
-// Test harness for the golden/snapshot suite. Boots a Ranksta's Paradise HTTP
-// server as a subprocess against a deterministic debug fixture, and exposes
-// request + normalization helpers.
+// Test harness for the HTTP suite. Boots a Ranksta's Paradise HTTP server as a
+// subprocess against a deterministic debug fixture, and exposes request +
+// normalization helpers.
 //
 // PARAMETERIZABLE by design: the server entry path, port, bearer token, and
-// data home are all inputs. The suite (http-golden.test.ts) points `startServer`
-// at the new server (apps/server/src/main.ts) and replays the committed
-// snapshots against it — that new-server replay is the standing golden gate.
-//
-// The legacy Effect-v3 baseline path was retired in PLO-278 along with the flat
-// src/ tree it copied and booted; the committed
-// __snapshots__/golden.test.ts.snap remains the oracle.
+// data home are all inputs. The suite (http.test.ts) points `startServer` at
+// the new server (apps/server/src/main.ts) and asserts its HTTP contract.
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -163,8 +158,8 @@ export const requestText = async (
   return { status: response.status, body: await response.text() }
 }
 
-// Replace non-deterministic timestamp fields (and the sole job id) with stable
-// placeholders so snapshots are comparable across runs.
+// Replace non-deterministic timestamp fields with stable placeholders so
+// responses are comparable across runs.
 const timestampKeys = new Set(["generatedAt", "startedAt", "finishedAt"])
 export const normalize = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(normalize)

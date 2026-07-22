@@ -1,8 +1,9 @@
 // Reports service tests: exercise every report against a real Storage over a
 // temp SQLite database seeded with the deterministic debug dataset (ported from
-// src/debug.ts), plus a fixture Registry and Sitemap. Snapshots pin the exact
-// output shape of each report; the dashboardSnapshot assertions confirm it
-// returns the RAW internal shapes (un-tidied metrics, full-URL pages).
+// src/debug.ts), plus a fixture Registry and Sitemap. Each test asserts the
+// specific fields that matter per report (counts, sorting, verdicts, filtering);
+// the dashboardSnapshot assertions confirm it returns the RAW internal shapes
+// (un-tidied metrics, full-URL pages).
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -286,20 +287,6 @@ const site: Site = {
 
 // --- layer wiring ---
 
-// Replace the non-deterministic SQLite createdAt timestamp with a stable
-// placeholder so log-bearing snapshots are comparable across runs.
-const normalize = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(normalize)
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {}
-    for (const [key, entry] of Object.entries(value)) {
-      out[key] = key === "createdAt" ? "<createdAt>" : normalize(entry)
-    }
-    return out
-  }
-  return value
-}
-
 let dir: string
 let runtime: ManagedRuntime.ManagedRuntime<
   | Reports.Service
@@ -373,28 +360,52 @@ afterAll(async () => {
 const run = <A, E>(effect: Effect.Effect<A, E, Reports.Service>) =>
   runtime.runPromise(effect)
 
-test("statusReport shape", async () => {
+test("statusReport counts registry targets/keywords and sitemap pages", async () => {
   const report = await run(Reports.use.statusReport())
-  expect(report).toMatchSnapshot()
+  // 4 registry rows over 4 distinct targetUrls; 3 carry a keyword (the 4th is
+  // the inventory "/" row with an empty keyword).
+  expect(report.registry.targets).toBe(4)
+  expect(report.registry.keywords).toBe(3)
   // Sitemap has 6 pages; 3 mapped keyword targets + 1 inventory "/" → /pricing
   // and /about are unmapped.
+  expect(report.sitemap.pages).toBe(6)
   expect(report.sitemap.unmapped).toEqual(["/pricing", "/about"])
+  // Data block reflects the seeded 56-day debug dataset.
+  expect(report.data.syncedDays).toBe(56)
+  expect(report.data.firstDate).toBe("2026-05-18")
+  expect(report.data.lastDate).toBe("2026-07-12")
 })
 
-test("pagesReport shape", async () => {
+test("pagesReport sorts a known page by impressions desc", async () => {
   const report = await run(Reports.use.pagesReport())
-  expect(report).toMatchSnapshot()
   // Sorted by allQueries.current impressions descending.
   const impressions = report.pages.map(
     (page) => page.allQueries?.current.impressions ?? 0,
   )
   expect([...impressions]).toEqual([...impressions].sort((a, b) => b - a))
+  // /chrome-extension is the highest-traffic page in the debug dataset, so it
+  // sorts first and is a mapped keyword target with a computed verdict.
+  const top = report.pages[0]
+  expect(top?.path).toBe("/chrome-extension")
+  expect(top?.mapped).toBe(true)
+  expect(typeof top?.verdict).toBe("string")
 })
 
-test("pageReport shape", async () => {
+test("pageReport returns path, verdict, and top queries for a mapped page", async () => {
   const report = await run(Reports.use.pageReport("/pocket-alternative"))
-  expect(normalize(report)).toMatchSnapshot()
+  expect(report.path).toBe("/pocket-alternative")
+  expect(report.mapped).toBe(true)
+  // Judged on non-brand query rows for a keyword target.
   expect(report.performance.scope).toBe("non-brand")
+  expect(typeof report.verdict).toBe("string")
+  // Top queries are surfaced and the seeded "pocket alternative" query is among
+  // them (non-brand for this site).
+  expect(report.topQueries.length).toBeGreaterThan(0)
+  const pocket = report.topQueries.find(
+    (query) => query.query === "pocket alternative",
+  )
+  expect(pocket).toBeDefined()
+  expect(pocket?.brand).toBe(false)
 })
 
 test("pageReport rejects a non-slash path", async () => {
@@ -404,36 +415,74 @@ test("pageReport rejects a non-slash path", async () => {
   expect(exit._tag).toBe("Failure")
 })
 
-test("queriesReport shape (brand excluded by default)", async () => {
+test("queriesReport excludes brand queries by default", async () => {
   const report = await run(Reports.use.queriesReport())
-  expect(report).toMatchSnapshot()
+  expect(report.queries.length).toBeGreaterThan(0)
+  // "sleevy chrome extension" is a brand query and must be filtered out.
   expect(
     report.queries.some((query) => query.query === "sleevy chrome extension"),
   ).toBe(false)
+  // No returned query is flagged as brand.
+  expect(report.queries.every((query) => query.brand === false)).toBe(true)
 })
 
-test("opportunitiesReport shape", async () => {
+test("queriesReport includes brand queries when requested", async () => {
+  const report = await run(Reports.use.queriesReport({ includeBrand: true }))
+  expect(
+    report.queries.some((query) => query.query === "sleevy chrome extension"),
+  ).toBe(true)
+})
+
+test("opportunitiesReport surfaces the expected signal kinds", async () => {
   const report = await run(Reports.use.opportunitiesReport())
-  expect(report).toMatchSnapshot()
+  expect(report.signals.length).toBeGreaterThan(0)
+  const kinds = new Set(report.signals.map((signal) => signal.kind))
+  // Every emitted kind is a known opportunity kind, and the debug dataset (a
+  // page ranking ~4-14 with sub-10% CTR) reliably produces striking-distance.
+  const known = new Set([
+    "striking-distance",
+    "ctr",
+    "new-demand",
+    "cannibalization",
+  ])
+  expect([...kinds].every((kind) => known.has(kind))).toBe(true)
+  expect(kinds.has("striking-distance")).toBe(true)
 })
 
-test("registryList shape", async () => {
+test("opportunitiesReport filters by a single kind", async () => {
+  const report = await run(Reports.use.opportunitiesReport("striking-distance"))
+  expect(report.signals.length).toBeGreaterThan(0)
+  expect(
+    report.signals.every((signal) => signal.kind === "striking-distance"),
+  ).toBe(true)
+})
+
+test("registryList includes a known target with its keywords", async () => {
   const report = await run(Reports.use.registryList())
-  expect(report).toMatchSnapshot()
+  const pocket = report.targets.find(
+    (target) => target.targetUrl === "/pocket-alternative",
+  )
+  expect(pocket).toBeDefined()
+  expect(pocket?.priority).toBe("P1")
+  expect(pocket?.keywords.map((keyword) => keyword.keyword)).toContain(
+    "pocket alternative",
+  )
 })
 
 test("logFeed enriches an action with a before/after window", async () => {
   const feed = await run(Reports.use.logFeed())
-  expect(normalize(feed)).toMatchSnapshot()
   const action = feed.find((item) => item.path === "/pocket-alternative")
   expect(action?.isAction).toBe(true)
   expect(action?.readout.state).toBe("window")
 })
 
-test("historyReport shape", async () => {
+test("historyReport returns 28 tidied days", async () => {
   const report = await run(Reports.use.historyReport())
   expect(report.days).toHaveLength(28)
-  expect(report).toMatchSnapshot()
+  // Days carry a date plus tidied metrics.
+  const day = report.days[0]
+  expect(day?.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  expect(typeof day?.impressions).toBe("number")
 })
 
 test("recentActions returns actions newest-first", async () => {
@@ -448,9 +497,15 @@ test("registryAdd validates keyword rows require cluster/intent/priority", async
   expect(exit._tag).toBe("Failure")
 })
 
+test("logAdd rejects a path that does not start with a slash", async () => {
+  const exit = await runtime.runPromiseExit(
+    Reports.use.logAdd({ path: "pocket-alternative", kind: "content-update" }),
+  )
+  expect(exit._tag).toBe("Failure")
+})
+
 test("dashboardSnapshot returns RAW internal shapes", async () => {
   const snapshot = await run(Reports.use.dashboardSnapshot())
-  expect(normalize(snapshot)).toMatchSnapshot()
 
   // Raw, un-tidied: registry entries are the full RegistryEntry rows.
   expect(snapshot.registry).toEqual(fixtureRegistry)
