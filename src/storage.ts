@@ -344,32 +344,24 @@ export const history = (limit = 28): HistoryDay[] => {
   return rows.reverse()
 }
 
-// History for the dashboard: every day for which we have data, from query-row
-// sums where a breakdown exists and from site-level totals otherwise (Google
-// suppresses query rows on low-volume days, so a settled day can legitimately
-// have totals but no breakdown). A day is flagged provisional purely by the
-// finalization window — anything after the cutoff is still being revised — so
-// settled-but-breakdown-less days show solid and only the genuinely fresh
-// trailing days are dimmed.
+// Daily history for the dashboard, read from the query-less site totals
+// (site_daily) so the numbers match Search Console's headline figures exactly.
+// Summing query-level rows (search_snapshot) under-reports the true daily total
+// because Google withholds its anonymized long-tail from the breakdown — that
+// detail belongs to the Queries and Opportunities views, not this overview.
+// site_daily covers every day we have data for (including low-volume days where
+// Google suppresses query rows entirely). A day is flagged provisional by the
+// finalization window, so the UI dims only what Google is still revising.
 export const historyWithPending = (limit = 28): HistoryDay[] => {
   const db = database()
-  const finalRows = db.query<HistoryDay, []>(`
-    select date, sum(impressions) as impressions, sum(clicks) as clicks,
-           sum(clicks) * 1.0 / sum(impressions) as ctr,
-           sum(position * impressions) * 1.0 / sum(impressions) as position
-    from search_snapshot
-    group by date
+  const rows = db.query<HistoryDay, []>(`
+    select date, impressions, clicks, ctr, position from site_daily order by date
   `).all()
-  const withBreakdown = new Set(finalRows.map((row) => row.date))
-  const totalsOnlyRows = db.query<HistoryDay, []>(`
-    select date, impressions, clicks, ctr, position from site_daily
-  `).all().filter((row) => !withBreakdown.has(row.date))
   db.close()
   const cutoff = finalizationCutoff()
-  const days = [...finalRows, ...totalsOnlyRows]
+  return rows
     .map((row) => ({ ...row, provisional: row.date > cutoff }))
-    .sort((left, right) => (left.date < right.date ? -1 : 1))
-  return days.slice(-limit)
+    .slice(-limit)
 }
 
 export const dateDaysBefore = (date: string, days: number) => {
