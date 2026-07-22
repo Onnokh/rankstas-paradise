@@ -85,22 +85,35 @@ const registryTable = (targets: readonly RegistryTargetProgress[], selected: num
   return new StyledText(chunks)
 }
 
+// Day-over-day moves smaller than this share of the previous day's impressions
+// read as noise, so they stay neutral (no arrow, no color) instead of flapping.
+const HISTORY_CHANGE_THRESHOLD = 0.05
+
 const historyRow = (day: HistoryDay, previous: HistoryDay | undefined, selected: boolean, wide: boolean) => {
   const change = previous ? day.impressions - previous.impressions : null
+  const significant = change !== null && previous!.impressions > 0 && Math.abs(change / previous!.impressions) >= HISTORY_CHANGE_THRESHOLD
+  const arrow = !significant ? " " : change! > 0 ? "▲" : "▼"
   const changeLabel = change === null ? "—" : `${change >= 0 ? "+" : ""}${change}`
-  return wide
-    ? `${selected ? "▶" : " "} ${day.date} ${day.impressions.toString().padStart(11)} ${changeLabel.padStart(9)} ${day.clicks.toString().padStart(7)} ${`${(day.ctr * 100).toFixed(1)}%`.padStart(7)} ${day.position.toFixed(1).padStart(12)}`
-    : `${selected ? "▶" : " "} ${day.date.slice(5)} ${day.impressions.toString().padStart(5)} ${changeLabel.padStart(5)} ${day.clicks.toString().padStart(4)} ${`${(day.ctr * 100).toFixed(1)}%`.padStart(5)} ${day.position.toFixed(1).padStart(5)}`
+  const row = wide
+    ? `${selected ? "▶" : " "}${arrow} ${day.date} ${day.impressions.toString().padStart(11)} ${changeLabel.padStart(9)} ${day.clicks.toString().padStart(7)} ${`${(day.ctr * 100).toFixed(1)}%`.padStart(7)} ${day.position.toFixed(1).padStart(12)}`
+    : `${selected ? "▶" : " "}${arrow} ${day.date.slice(5)} ${day.impressions.toString().padStart(5)} ${changeLabel.padStart(5)} ${day.clicks.toString().padStart(4)} ${`${(day.ctr * 100).toFixed(1)}%`.padStart(5)} ${day.position.toFixed(1).padStart(5)}`
+  // Provisional days are dimmed wholesale; the green/red day-over-day signal only
+  // applies to finalized rows where the comparison is trustworthy.
+  if (day.provisional) return t`${fg("#718096")(row)}`
+  // Green/red carries the day-over-day signal; the leading ▲/▼ arrow is the
+  // non-color cue so the direction reads without relying on hue.
+  const rowColor = !significant ? null : change! > 0 ? fg("#68D391") : fg("#FC8181")
+  return rowColor ? t`${rowColor(row)}` : t`${row}`
 }
 
 const historyTable = (allDays: readonly HistoryDay[], visible: readonly HistoryDay[], selected: number, start: number, wide: boolean) => {
   const header = wide
-    ? "  DATE        IMPRESSIONS    CHANGE  CLICKS     CTR AVG. POSITION"
-    : "  DATE   IMPR.   Δ  CLK   CTR  POS."
+    ? "   DATE        IMPRESSIONS    CHANGE  CLICKS     CTR AVG. POSITION"
+    : "   DATE   IMPR.   Δ  CLK   CTR  POS."
   const chunks = [...t`${header}\n`.chunks]
   visible.forEach((day, index) => {
     const row = historyRow(day, allDays[start + index - 1], start + index === selected, wide)
-    chunks.push(...t`${day.provisional ? fg("#718096")(row) : row}\n`.chunks)
+    chunks.push(...row.chunks, ...t`\n`.chunks)
   })
   return new StyledText(chunks)
 }
