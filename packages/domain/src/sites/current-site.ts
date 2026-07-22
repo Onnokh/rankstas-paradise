@@ -1,5 +1,5 @@
 // CurrentSite: the active site in the current scope. This replaces the legacy
-// thread-local `withSite(...)` context (node:async_hooks) — instead of an
+// ambient thread-local site context (node:async_hooks) — instead of an
 // ambient thread-local,
 // the active site is a scoped service that site-scoped services (Storage,
 // Registry, Sitemap, Reports, Sync, and the site-scoped parts of SearchConsole)

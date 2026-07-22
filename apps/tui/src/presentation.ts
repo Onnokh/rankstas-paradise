@@ -3,8 +3,8 @@
 // functions over the render shapes, the part of the old service that was always
 // about display rather than data access, so they move with the renderer.
 //
-// The one adaptation: the legacy `pathOf` read the active site's origin from an
-// `AsyncLocalStorage` site context (`currentSiteOrigin()`). A remote-only client
+// The one adaptation: the legacy `pathOf` read the active site's origin from a
+// thread-local site context (`currentSiteOrigin()`). A remote-only client
 // has no such context, so the active origin is set explicitly via
 // `setActiveOrigin` whenever the active site changes (see tui.ts `inSite`).
 import type {

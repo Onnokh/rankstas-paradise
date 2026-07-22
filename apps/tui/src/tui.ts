@@ -160,7 +160,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
   // the active site is never synthetic — the catalog decides what we open.
   const activeSite = (): Site => sites[siteIndex]!
   // The presentation helpers strip the active site's origin from full URLs; keep
-  // that origin current instead of the legacy AsyncLocalStorage site context.
+  // that origin current instead of the legacy thread-local site context.
   const inSite = <T>(work: () => T): T => { setActiveOrigin(activeSite().origin); return work() }
   const loadData = () => loadTuiData(activeSite())
   let data = await loadData()

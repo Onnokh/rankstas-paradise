@@ -3,60 +3,22 @@
 // request + normalization helpers.
 //
 // PARAMETERIZABLE by design: the server entry path, port, bearer token, and
-// data home are all inputs. Today the suite points at the legacy src/server.ts
-// (via RP_GOLDEN_SERVER_ENTRY or the default below); PLO-275/276 repoint it at
-// the new apps/server entry by setting RP_GOLDEN_SERVER_ENTRY — no snapshot
-// changes if behaviour is preserved.
-import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+// data home are all inputs. The suite (http-golden.test.ts) points `startServer`
+// at the new server (apps/server/src/main.ts) and replays the committed
+// snapshots against it — that new-server replay is the standing golden gate.
+//
+// The legacy Effect-v3 baseline path was retired in PLO-278 along with the flat
+// src/ tree it copied and booted; the committed
+// __snapshots__/golden.test.ts.snap remains the oracle.
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
 // apps/server/test/lib -> repo root is four levels up.
 export const repoRoot = resolve(import.meta.dir, "../../../..")
 
-// Resolving the server entry:
-//
-// The legacy server in src/ is written for Effect v3 (it uses Effect.catchAll
-// and other v3 APIs that were removed in the v4-beta the workspace pins). Since
-// module resolution for src/*.ts picks the workspace-root `effect` (v4), the
-// legacy server cannot boot under the pinned deps. To capture a faithful
-// baseline we run it in an isolated temp workspace pinned to Effect v3 (a copy
-// of src/ + its own node_modules). The install is offline (bun cache).
-//
-// PLO-275/276 repoint the suite at the new v4 server by setting
-// RP_GOLDEN_SERVER_ENTRY — the isolated-baseline path is then skipped entirely.
-let baselineEntry: string | undefined
-
-export const resolveServerEntry = (): string => {
-  if (Bun.env.RP_GOLDEN_SERVER_ENTRY) return Bun.env.RP_GOLDEN_SERVER_ENTRY
-  if (baselineEntry) return baselineEntry
-  const base = mkdtempSync(join(tmpdir(), "rp-baseline-"))
-  cpSync(join(repoRoot, "src"), join(base, "src"), { recursive: true })
-  const pkg = {
-    name: "rp-baseline",
-    private: true,
-    type: "module",
-    // Effect pinned to the version the legacy code was written against.
-    dependencies: {
-      effect: "3.22.0",
-      "@modelcontextprotocol/sdk": "^1.29.0",
-      "@opentui/core": "latest",
-      zod: "^4.4.3",
-    },
-  }
-  writeFileSync(join(base, "package.json"), `${JSON.stringify(pkg, null, 2)}\n`)
-  const install = Bun.spawnSync(["bun", "install", "--no-save"], { cwd: base })
-  if (install.exitCode !== 0) {
-    throw new Error(
-      `Failed to install the Effect v3 baseline: ${install.stderr.toString()}`,
-    )
-  }
-  baselineEntry = join(base, "src/server.ts")
-  return baselineEntry
-}
-
 // The deterministic fixture site. Its origin matches the debug data in
-// src/debug.ts (pages under https://sleevy.app/...).
+// apps/server/src/debug.ts (pages under https://sleevy.app/...).
 export const FIXTURE_SITE_ID = "sleevy"
 export const FIXTURE_TOKEN = "test-token"
 
@@ -98,7 +60,9 @@ export const freePort = async (): Promise<number> => {
 }
 
 export interface StartServerOptions {
-  readonly entry?: string
+  // The server entry to boot. Required — callers pass the new server
+  // (apps/server/src/main.ts); it can be overridden via RP_GOLDEN_SERVER_ENTRY.
+  readonly entry: string
   readonly port?: number
   readonly configHome?: string
   readonly token?: string | null
@@ -107,9 +71,9 @@ export interface StartServerOptions {
 
 // Boot the server as a subprocess and wait until it accepts connections.
 export const startServer = async (
-  options: StartServerOptions = {},
+  options: StartServerOptions,
 ): Promise<RunningServer> => {
-  const entry = options.entry ?? resolveServerEntry()
+  const entry = Bun.env.RP_GOLDEN_SERVER_ENTRY ?? options.entry
   const port = options.port ?? (await freePort())
   const token = options.token === undefined ? FIXTURE_TOKEN : options.token
   const configHome = options.configHome ?? makeFixtureHome()
