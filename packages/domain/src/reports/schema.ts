@@ -381,6 +381,9 @@ export const HistoryReport = Schema.Struct({
   days: Schema.Array(
     Schema.Struct({
       date: Schema.String,
+      // True daily total from site_daily. `provisional` marks a day Google is
+      // still revising (within the finalization window), for UI dimming.
+      provisional: Schema.Boolean,
       impressions: Schema.Number,
       clicks: Schema.Number,
       ctr: Schema.Number,

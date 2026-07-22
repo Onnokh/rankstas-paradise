@@ -80,7 +80,7 @@ function mkSnapshot(over: {
 test("empty database reads return zeroed/null shapes", async () => {
   expect(await run(Storage.use.snapshotSummary())).toEqual({ rows: 0, dates: 0 })
   expect(await run(Storage.use.latestSnapshotDate())).toBeNull()
-  expect(await run(Storage.use.history())).toEqual([])
+  expect(await run(Storage.use.historyWithPending())).toEqual([])
   expect(await run(Storage.use.snapshotDateRange())).toEqual({
     first: null,
     last: null,
@@ -117,18 +117,6 @@ test("saveSnapshots persists rows and reads aggregate correctly", async () => {
     "2024-01-10",
   ])
   expect(await run(Storage.use.syncedWithinHours(24))).toBe(true)
-
-  // history: all queries, grouped by date (impressions-weighted position).
-  const history = await run(Storage.use.history())
-  expect(history).toEqual([
-    {
-      date: "2024-01-10",
-      impressions: 110,
-      clicks: 7,
-      ctr: 7 / 110,
-      position: (8 * 100 + 3 * 10) / 110,
-    },
-  ])
 
   // topQueries excludes brand queries by default ("brandy shoes" matches %brandy%).
   const top = await run(Storage.use.topQueries())
@@ -183,6 +171,21 @@ test("saveDailyTotals feeds pagesWindowOverview true totals + coverage", async (
   )
   expect(row?.trueTotals?.current.impressions).toBe(150)
   expect(row?.allQueries.current.impressions).toBe(100)
+
+  // historyWithPending reads the true site-wide daily totals from site_daily
+  // (200 impressions), NOT the query-row sum from search_snapshot (100). The
+  // day is old, so it is not flagged provisional.
+  const history = await run(Storage.use.historyWithPending())
+  expect(history).toEqual([
+    {
+      date: "2024-01-10",
+      impressions: 200,
+      clicks: 9,
+      ctr: 0.045,
+      position: 7,
+      provisional: false,
+    },
+  ])
 })
 
 test("addLogEntry returns assigned id/createdAt and listLog filters by path", async () => {

@@ -157,8 +157,8 @@ const sumWindow = (days: readonly Metrics[]): Metrics => {
   }
 }
 
-// Site-level KPI cards from stored query rows: current 28 days versus the
-// previous 28. `days` is the 56-day history (Storage.history(56)).
+// Site-level KPI cards from the true daily site totals: current 28 days versus
+// the previous 28. `days` is the 56-day history (Storage.historyWithPending(56)).
 const siteKpis = (days: ReadonlyArray<Metrics>): Meta[] => {
   const current = sumWindow(days.slice(-28))
   const previous = sumWindow(days.slice(0, Math.max(0, days.length - 28)))
@@ -248,7 +248,7 @@ const homeFeed = Effect.gen(function* () {
   const sitemapPages = yield* Sitemap.use.loadCachedSitemapPages()
   const digest = yield* Storage.use.opportunityDigest(registry)
   const sitemapGaps = yield* Sitemap.use.unmappedSitemapPages(sitemapPages, registry)
-  const history56 = yield* Storage.use.history(56)
+  const history56 = yield* Storage.use.historyWithPending(56)
   const recent = yield* Reports.use.recentActions(3)
   const range = (start: string | null, end: string | null) => start && end ? `${shortDate(start)} – ${shortDate(end)}` : "—"
   const windowNodes: DetailNode[] = [
@@ -325,7 +325,7 @@ const opportunitiesFeed = Effect.gen(function* () {
   const origin = yield* CurrentSiteOrigin
   const registry = yield* Registry.use.loadRegistry()
   const digest = yield* Storage.use.opportunityDigest(registry)
-  const history56 = yield* Storage.use.history(56)
+  const history56 = yield* Storage.use.historyWithPending(56)
   const rows: FeedRow[] = digest.signals.map((signal, index) => {
     const mapping = registryForSignal(signal, registry)
     const deltas = signal.previous ? { impressions: signal.current.impressions - signal.previous.impressions, clicks: signal.current.clicks - signal.previous.clicks } : undefined
@@ -372,7 +372,7 @@ const opportunitiesFeed = Effect.gen(function* () {
 const historyFeed = Effect.gen(function* () {
   const summary = yield* Storage.use.snapshotSummary()
   const debug = yield* CurrentSiteDebug
-  const days = yield* Storage.use.history()
+  const days = yield* Storage.use.historyWithPending()
   const latest = days.at(-1)
   const previous = days.at(-2)
   const meta: Meta[] = latest

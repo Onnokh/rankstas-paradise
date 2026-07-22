@@ -93,9 +93,6 @@ export interface Interface {
   readonly finalizationCutoff: () => Effect.Effect<string>
 
   // --- reads / analysis ---
-  readonly history: (
-    limit?: number,
-  ) => Effect.Effect<ReadonlyArray<HistoryDay>, StorageError>
   readonly historyWithPending: (
     limit?: number,
   ) => Effect.Effect<ReadonlyArray<HistoryDay>, StorageError>
@@ -104,7 +101,7 @@ export interface Interface {
   ) => Effect.Effect<OpportunityDigest, StorageError>
   readonly targetPerformance: (
     targetUrl: string,
-    includeBrand?: boolean,
+    inventoryTotal?: boolean,
   ) => Effect.Effect<RegistryPerformance, StorageError>
   readonly registryProgress: (
     entries: ReadonlyArray<RegistryEntry>,
@@ -289,38 +286,23 @@ export const layer = Layer.effect(
       return rows[0]?.date ?? null
     })
 
-    const historyI = (limit = 28) =>
-      Effect.gen(function* () {
-        const rows = yield* sql<HistoryDay>`
-          select date, sum(impressions) as impressions, sum(clicks) as clicks,
-                 sum(clicks) * 1.0 / sum(impressions) as ctr,
-                 sum(position * impressions) * 1.0 / sum(impressions) as position
-          from search_snapshot
-          group by date
-          order by date desc
-          limit ${limit}`
-        return [...rows].reverse() as ReadonlyArray<HistoryDay>
-      })
-
+    // Daily history for the dashboard, read from the query-less site totals
+    // (site_daily) so the numbers match Search Console's headline figures
+    // exactly. Summing query-level rows (search_snapshot) under-reports the true
+    // daily total because Google withholds its anonymized long-tail from the
+    // breakdown — that detail belongs to the Queries and Opportunities views,
+    // not this overview. site_daily covers every day we have data for (including
+    // low-volume days where Google suppresses query rows entirely). A day is
+    // flagged provisional by the finalization window, so the UI dims only what
+    // Google is still revising.
     const historyWithPendingI = (limit = 28) =>
       Effect.gen(function* () {
-        const finalRows = yield* sql<HistoryDay>`
-          select date, sum(impressions) as impressions, sum(clicks) as clicks,
-                 sum(clicks) * 1.0 / sum(impressions) as ctr,
-                 sum(position * impressions) * 1.0 / sum(impressions) as position
-          from search_snapshot
-          group by date`
-        const withBreakdown = new Set(finalRows.map((row) => row.date))
-        const totalsRows = yield* sql<HistoryDay>`
-          select date, impressions, clicks, ctr, position from site_daily`
-        const totalsOnlyRows = totalsRows.filter(
-          (row) => !withBreakdown.has(row.date),
-        )
+        const rows = yield* sql<HistoryDay>`
+          select date, impressions, clicks, ctr, position from site_daily order by date`
         const cutoff = finalizationCutoffValue()
-        const days = [...finalRows, ...totalsOnlyRows]
+        return rows
           .map((row) => ({ ...row, provisional: row.date > cutoff }))
-          .sort((left, right) => (left.date < right.date ? -1 : 1))
-        return days.slice(-limit) as ReadonlyArray<HistoryDay>
+          .slice(-limit) as ReadonlyArray<HistoryDay>
       })
 
     const opportunityDigestI = (entries: ReadonlyArray<RegistryEntry>) =>
@@ -487,7 +469,14 @@ export const layer = Layer.effect(
         }
       })
 
-    const targetPerformanceI = (targetUrl: string, includeBrand = false) =>
+    // Per-target 28-day series for the Registry table. For inventory/PAGE
+    // targets (no keyword rows) `inventoryTotal` is set, and we read the TRUE
+    // page total from page_daily — the query-less daily totals that match
+    // Search Console — because summing query rows (search_snapshot) under-reports
+    // the page: Google withholds its anonymized long-tail from the breakdown.
+    // Keyword targets keep the non-brand search_snapshot sum, which is the
+    // intent of measuring a mapped keyword's own page footprint.
+    const targetPerformanceI = (targetUrl: string, inventoryTotal = false) =>
       Effect.gen(function* () {
         const latestDate = yield* latestSnapshotDateI
         if (!latestDate) {
@@ -499,14 +488,20 @@ export const layer = Layer.effect(
           }
         }
         const start = dateDaysBefore(latestDate, 27)
-        const rows = yield* sql<RegistryDay>`
-          select date, sum(clicks) as clicks, sum(impressions) as impressions,
-                 sum(clicks) * 1.0 / sum(impressions) as ctr,
-                 sum(position * impressions) * 1.0 / sum(impressions) as position
-          from search_snapshot
-          where page = ${`${origin}${targetUrl}`} and date between ${start} and ${latestDate}
-            and (${includeBrand ? 1 : 0} = 1 or lower(query) not like ${brandPattern})
-          group by date`
+        const page = `${origin}${targetUrl}`
+        const rows = inventoryTotal
+          ? yield* sql<RegistryDay>`
+              select date, clicks, impressions, ctr, position
+              from page_daily
+              where page = ${page} and date between ${start} and ${latestDate}`
+          : yield* sql<RegistryDay>`
+              select date, sum(clicks) as clicks, sum(impressions) as impressions,
+                     sum(clicks) * 1.0 / sum(impressions) as ctr,
+                     sum(position * impressions) * 1.0 / sum(impressions) as position
+              from search_snapshot
+              where page = ${page} and date between ${start} and ${latestDate}
+                and lower(query) not like ${brandPattern}
+              group by date`
         const byDate = new Map(rows.map((row) => [row.date, row]))
         const days = Array.from({ length: 28 }, (_, index) => {
           const date = new Date(`${start}T00:00:00.000Z`)
@@ -1055,13 +1050,12 @@ export const layer = Layer.effect(
       latestSnapshotDate: () =>
         latestSnapshotDateI.pipe(mapErr("latestSnapshotDate")),
       finalizationCutoff: () => Effect.sync(finalizationCutoffValue),
-      history: (limit) => historyI(limit).pipe(mapErr("history")),
       historyWithPending: (limit) =>
         historyWithPendingI(limit).pipe(mapErr("historyWithPending")),
       opportunityDigest: (entries) =>
         opportunityDigestI(entries).pipe(mapErr("opportunityDigest")),
-      targetPerformance: (targetUrl, includeBrand) =>
-        targetPerformanceI(targetUrl, includeBrand).pipe(
+      targetPerformance: (targetUrl, inventoryTotal) =>
+        targetPerformanceI(targetUrl, inventoryTotal).pipe(
           mapErr("targetPerformance"),
         ),
       registryProgress: (entries) =>

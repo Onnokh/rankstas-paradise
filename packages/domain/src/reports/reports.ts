@@ -662,9 +662,13 @@ export const layer = Layer.effect(
       historyReport: (limit = 28) =>
         wrap(
           Effect.gen(function* () {
-            const days = yield* storage.history(limit)
+            const days = yield* storage.historyWithPending(limit)
             return {
-              days: days.map((day) => ({ date: day.date, ...tidy(day) })),
+              days: days.map((day) => ({
+                date: day.date,
+                provisional: day.provisional ?? false,
+                ...tidy(day),
+              })),
             }
           }),
         ),
