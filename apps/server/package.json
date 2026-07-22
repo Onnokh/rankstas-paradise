@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun test"
+    "test": "bun test",
+    "serve": "bun run src/http/serve.ts",
+    "start": "bun run src/http/serve.ts"
   },
   "dependencies": {
     "@rp/domain": "workspace:*"
