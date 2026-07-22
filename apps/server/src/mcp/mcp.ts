@@ -36,10 +36,15 @@ import { Sites } from "@rp/domain/sites/sites"
 // which `CurrentSite.layerFor` needs to resolve the site) and has already had
 // its domain errors caught, so its error channel is `never`.
 //
-// PLO-276 wires this to the real runtime as `(effect) => runtime.runPromise(effect)`;
-// tests pass `(effect) => testRuntime.runPromise(effect)` over a mock `Reports`.
+// `run` also receives the tool's target `site`. Site-scoped services resolve
+// `CurrentSite.current()` at layer construction, so they must be built PER SITE;
+// the seam surfaces the site (it is site-agnostic otherwise) so PLO-276 can route
+// each call to the matching per-site runtime rather than a single global one.
+// PLO-276 wires this as `(site, effect) => perSiteRuntime(site).runPromise(effect)`;
+// tests pass `(_site, effect) => testRuntime.runPromise(effect)` over a mock `Reports`.
 export type McpRuntimeContext = Reports.Service | Sites.Service | Config.Service
 export type RunTool = <A>(
+  site: SiteId,
   effect: Effect.Effect<A, never, McpRuntimeContext>,
 ) => Promise<A>
 
@@ -100,7 +105,10 @@ export const buildMcpServer = (run: RunTool): McpServer => {
         "Data range, row counts, and registry/sitemap coverage for the site.",
       inputSchema: { site },
     },
-    async ({ site }) => run(scoped(Reports.use.statusReport(), toSiteId(site))),
+    async ({ site }) => {
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.statusReport(), id))
+    },
   )
 
   server.registerTool(
@@ -118,8 +126,10 @@ export const buildMcpServer = (run: RunTool): McpServer => {
           .describe("Window length in days (default 28)."),
       },
     },
-    async ({ site, window }) =>
-      run(scoped(Reports.use.pagesReport(window ?? 28), toSiteId(site))),
+    async ({ site, window }) => {
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.pagesReport(window ?? 28), id))
+    },
   )
 
   server.registerTool(
@@ -132,8 +142,10 @@ export const buildMcpServer = (run: RunTool): McpServer => {
         path: z.string().describe('Page path starting with "/", e.g. "/pricing".'),
       },
     },
-    async ({ site, path }) =>
-      run(scoped(Reports.use.pageReport(path), toSiteId(site))),
+    async ({ site, path }) => {
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.pageReport(path), id))
+    },
   )
 
   server.registerTool(
@@ -176,7 +188,8 @@ export const buildMcpServer = (run: RunTool): McpServer => {
         includeBrand,
         limit,
       })
-      return run(scoped(Reports.use.queriesReport(options), toSiteId(site)))
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.queriesReport(options), id))
     },
   )
 
@@ -190,8 +203,10 @@ export const buildMcpServer = (run: RunTool): McpServer => {
         kind: z.string().optional().describe("Filter to one signal kind."),
       },
     },
-    async ({ site, kind }) =>
-      run(scoped(Reports.use.opportunitiesReport(kind), toSiteId(site))),
+    async ({ site, kind }) => {
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.opportunitiesReport(kind), id))
+    },
   )
 
   server.registerTool(
@@ -201,7 +216,10 @@ export const buildMcpServer = (run: RunTool): McpServer => {
         "The keyword registry: every target URL with its phase, plan, and progress.",
       inputSchema: { site },
     },
-    async ({ site }) => run(scoped(Reports.use.registryList(), toSiteId(site))),
+    async ({ site }) => {
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.registryList(), id))
+    },
   )
 
   server.registerTool(
@@ -213,8 +231,10 @@ export const buildMcpServer = (run: RunTool): McpServer => {
         path: z.string().optional().describe("Restrict to a single page path."),
       },
     },
-    async ({ site, path }) =>
-      run(scoped(Reports.use.logList(path), toSiteId(site))),
+    async ({ site, path }) => {
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.logList(path), id))
+    },
   )
 
   server.registerTool(
@@ -232,8 +252,10 @@ export const buildMcpServer = (run: RunTool): McpServer => {
           .describe("Number of days (default 28)."),
       },
     },
-    async ({ site, limit }) =>
-      run(scoped(Reports.use.historyReport(limit ?? 28), toSiteId(site))),
+    async ({ site, limit }) => {
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.historyReport(limit ?? 28), id))
+    },
   )
 
   // --- writes (no warm-on-read; recording an action shouldn't fetch) ---
@@ -262,7 +284,8 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     },
     async ({ site, ...rest }) => {
       const input = Schema.decodeUnknownSync(RegistryAddInput)(rest)
-      return run(scoped(Reports.use.registryAdd(input), toSiteId(site)))
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.registryAdd(input), id))
     },
   )
 
@@ -295,9 +318,8 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     },
     async ({ site, target, keyword, patch }) => {
       const decoded = Schema.decodeUnknownSync(RegistryPatch)(patch)
-      return run(
-        scoped(Reports.use.registrySet(target, keyword, decoded), toSiteId(site)),
-      )
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.registrySet(target, keyword, decoded), id))
     },
   )
 
@@ -319,7 +341,8 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     },
     async ({ site, ...rest }) => {
       const input = Schema.decodeUnknownSync(LogAddInput)(rest)
-      return run(scoped(Reports.use.logAdd(input), toSiteId(site)))
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.logAdd(input), id))
     },
   )
 

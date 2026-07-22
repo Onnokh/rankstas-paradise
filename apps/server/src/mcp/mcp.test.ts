@@ -88,7 +88,9 @@ const connectClient = async (run: RunTool): Promise<Client> => {
 
 const withClient = async (fn: (client: Client) => Promise<void>): Promise<void> => {
   const runtime = ManagedRuntime.make(testLayer)
-  const run: RunTool = (effect) => runtime.runPromise(effect)
+  // The test uses a single site whose services the mock provides, so the run
+  // ignores the site arg and runs every tool effect on the one test runtime.
+  const run: RunTool = (_site, effect) => runtime.runPromise(effect)
   const client = await connectClient(run)
   try {
     await fn(client)

@@ -1,7 +1,7 @@
-// Parallel golden run for the NEW HttpApi server (apps/server/src/http/serve.ts).
+// Parallel golden run for the NEW HttpApi server (apps/server/src/main.ts).
 //
 // It boots the new server through the same PLO-263 harness (pointing
-// RP_GOLDEN_SERVER_ENTRY at serve.ts) and asserts it reproduces the SAME
+// RP_GOLDEN_SERVER_ENTRY at main.ts) and asserts it reproduces the SAME
 // committed snapshots the legacy server produces — byte-for-byte for text feeds,
 // value-for-value for the JSON envelopes. The committed `golden.test.ts.snap`
 // is the oracle and is read directly here (never regenerated), so this test
@@ -26,7 +26,7 @@ import {
 const site = `?site=${FIXTURE_SITE_ID}`
 
 // The new server entry under test.
-const NEW_SERVER_ENTRY = resolve(repoRoot, "apps/server/src/http/serve.ts")
+const NEW_SERVER_ENTRY = resolve(repoRoot, "apps/server/src/main.ts")
 
 // Load the committed legacy snapshots as data. The .snap file is a CommonJS
 // module that assigns to `exports[key]`; evaluating it yields the serialized
