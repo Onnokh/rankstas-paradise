@@ -8,7 +8,6 @@ import {
   actionKinds,
   addLogEntry,
   dateDaysBefore,
-  history,
   historyWithPending,
   latestSnapshotDate,
   listLog,
@@ -520,9 +519,9 @@ export const sparkline = (values: readonly number[], lowerIsBetter = false) => {
 }
 
 export const historyReport = (limit = 28) => {
-  const days = history(limit)
+  const days = historyWithPending(limit)
   return {
-    days: days.map((day) => ({ date: day.date, ...tidy(day) })),
+    days: days.map((day) => ({ date: day.date, ...tidy(day), provisional: day.provisional ?? false })),
   }
 }
 

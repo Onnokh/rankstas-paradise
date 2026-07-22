@@ -329,21 +329,6 @@ export const snapshotSummary = () => {
   return summary
 }
 
-export const history = (limit = 28): HistoryDay[] => {
-  const db = database()
-  const rows = db.query<HistoryDay, [number]>(`
-    select date, sum(impressions) as impressions, sum(clicks) as clicks,
-           sum(clicks) * 1.0 / sum(impressions) as ctr,
-           sum(position * impressions) * 1.0 / sum(impressions) as position
-    from search_snapshot
-    group by date
-    order by date desc
-    limit ?
-  `).all(limit)
-  db.close()
-  return rows.reverse()
-}
-
 // Daily history for the dashboard, read from the query-less site totals
 // (site_daily) so the numbers match Search Console's headline figures exactly.
 // Summing query-level rows (search_snapshot) under-reports the true daily total
