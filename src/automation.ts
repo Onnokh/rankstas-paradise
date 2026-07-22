@@ -8,12 +8,14 @@ import { refreshSitemapPages } from "./sitemap.ts"
 import { currentSiteOrigin } from "./site.ts"
 import { finalizationCutoff, missingDailyTotalDates, missingSnapshotDates, pruneIndexStatuses, recentlyInspectedUrls, recentlySyncedDates, saveDailyTotals, savePageIndexStatuses, saveSnapshots, snapshotDateRange } from "./storage.ts"
 
-const today = new Date()
 // `count` consecutive dates ending at the finalization cutoff (today − 3; see
 // finalizationCutoff for why 3), newest first — the recently-finalized window we
-// reconcile on each sync to absorb Google's late processing.
+// reconcile on each sync to absorb Google's late processing. "today" is read
+// fresh on each call: the hosted server is a long-running process, so a
+// module-level `new Date()` would freeze at boot and the reconciliation window
+// would drift a day behind for every day of uptime.
 const datesBeforeToday = (count: number) => Array.from({ length: count }, (_, index) => {
-  const date = new Date(today)
+  const date = new Date()
   date.setUTCDate(date.getUTCDate() - index - 3)
   return date.toISOString().slice(0, 10)
 })
