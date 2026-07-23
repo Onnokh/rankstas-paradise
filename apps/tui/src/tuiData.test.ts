@@ -76,6 +76,7 @@ const snapshot = Schema.decodeUnknownSync(DashboardSnapshot)({
       baseline: null,
       state: "measuring",
       indexStatus: "indexed",
+      coverageState: "Submitted and indexed",
       inspectedAt: "2026-07-19",
     },
   ],

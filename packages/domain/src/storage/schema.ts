@@ -115,6 +115,7 @@ export const RegistryTargetProgress = Schema.Struct({
   baseline: Schema.NullOr(Metrics),
   state: ProgressState,
   indexStatus: IndexStatus,
+  coverageState: Schema.NullOr(Schema.String),
   inspectedAt: Schema.NullOr(Schema.String),
 }).annotate({ identifier: "RegistryTargetProgress" })
 export interface RegistryTargetProgress
