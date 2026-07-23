@@ -7,6 +7,7 @@ Ranksta's Paradise runs as a single Bun HTTP service (entry `apps/server/src/mai
 - Project: **Digital Home**.
 - New resource → **Dockerfile** application, pointed at this repo. Coolify builds from the repo-root `Dockerfile`.
 - The server binds `0.0.0.0` on `SEO_PORT` (default **8790**); set Coolify's exposed port to match.
+- For GitHub push auto-deploys, use Coolify's **GitHub Manual Webhook** URL (`/webhooks/source/github/events/manual`) and matching secret. The `/api/v1/deploy` URL is for bearer-authenticated API callers, not a repository webhook.
 
 ## 2. Persistent volume
 
