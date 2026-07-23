@@ -1,6 +1,6 @@
 import { BoxRenderable, createCliRenderer, fg, StyledText, t, TextRenderable } from "@opentui/core"
 
-import { logKindLabel, opportunityLabels, phaseFor, readableIntent, setActiveOrigin, shortAction, signalExplanation, signalMeaning, signalReason, sparkline } from "./presentation.ts"
+import { detailSummaryHeight, logKindLabel, opportunityLabels, phaseFor, readableIntent, setActiveOrigin, shortAction, signalExplanation, signalMeaning, signalReason, sparkline } from "./presentation.ts"
 import { loadSiteCatalog, loadTuiData, type TuiData } from "./tuiData.ts"
 import type { HistoryDay, LogFeedEntry, LogReadout, OpportunityKind, OpportunitySignal, RegistryEntry, RegistryTargetProgress, Site } from "./types.ts"
 
@@ -189,7 +189,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
   const detail = new BoxRenderable(renderer, { flexGrow: 1, minWidth: 0, overflow: "hidden", borderStyle: "single", borderColor: "#4A5568", padding: 1, flexDirection: "column" })
   const masterTitle = new TextRenderable(renderer, { height: 1, flexShrink: 0, content: "", fg: "#F6AD55", attributes: 1 })
   const masterBody = new TextRenderable(renderer, { flexGrow: 1, minHeight: 0, overflow: "hidden", content: "", fg: "#E2E8F0" })
-  const detailSummary = new BoxRenderable(renderer, { height: 7, flexShrink: 0, minWidth: 0, overflow: "hidden", border: ["bottom"], borderStyle: "single", borderColor: "#4A5568", paddingBottom: 1, flexDirection: "column" })
+  const detailSummary = new BoxRenderable(renderer, { height: detailSummaryHeight(false, renderer.width), flexShrink: 0, minWidth: 0, overflow: "hidden", border: ["bottom"], borderStyle: "single", borderColor: "#4A5568", paddingBottom: 1, flexDirection: "column" })
   const detailSummaryTitle = new TextRenderable(renderer, { height: 1, flexShrink: 0, content: "", fg: "#F7FAFC", attributes: 1 })
   const detailSummaryBody = new TextRenderable(renderer, { flexGrow: 1, minHeight: 0, overflow: "hidden", content: "", fg: "#CBD5E0" })
   const detailGuide = new BoxRenderable(renderer, { height: 0, flexShrink: 0, minWidth: 0, overflow: "hidden", border: false, borderStyle: "single", borderColor: "#4A5568", paddingBottom: 1, flexDirection: "column" })
@@ -280,7 +280,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
   const render = () => inSite(() => {
     const summary = data.summary
     const activeView = views.findIndex((item) => item.view === view)
-    detailSummary.height = renderer.width >= 120 ? 8 : 11
+    detailSummary.height = detailSummaryHeight(view === "registry", renderer.width)
     const showGuide = view === "home" || view === "opportunities"
     detailGuide.height = showGuide ? (renderer.width >= 120 ? 16 : 18) : 0
     detailGuide.border = showGuide ? ["bottom"] : false
