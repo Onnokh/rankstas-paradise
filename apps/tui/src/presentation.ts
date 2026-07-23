@@ -15,6 +15,13 @@ import type {
   RegistryTargetProgress,
 } from "./types.ts"
 
+export const detailSummaryHeight = (
+  isRegistry: boolean,
+  rendererWidth: number,
+): number => isRegistry
+  ? rendererWidth >= 120 ? 9 : 13
+  : rendererWidth >= 120 ? 8 : 11
+
 // The active site's canonical origin, refreshed on startup and site switch.
 let activeOrigin = ""
 export const setActiveOrigin = (origin: string): void => {
