@@ -474,6 +474,9 @@ const registryFeed = Effect.gen(function* () {
         // Un-indexed is the expected state for PRE-phase pages — warn, not
         // destructive.
         { kind: "dkv", label: "Indexed", value: progress.indexStatus === "indexed" ? "Indexed" : progress.indexStatus === "not-indexed" ? `Not indexed${progress.inspectedAt ? ` · checked ${shortDate(progress.inspectedAt.slice(0, 10))}` : ""}` : "Unknown", tone: progress.indexStatus === "indexed" ? "up" : progress.indexStatus === "not-indexed" ? "warn" : "" },
+        ...(progress.coverageState
+          ? [{ kind: "dkv", label: "Google coverage", value: progress.coverageState } as DetailNode]
+          : []),
         { kind: "dkv", label: "Search intent", value: readableIntent(entry.intent) },
         { kind: "dkv", label: "Registry", value: `${entry.priority || "—"} · ${entry.country} · ${keywordEntries.length} keywords` },
         {

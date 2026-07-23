@@ -500,6 +500,16 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
       const keywordEntries = progress.entries.filter((mapped) => mapped.keyword.trim())
       const inventoryOnly = keywordEntries.length === 0
       const performance = data.performance(progress.targetUrl, inventoryOnly)
+      const indexLabel = progress.indexStatus === "indexed"
+        ? "Indexed"
+        : progress.indexStatus === "not-indexed"
+          ? "Not indexed"
+          : "Unknown"
+      const indexDetail = [
+        indexLabel,
+        progress.coverageState,
+        progress.inspectedAt ? `checked ${progress.inspectedAt.slice(0, 10)}` : null,
+      ].filter(Boolean).join(" · ")
       const momentum = performance.last7.impressions - performance.previous7.impressions
       const momentumLabel = performance.previous7.impressions > 0
         ? `${momentum >= 0 ? "+" : ""}${momentum} impressions (${momentum >= 0 ? "+" : ""}${((momentum / performance.previous7.impressions) * 100).toFixed(1)}%)`
@@ -534,6 +544,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
           : "Previous baseline: not captured",
         `Search intent: ${readableIntent(entry.intent)}`,
         `Registry: ${entry.priority} · ${entry.country} · ${keywordEntries.length} keywords`,
+        `Google index: ${indexDetail}`,
       ].join("\n")
       detailTitle.content = inventoryOnly ? "PAGE PERFORMANCE · ALL QUERIES" : "NON-BRAND PERFORMANCE"
       const performanceDetails = [

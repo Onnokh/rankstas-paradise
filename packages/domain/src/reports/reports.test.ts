@@ -16,6 +16,7 @@ import { type RegistryEntry } from "../registry/schema.ts"
 import {
   type DailySnapshot,
   type DailyTotals,
+  type PageIndexStatus,
   type PageDailyTotal,
   type SiteDailyTotal,
 } from "../search-console/schema.ts"
@@ -342,6 +343,14 @@ beforeAll(async () => {
       const storage = yield* Storage.Service
       yield* storage.saveSnapshots(debugSnapshots)
       yield* storage.saveDailyTotals(debugDailyTotals, [...dates])
+      yield* storage.savePageIndexStatuses([
+        {
+          targetUrl: `${ORIGIN}/pocket-alternative`,
+          status: "not-indexed",
+          verdict: "NEUTRAL",
+          coverageState: "Crawled - currently not indexed",
+        } satisfies PageIndexStatus,
+      ])
       yield* storage.addLogEntry({
         date: "2026-06-10",
         path: "/pocket-alternative",
@@ -395,6 +404,8 @@ test("pageReport returns path, verdict, and top queries for a mapped page", asyn
   const report = await run(Reports.use.pageReport("/pocket-alternative"))
   expect(report.path).toBe("/pocket-alternative")
   expect(report.mapped).toBe(true)
+  expect(report.indexed).toBe("not-indexed")
+  expect(report.coverageState).toBe("Crawled - currently not indexed")
   // Judged on non-brand query rows for a keyword target.
   expect(report.performance.scope).toBe("non-brand")
   expect(typeof report.verdict).toBe("string")
@@ -464,6 +475,8 @@ test("registryList includes a known target with its keywords", async () => {
   )
   expect(pocket).toBeDefined()
   expect(pocket?.priority).toBe("P1")
+  expect(pocket?.indexed).toBe("not-indexed")
+  expect(pocket?.coverageState).toBe("Crawled - currently not indexed")
   expect(pocket?.keywords.map((keyword) => keyword.keyword)).toContain(
     "pocket alternative",
   )

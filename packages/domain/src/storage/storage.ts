@@ -600,8 +600,9 @@ export const layer = Layer.effect(
         const indexRows = yield* sql<{
           target_url: string
           status: "indexed" | "not-indexed" | "unknown"
+          coverage_state: string
           inspected_at: string
-        }>`select target_url, status, inspected_at from page_index_status`
+        }>`select target_url, status, coverage_state, inspected_at from page_index_status`
         const indexByUrl = new Map(indexRows.map((row) => [row.target_url, row]))
         const grouped = new Map<string, RegistryProgress[]>()
         for (const row of progress)
@@ -623,6 +624,8 @@ export const layer = Layer.effect(
             baseline: first.baseline,
             state: first.state,
             indexStatus: indexByUrl.get(`${origin}${targetUrl}`)?.status ?? "unknown",
+            coverageState:
+              indexByUrl.get(`${origin}${targetUrl}`)?.coverage_state || null,
             inspectedAt: indexByUrl.get(`${origin}${targetUrl}`)?.inspected_at ?? null,
           })
         }
