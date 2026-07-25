@@ -4,9 +4,10 @@
 # the root Layer (Bun HTTP server + HttpApi + the bearer-gated /mcp mount) and
 # launches it under one long-lived runtime, binding 0.0.0.0 on SEO_PORT.
 #
-# STATE LIVES ON A VOLUME, NEVER IN THE IMAGE. All mutable state — the OAuth
-# token (google-token.json), per-site SQLite, the registry CSV, and config.json —
-# lives under the app home ${XDG_CONFIG_HOME}/rankstas-paradise. On Coolify, mount
+# STATE LIVES ON A VOLUME, NEVER IN THE IMAGE. All state — the Google
+# service-account key (google-service-account.json), per-site SQLite, the
+# registry CSV, and config.json — lives under the app home
+# ${XDG_CONFIG_HOME}/rankstas-paradise. On Coolify, mount
 # a persistent volume at /data and set XDG_CONFIG_HOME=/data (see docs/deploy.md).
 # .dockerignore keeps any local state out of the build context.
 #

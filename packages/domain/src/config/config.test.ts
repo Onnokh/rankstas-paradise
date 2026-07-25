@@ -7,7 +7,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { Cause, ConfigProvider, Effect, Exit, Redacted } from "effect"
+import { Cause, ConfigProvider, Effect, Exit } from "effect"
 
 import { Config } from "./config.ts"
 import { ConfigLoadError } from "./schema.ts"
@@ -45,53 +45,26 @@ const runWith = <A, E>(
 
 describe("Config.load precedence", () => {
   test("environment wins over the file for shared keys", async () => {
-    await writeConfigFile({
-      googleClientId: "file-id",
-      googleClientSecret: "file-secret",
-      siteUrl: "https://file.example",
-    })
+    await writeConfigFile({ siteUrl: "https://file.example" })
 
     const config = await runWith(
-      { GOOGLE_CLIENT_ID: "env-id" },
+      { SITE_URL: "https://env.example" },
       Config.use.load(),
     )
 
-    // env-provided id wins; the untouched keys fall back to the file.
-    expect(config.googleClientId).toBe("env-id")
-    expect(Redacted.value(config.googleClientSecret)).toBe("file-secret")
-    expect(config.siteUrl).toBe("https://file.example")
+    expect(config.siteUrl).toBe("https://env.example")
   })
 
   test("file values are used when the environment is silent", async () => {
     await writeConfigFile({
-      googleClientId: "file-id",
-      googleClientSecret: "file-secret",
       siteUrl: "https://file.example",
       sites: [{ id: "a", siteUrl: "https://a.example" }],
     })
 
     const config = await runWith({}, Config.use.load())
 
-    expect(config.googleClientId).toBe("file-id")
-    expect(Redacted.value(config.googleClientSecret)).toBe("file-secret")
+    expect(config.siteUrl).toBe("https://file.example")
     expect(config.sites).toEqual([{ id: "a", siteUrl: "https://a.example" }])
-  })
-})
-
-describe("Config.load secret handling", () => {
-  test("the secret never surfaces in string or JSON output", async () => {
-    await writeConfigFile({
-      googleClientId: "file-id",
-      googleClientSecret: "top-secret",
-      siteUrl: "https://file.example",
-    })
-
-    const config = await runWith({}, Config.use.load())
-
-    expect(String(config.googleClientSecret)).not.toContain("top-secret")
-    expect(JSON.stringify(config)).not.toContain("top-secret")
-    // Value is still recoverable for the OAuth client that needs it.
-    expect(Redacted.value(config.googleClientSecret)).toBe("top-secret")
   })
 })
 
@@ -130,10 +103,18 @@ describe("Config.debugMode", () => {
 })
 
 describe("Config paths", () => {
-  test("derives the XDG data directory and token path", async () => {
+  test("derives the XDG data directory and service-account key path", async () => {
     const dataDir = await runWith({}, Config.use.dataDirectory())
-    const token = await runWith({}, Config.use.tokenPath())
+    const key = await runWith({}, Config.use.serviceAccountPath())
     expect(dataDir).toBe(appHome)
-    expect(token).toBe(join(appHome, "google-token.json"))
+    expect(key).toBe(join(appHome, "google-service-account.json"))
+  })
+
+  test("GOOGLE_SERVICE_ACCOUNT_FILE overrides the default key path", async () => {
+    const key = await runWith(
+      { GOOGLE_SERVICE_ACCOUNT_FILE: "/run/secrets/sa.json" },
+      Config.use.serviceAccountPath(),
+    )
+    expect(key).toBe("/run/secrets/sa.json")
   })
 })

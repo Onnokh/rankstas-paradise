@@ -75,7 +75,7 @@ export class SearchConsoleAuthError extends Schema.TaggedErrorClass<SearchConsol
   },
 ) {}
 
-// A Search Console / OAuth HTTP request failed (non-2xx or transport error).
+// A Search Console or token-endpoint HTTP request failed (non-2xx or transport error).
 export class SearchConsoleHttpError extends Schema.TaggedErrorClass<SearchConsoleHttpError>()(
   "SearchConsoleHttpError",
   {
