@@ -14,12 +14,10 @@ export const ConfigSite = Schema.Struct({
 }).annotate({ identifier: "ConfigSite" })
 export interface ConfigSite extends Schema.Schema.Type<typeof ConfigSite> {}
 
-// The resolved application config. The Google client id/secret may come from the
-// environment (Coolify secrets), which wins over the file; the secret is
-// redacted so it never leaks into logs or serialized output.
+// The resolved application config. Google credentials are not part of it: auth
+// is a service-account key file on the volume, read directly by the
+// SearchConsole service, so nothing secret passes through here.
 export const SeoConfig = Schema.Struct({
-  googleClientId: Schema.String,
-  googleClientSecret: Schema.Redacted(Schema.String),
   siteUrl: Schema.String,
   sites: Schema.optional(Schema.Array(ConfigSite)),
 }).annotate({ identifier: "SeoConfig" })

@@ -1,16 +1,19 @@
-// SearchConsole service: the Google Search Console + URL Inspection boundary,
-// with OAuth token refresh. Backed by Effect HttpClient with typed errors and a
-// token-refresh Schedule. Reads client credentials from Config and the active
-// property from CurrentSite. FROZEN CONTRACT — Interface/Service/use signatures
-// are frozen; the `layer` below is the real implementation.
-import { createHash, randomBytes } from "node:crypto"
+// SearchConsole service: the Google Search Console + URL Inspection boundary.
+// Backed by Effect HttpClient with typed errors and a retry Schedule.
+//
+// Auth is a **service-account key** only: a JWT signed with the key's private
+// half is exchanged for a short-lived access token, cached in memory. There is
+// no interactive OAuth flow and no refresh token — the key is valid until it is
+// deleted in Google Cloud, which is what a headless deploy wants. The key path
+// comes from Config; the active property from CurrentSite.
+import { createSign } from "node:crypto"
 import {
   Context,
   Duration,
   Effect,
   Layer,
   Option,
-  Redacted,
+  Ref,
   Schedule,
   Schema,
 } from "effect"
@@ -38,11 +41,9 @@ import {
 } from "./schema.ts"
 
 export interface Interface {
-  // Whether a usable (valid or refreshable) Google connection is stored. Never
-  // fails — an unreadable token reads as "not connected".
+  // Whether a usable Google service-account key is present. Never fails — a
+  // missing or malformed key reads as "not connected".
   readonly hasGoogleConnection: () => Effect.Effect<boolean>
-  // Run the interactive OAuth authorization flow and persist the token.
-  readonly connectGoogle: () => Effect.Effect<string, SearchConsoleError>
   // Query-grouped snapshots (query/page/device/country) for the given dates.
   readonly fetchSearchConsoleSnapshots: (
     dates: ReadonlyArray<string>,
@@ -63,13 +64,10 @@ export class Service extends Context.Service<Service, Interface>()(
 
 export const use = serviceUse(Service)
 
-// --- OAuth constants (ported from legacy src/google.ts) ---
+// --- endpoints ---
 
 const scope = "https://www.googleapis.com/auth/webmasters.readonly"
-const callbackPort = 8765
-const redirectUri = `http://127.0.0.1:${callbackPort}/oauth/callback`
 const tokenEndpoint = "https://oauth2.googleapis.com/token"
-const authorizeEndpoint = "https://accounts.google.com/o/oauth2/v2/auth"
 const queryEndpoint = (property: string) =>
   `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(
     property,
@@ -84,19 +82,20 @@ const inspectionConcurrency = 8
 
 // --- internal wire schemas (schema.ts is frozen; these decode raw responses) ---
 
-const StoredToken = Schema.Struct({
-  access_token: Schema.String,
-  refresh_token: Schema.optional(Schema.String),
-  expires_in: Schema.Number,
-  created_at: Schema.Number,
-})
-interface StoredToken extends Schema.Schema.Type<typeof StoredToken> {}
-
 const TokenResponse = Schema.Struct({
   access_token: Schema.String,
-  refresh_token: Schema.optional(Schema.String),
   expires_in: Schema.Number,
 })
+
+// The subset of a Google service-account JSON key this service needs. `token_uri`
+// is present in every key Google mints but is defaulted rather than required, so
+// a hand-trimmed key still works.
+const ServiceAccountKey = Schema.Struct({
+  client_email: Schema.String,
+  private_key: Schema.String,
+  token_uri: Schema.optional(Schema.String),
+})
+interface ServiceAccountKey extends Schema.Schema.Type<typeof ServiceAccountKey> {}
 
 const SearchRow = Schema.Struct({
   keys: Schema.optional(Schema.Array(Schema.String)),
@@ -134,18 +133,44 @@ const isRetryable = (error: SearchConsoleError) =>
   (error.status === undefined || isTransientStatus(error.status))
 
 // Exponential backoff + jitter, capped at five retries. Drives both transient
-// request retries and token-refresh retries.
+// request retries and token-mint retries.
 const transientRetrySchedule = Schedule.exponential(
   Duration.millis(500),
   2,
 ).pipe(Schedule.jittered, Schedule.upTo({ times: 5 }))
 
-// --- OAuth helpers (interactive connect flow) ---
+// --- service-account helpers (headless JWT-bearer flow) ---
 
 const base64Url = (value: Buffer) => value.toString("base64url")
-const codeVerifier = () => base64Url(randomBytes(32))
-const challengeFor = (verifier: string) =>
-  base64Url(createHash("sha256").update(verifier).digest())
+
+// Google's JWT-bearer grant: an assertion signed with the service account's
+// private key is exchanged for an access token. There is no refresh token to
+// expire or be revoked — the key stays valid until it is deleted in Google Cloud.
+const jwtBearerGrant = "urn:ietf:params:oauth:grant-type:jwt-bearer"
+// Google caps the assertion lifetime at one hour and rejects anything longer.
+const assertionLifetimeSeconds = 3600
+
+const signedAssertion = (key: ServiceAccountKey) => {
+  const issuedAt = Math.floor(Date.now() / 1000)
+  const header = base64Url(
+    Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })),
+  )
+  const claims = base64Url(
+    Buffer.from(
+      JSON.stringify({
+        iss: key.client_email,
+        scope,
+        aud: key.token_uri ?? tokenEndpoint,
+        iat: issuedAt,
+        exp: issuedAt + assertionLifetimeSeconds,
+      }),
+    ),
+  )
+  const body = `${header}.${claims}`
+  return `${body}.${base64Url(
+    createSign("RSA-SHA256").update(body).sign(key.private_key),
+  )}`
+}
 
 export const layer = Layer.effect(
   Service,
@@ -157,7 +182,7 @@ export const layer = Layer.effect(
     // Execute a request, converting transport errors and transient (429/5xx)
     // statuses into retryable failures, then retrying them with the Schedule.
     // Non-transient non-2xx responses come back untouched so the caller can
-    // classify them (e.g. a 401 that should trigger a refresh).
+    // classify them (e.g. a 401 that should trigger a token remint).
     const executeWithRetry = (request: HttpClientRequest.HttpClientRequest) =>
       httpClient.execute(request).pipe(
         Effect.mapError(
@@ -191,10 +216,22 @@ export const layer = Layer.effect(
       Effect.gen(function* () {
         const status = response.status
         if (!isOkStatus(status)) {
-          if (status === 401 || status === 403)
+          // 401 and 403 mean different things and have different fixes: the
+          // credential is stale vs. the credential is fine but has no access to
+          // this property (the usual first-run state for a service account,
+          // until it is added under Search Console → Users and permissions).
+          if (status === 401)
             return yield* Effect.fail(
               new SearchConsoleAuthError({
-                message: `Google rejected the request (HTTP ${status}). The connection may need to be re-authorized.`,
+                message:
+                  "Google rejected the credential (HTTP 401). The service-account key may have been deleted or disabled in Google Cloud.",
+              }),
+            )
+          if (status === 403)
+            return yield* Effect.fail(
+              new SearchConsoleAuthError({
+                message:
+                  "Google denied access to this property (HTTP 403). The credential is valid but lacks permission — grant it access in Search Console → Settings → Users and permissions.",
               }),
             )
           return yield* Effect.fail(
@@ -224,132 +261,109 @@ export const layer = Layer.effect(
         )
       })
 
-    const readStoredToken: Effect.Effect<StoredToken, SearchConsoleAuthError> =
-      Effect.gen(function* () {
-        const path = yield* config.tokenPath()
-        const raw = yield* Effect.tryPromise({
-          try: () => Bun.file(path).text(),
-          catch: (cause) =>
+    // Read the service-account key off the volume. This is the only credential
+    // the service accepts, so a missing or broken key is a hard failure with a
+    // message that names the path — the operator's fix is always "put a valid
+    // key there".
+    const readServiceAccountKey: Effect.Effect<
+      ServiceAccountKey,
+      SearchConsoleAuthError
+    > = Effect.gen(function* () {
+      const path = yield* config.serviceAccountPath()
+      const raw = yield* Effect.tryPromise({
+        try: () => Bun.file(path).text(),
+        catch: (cause) =>
+          new SearchConsoleAuthError({
+            message: `No Google service-account key was found at ${path}.`,
+            cause,
+          }),
+      })
+      const parsed = yield* Effect.try({
+        try: () => JSON.parse(raw) as unknown,
+        catch: (cause) =>
+          new SearchConsoleAuthError({
+            message: `The service-account key at ${path} is not valid JSON.`,
+            cause,
+          }),
+      })
+      return yield* Schema.decodeUnknownEffect(ServiceAccountKey)(parsed).pipe(
+        Effect.mapError(
+          (cause) =>
             new SearchConsoleAuthError({
-              message: "No stored Google connection was found.",
+              message: `The service-account key at ${path} is missing client_email or private_key.`,
               cause,
             }),
-        })
-        const parsed = yield* Effect.sync(() => raw).pipe(
-          Effect.flatMap((text) =>
-            Effect.try({
-              try: () => JSON.parse(text) as unknown,
-              catch: (cause) =>
-                new SearchConsoleAuthError({
-                  message: "The stored Google token is not valid JSON.",
-                  cause,
-                }),
-            }),
-          ),
-        )
-        return yield* Schema.decodeUnknownEffect(StoredToken)(parsed).pipe(
-          Effect.mapError(
-            (cause) =>
-              new SearchConsoleAuthError({
-                message: "The stored Google token is malformed.",
-                cause,
-              }),
-          ),
-        )
-      })
+        ),
+      )
+    })
 
-    // Refresh the access token via the OAuth refresh_token grant and rewrite the
-    // token file. Retries transient failures via executeWithRetry.
-    const refreshAccessToken = (
-      token: StoredToken,
+    // Access tokens minted from the key, cached in memory until shortly before
+    // expiry. Nothing is written to disk — there is no rotating credential to
+    // persist — so the volume can be mounted read-only.
+    const cachedToken = yield* Ref.make(
+      Option.none<{ readonly token: string; readonly expiresAt: number }>(),
+    )
+
+    // Return a usable access token, minting a new one when the cached one is
+    // near expiry or when forced (e.g. after a 401).
+    const getAccessToken = (
+      force: boolean,
     ): Effect.Effect<string, SearchConsoleError> =>
       Effect.gen(function* () {
-        const refreshToken = token.refresh_token
-        if (refreshToken === undefined)
-          return yield* Effect.fail(
-            new SearchConsoleAuthError({
-              message:
-                "The Google connection has expired and must be authorized again.",
-            }),
-          )
-        const seoConfig = yield* config.load().pipe(
-          Effect.mapError(
-            (cause) =>
-              new SearchConsoleAuthError({
-                message: "The Google client credentials could not be loaded.",
-                cause,
-              }),
-          ),
+        const cached = yield* Ref.get(cachedToken)
+        if (
+          !force &&
+          Option.isSome(cached) &&
+          cached.value.expiresAt > Date.now()
         )
-        const request = HttpClientRequest.post(tokenEndpoint).pipe(
+          return cached.value.token
+
+        const key = yield* readServiceAccountKey
+        const request = HttpClientRequest.post(
+          key.token_uri ?? tokenEndpoint,
+        ).pipe(
           HttpClientRequest.bodyUrlParams({
-            client_id: seoConfig.googleClientId,
-            client_secret: Redacted.value(seoConfig.googleClientSecret),
-            refresh_token: refreshToken,
-            grant_type: "refresh_token",
+            grant_type: jwtBearerGrant,
+            assertion: signedAssertion(key),
           }),
         )
         const response = yield* executeWithRetry(request)
         if (!isOkStatus(response.status))
           return yield* Effect.fail(
             new SearchConsoleAuthError({
-              message: `Google refused to refresh the connection (HTTP ${response.status}).`,
+              message: `Google refused the service-account assertion (HTTP ${response.status}). Check that the key is still enabled and that ${key.client_email} has access to the property.`,
             }),
           )
         const json = yield* response.json.pipe(
           Effect.mapError(
             (cause) =>
               new SearchConsoleAuthError({
-                message: "The token-refresh response could not be read.",
+                message: "The service-account token response could not be read.",
                 cause,
               }),
           ),
         )
-        const refreshed = yield* Schema.decodeUnknownEffect(TokenResponse)(
-          json,
-        ).pipe(
+        const minted = yield* Schema.decodeUnknownEffect(TokenResponse)(json).pipe(
           Effect.mapError(
             (cause) =>
               new SearchConsoleAuthError({
-                message: "The token-refresh response was malformed.",
+                message: "The service-account token response was malformed.",
                 cause,
               }),
           ),
         )
-        const next: StoredToken = {
-          access_token: refreshed.access_token,
-          refresh_token: refreshed.refresh_token ?? refreshToken,
-          expires_in: refreshed.expires_in,
-          created_at: Date.now(),
-        }
-        const path = yield* config.tokenPath()
-        yield* Effect.tryPromise({
-          try: () => Bun.write(path, JSON.stringify(next, null, 2)),
-          catch: (cause) =>
-            new SearchConsoleHttpError({
-              message: "The refreshed Google token could not be saved.",
-              cause,
-            }),
-        })
-        return next.access_token
-      })
-
-    // Return a usable access token, refreshing when near-expiry (or when forced,
-    // e.g. after a 401). Mirrors the legacy 60-second freshness margin.
-    const getAccessToken = (
-      force: boolean,
-    ): Effect.Effect<string, SearchConsoleError> =>
-      Effect.gen(function* () {
-        const token = yield* readStoredToken
-        if (
-          !force &&
-          token.created_at + (token.expires_in - 60) * 1_000 > Date.now()
+        // A 60-second margin, so a token can't expire mid-flight on a slow call.
+        yield* Ref.set(
+          cachedToken,
+          Option.some({
+            token: minted.access_token,
+            expiresAt: Date.now() + (minted.expires_in - 60) * 1_000,
+          }),
         )
-          return token.access_token
-        return yield* refreshAccessToken(token)
+        return minted.access_token
       })
 
-    // Run an authenticated request; on a 401, refresh once and retry.
+    // Run an authenticated request; on a 401, mint a fresh token once and retry.
     const authedJson = <A>(
       schema: Schema.Codec<A, unknown>,
       buildRequest: (accessToken: string) => HttpClientRequest.HttpClientRequest,
@@ -407,147 +421,13 @@ export const layer = Layer.effect(
       })
 
     const impl: Interface = {
+      // The key needs no authorization round-trip and cannot expire, so a
+      // readable, well-formed key on the volume *is* the connection.
       hasGoogleConnection: () =>
-        readStoredToken.pipe(
-          Effect.map((token) => {
-            const accessTokenIsValid =
-              token.access_token.length > 0 &&
-              token.created_at + token.expires_in * 1_000 > Date.now()
-            return (
-              (token.refresh_token !== undefined &&
-                token.refresh_token.length > 0) ||
-              accessTokenIsValid
-            )
-          }),
+        readServiceAccountKey.pipe(
+          Effect.as(true),
           Effect.catchCause(() => Effect.succeed(false)),
         ),
-
-      connectGoogle: Effect.fn("SearchConsole.connectGoogle")(function* () {
-        const seoConfig = yield* config.load().pipe(
-          Effect.mapError(
-            (cause) =>
-              new SearchConsoleAuthError({
-                message: "The Google client credentials could not be loaded.",
-                cause,
-              }),
-          ),
-        )
-        yield* config.ensureDataDirectory().pipe(
-          Effect.mapError(
-            (cause) =>
-              new SearchConsoleHttpError({
-                message: "The data directory could not be created.",
-                cause,
-              }),
-          ),
-        )
-        const verifier = codeVerifier()
-        const state = base64Url(randomBytes(24))
-        const authorizationUrl = new URL(authorizeEndpoint)
-        authorizationUrl.search = new URLSearchParams({
-          client_id: seoConfig.googleClientId,
-          redirect_uri: redirectUri,
-          response_type: "code",
-          scope,
-          access_type: "offline",
-          prompt: "consent",
-          code_challenge: challengeFor(verifier),
-          code_challenge_method: "S256",
-          state,
-        }).toString()
-
-        const callback = yield* Effect.callback<
-          { readonly code: string },
-          SearchConsoleAuthError
-        >((resume) => {
-          const server = Bun.serve({
-            port: callbackPort,
-            fetch(request) {
-              const url = new URL(request.url)
-              if (url.pathname !== "/oauth/callback")
-                return new Response("Not found", { status: 404 })
-              const code = url.searchParams.get("code")
-              const responseState = url.searchParams.get("state")
-              if (!code || responseState !== state) {
-                resume(
-                  Effect.fail(
-                    new SearchConsoleAuthError({
-                      message:
-                        "The Google OAuth callback was missing a valid authorization code.",
-                    }),
-                  ),
-                )
-                return new Response(
-                  "Authorization failed. You can close this tab.",
-                  { status: 400 },
-                )
-              }
-              resume(Effect.succeed({ code }))
-              return new Response(
-                "Ranksta's Paradise is connected. You can close this tab and return to the terminal.",
-              )
-            },
-          })
-          Bun.spawn(["open", authorizationUrl.toString()])
-          return Effect.sync(() => server.stop())
-        })
-
-        const request = HttpClientRequest.post(tokenEndpoint).pipe(
-          HttpClientRequest.bodyUrlParams({
-            client_id: seoConfig.googleClientId,
-            client_secret: Redacted.value(seoConfig.googleClientSecret),
-            code: callback.code,
-            code_verifier: verifier,
-            redirect_uri: redirectUri,
-            grant_type: "authorization_code",
-          }),
-        )
-        const response = yield* executeWithRetry(request)
-        if (!isOkStatus(response.status))
-          return yield* Effect.fail(
-            new SearchConsoleAuthError({
-              message: `Could not exchange the Google OAuth code (HTTP ${response.status}).`,
-            }),
-          )
-        const json = yield* response.json.pipe(
-          Effect.mapError(
-            (cause) =>
-              new SearchConsoleAuthError({
-                message: "The OAuth token response could not be read.",
-                cause,
-              }),
-          ),
-        )
-        const token = yield* Schema.decodeUnknownEffect(TokenResponse)(
-          json,
-        ).pipe(
-          Effect.mapError(
-            (cause) =>
-              new SearchConsoleAuthError({
-                message: "The OAuth token response was malformed.",
-                cause,
-              }),
-          ),
-        )
-        const path = yield* config.tokenPath()
-        yield* Effect.tryPromise({
-          try: () =>
-            Bun.write(
-              path,
-              JSON.stringify(
-                { ...token, created_at: Date.now() } satisfies StoredToken,
-                null,
-                2,
-              ),
-            ),
-          catch: (cause) =>
-            new SearchConsoleHttpError({
-              message: "The Google token could not be saved.",
-              cause,
-            }),
-        })
-        return "Connected to Google Search Console."
-      }),
 
       fetchSearchConsoleSnapshots: Effect.fn(
         "SearchConsole.fetchSearchConsoleSnapshots",

@@ -1,6 +1,4 @@
 {
-  "googleClientId": "YOUR_DESKTOP_OAUTH_CLIENT_ID.apps.googleusercontent.com",
-  "googleClientSecret": "YOUR_DESKTOP_OAUTH_CLIENT_SECRET",
   "siteUrl": "sc-domain:example.com",
   "sites": [
     {

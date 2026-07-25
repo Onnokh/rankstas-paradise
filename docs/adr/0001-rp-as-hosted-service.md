@@ -32,6 +32,8 @@ Move RP's home to Coolify and make everything else a client.
   - **CLI** demoted to occasional manual use; remote mode via `RP_API_URL`/`RP_TOKEN` (env, wins) or a client config written by `rp init`.
 - **Auth.** One public URL behind Coolify's proxy (TLS), a single static **bearer token required on every request** — no internal/external distinction, to keep the check to one branch.
 - **Google.** The token is minted once on the Mac (the existing browser flow) and seeded onto the volume; refresh is headless thereafter. The OAuth consent screen must be **"In production"** — a "Testing" app's refresh token expires after 7 days, which would look like a random weekly outage.
+
+  > **Superseded by [0003-service-account-auth.md](0003-service-account-auth.md).** The 7-day expiry did fire; auth is now a service-account key with no browser flow and no consent screen.
 - **Sync.** A Coolify **scheduled task** hits the existing `POST /api/jobs/sync` daily, per-site, carrying the bearer token — reusing what's already built rather than adding an in-process timer.
 - **Out of scope for RP.** The PR loop. opencode owns opening threads in the website repos, git credentials, and PRs. RP only advises and records.
 

@@ -1,6 +1,6 @@
 # Deploy (Coolify)
 
-Ranksta's Paradise runs as a single Bun HTTP service (entry `apps/server/src/main.ts`; the SEO core is `packages/domain`). State lives on one persistent volume; the bearer token and Google client credentials are env secrets, and the OAuth token is seeded onto the volume — nothing is baked into the image. The ADRs are the source of truth: [0001](adr/0001-rp-as-hosted-service.md) for the hosted-service decision, [0002](adr/0002-effect-v4-monorepo.md) for the Effect v4 monorepo shape.
+Ranksta's Paradise runs as a single Bun HTTP service (entry `apps/server/src/main.ts`; the SEO core is `packages/domain`). State lives on one persistent volume; the bearer token is an env secret and the Google service-account key is seeded onto the volume — nothing is baked into the image. The ADRs are the source of truth: [0001](adr/0001-rp-as-hosted-service.md) for the hosted-service decision, [0002](adr/0002-effect-v4-monorepo.md) for the Effect v4 monorepo shape, [0003](adr/0003-service-account-auth.md) for service-account auth.
 
 ## 1. Service
 
@@ -11,54 +11,60 @@ Ranksta's Paradise runs as a single Bun HTTP service (entry `apps/server/src/mai
 
 ## 2. Persistent volume
 
-Everything the app reads or writes — OAuth token, SQLite, registry CSV, `config.json` — lives under one app home: `${XDG_CONFIG_HOME:-~/.config}/rankstas-paradise` (see [packages/domain/src/config/config.ts](../packages/domain/src/config/config.ts)).
+Everything the app reads or writes — the service-account key, SQLite, registry CSV, `config.json` — lives under one app home: `${XDG_CONFIG_HOME:-~/.config}/rankstas-paradise` (see [packages/domain/src/config/config.ts](../packages/domain/src/config/config.ts)).
 
 - Mount a Coolify **persistent volume** at `/data`.
 - Set env `XDG_CONFIG_HOME=/data`, so the app home is **`/data/rankstas-paradise`**.
 
-Without the volume the token and history are lost on every redeploy.
+Without the volume the key and history are lost on every redeploy.
 
 ## 3. Environment
 
 | Var | Required | Notes |
 |---|---|---|
 | `RP_TOKEN` | yes (secret) | Bearer token required on every request. Use a long random value. |
-| `GOOGLE_CLIENT_ID` | yes (secret) | Desktop OAuth client id. Overrides `config.json` if both are set. |
-| `GOOGLE_CLIENT_SECRET` | yes (secret) | Desktop OAuth client secret. |
 | `XDG_CONFIG_HOME` | yes | Set to `/data` (see above). |
+| `GOOGLE_SERVICE_ACCOUNT_FILE` | no | Override the key path. Defaults to `<app home>/google-service-account.json`. |
+| `SITE_URL` | no | Overrides `siteUrl` from `config.json`. |
 | `SEO_PORT` | no | Defaults to 8790. |
 
-The Google **client id/secret** are static, so they go in env (Coolify secrets). Everything else Google/data-related is a file on the volume (next step). See [packages/domain/src/config/config.ts](../packages/domain/src/config/config.ts): env takes precedence, `config.json` is the fallback.
+No Google credentials go in env: the only one is the service-account key file on the volume (next step). See [packages/domain/src/config/config.ts](../packages/domain/src/config/config.ts) — env takes precedence, `config.json` is the fallback.
 
-## 4. Google authentication — mint once, refresh headlessly
+## 4. Google authentication — a service-account key
 
-Google OAuth has two phases, and **only the first needs a browser**:
-
-- **Interactive login (once, on your Mac).** `connectGoogle` (the `SearchConsole` domain service, [packages/domain/src/search-console/search-console.ts](../packages/domain/src/search-console/search-console.ts), ported from the legacy `src/google.ts`) opens a loopback callback + your browser, you approve the `webmasters.readonly` scope, and it writes `google-token.json` containing a long-lived **`refresh_token`**. This is a *desktop* OAuth flow (loopback redirect, macOS `open`) and **cannot run on the headless server** — it is a one-time bootstrap run locally on the Mac against the same `config.json` / Google client, then the token file is copied to the volume.
-- **Headless refresh (forever, on the server).** With that token file present, the server only ever refreshes: a server-to-server POST of `refresh_token` + client id/secret to Google, no browser. The refreshed token is rewritten to the file, which is why it must live on the writable volume. The running server ([apps/server/src/main.ts](../apps/server/src/main.ts)) has **no code path that opens a browser** — a missing/revoked token just makes sync jobs fail cleanly (read endpoints keep serving).
-
-So the login is a one-time bootstrap on your Mac; the server lives entirely off the copied refresh token.
+The server authenticates with a **service-account key**: it signs a short JWT with the key's private half and exchanges it for an access token ([search-console.ts](../packages/domain/src/search-console/search-console.ts), `getAccessToken`). There is no browser step, no consent screen, no refresh token, and nothing that expires on a timer — the key is valid until you delete it in Google Cloud. Access tokens are cached in memory, never written to disk, so this path works on a read-only mount.
 
 **Two files must be on the volume** (they can't be env vars):
 
-- `config.json` — only `siteUrl` and the `sites` array now (the client id/secret come from env). See [config.example.json](../config.example.json).
-- `google-token.json` — the OAuth token, **mutable** (rewritten on every refresh).
+- `config.json` — `siteUrl` and the `sites` array. See [config.example.json](../config.example.json).
+- `google-service-account.json` — the key, **immutable**. The server only ever reads it.
 
 Steps:
 
-1. On the Mac, with a valid local `config.json` (or the `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` env set), run the interactive `connectGoogle` bootstrap once and complete Google's OAuth flow in the browser. This writes `~/.config/rankstas-paradise/google-token.json`.
-2. Copy both files onto the volume at `/data/rankstas-paradise/`:
+1. Create the service account and mint a key:
+
+   ```sh
+   gcloud iam service-accounts create rankstas-paradise \
+     --project=<project> --display-name="Ranksta's Paradise"
+   gcloud iam service-accounts keys create ~/.config/rankstas-paradise/google-service-account.json \
+     --iam-account=rankstas-paradise@<project>.iam.gserviceaccount.com --project=<project>
+   ```
+
+   Enable `searchconsole.googleapis.com` on the project if it isn't already.
+
+2. **Grant it access to each property.** Search Console → **Settings → Users and permissions → Add user**, paste the service account's email (`…@….iam.gserviceaccount.com`), permission **Owner**. This is the step that is easy to forget, and skipping it produces a 403 on every call while auth itself looks fine. Owner (not Full) is required because RP calls the URL Inspection API for index states; Full user is enough for search-analytics data alone. Repeat per property — the grant is per-property.
+
+3. Copy both files onto the volume at `/data/rankstas-paradise/`:
    - Coolify file manager, or
-   - `scp config.json google-token.json <server>:<volume-path>/rankstas-paradise/`
-3. Redeploy / restart. The service refreshes the token itself from then on.
+   - `scp config.json google-service-account.json <server>:<volume-path>/rankstas-paradise/`
 
-Three things that make or break it:
+4. Redeploy / restart, then `POST /api/jobs/sync?site=<id>` per site to catch up.
 
-- **Same OAuth client both sides.** The `refresh_token` is bound to the client that minted it — the server's `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` must be the *same* desktop client you used on the Mac, or refresh is rejected.
-- **Consent screen "In production"** (see next section) — otherwise the refresh token dies after 7 days.
-- **One token covers all sites.** The token is per-*account*, stored at the app-home root (not under `sites/<id>/`), so one login serves every site in that Google account's Search Console.
+Notes:
 
-**Recovery.** If Google ever revokes the token (password change, manual revoke), the server can't re-login itself — re-run the Mac bootstrap (steps 1–2). Rare once the consent screen is in production.
+- **No IAM roles needed.** Search Console permissions live in Search Console, not in Cloud IAM — the service account needs no project role at all.
+- **The key is a credential.** `chmod 600` it locally; it grants read access to your Search Console data until revoked with `gcloud iam service-accounts keys delete`.
+- **Rotation is a file swap.** Mint a new key, copy it over the old one, restart, delete the old key in Google Cloud.
 
 ## 4b. Migrating existing local data
 
@@ -66,7 +72,7 @@ If you already run RP locally (history, registry, logged actions), migrate it in
 
 Copy the app home into `/data/rankstas-paradise/`, preserving structure:
 
-- `config.json`, `google-token.json` (from step 4 above)
+- `config.json`, `google-service-account.json` (from §4 above)
 - `sites/<id>/keyword-registry.csv`, `search-console.sqlite`, `sitemap.json` — for each site
 
 ```sh
@@ -79,18 +85,12 @@ scp -r ~/.config/rankstas-paradise/sites <server>:<volume-path>/rankstas-paradis
 
 Do **not** rely on `backfill` as a substitute: it only refetches Google snapshots (≤16 months) and never restores `action_log` or the registry, so you would lose logged actions and still have to copy the CSVs anyway.
 
-## 5. Google OAuth consent screen MUST be "In production" ⚠
-
-If the consent screen is left in **Testing**, Google expires the refresh token after **7 days** — sync then fails silently every week and data goes stale with no error at deploy time.
-
-Google Cloud Console → **APIs & Services → OAuth consent screen** → **Publishing status → In production**. The `webmasters.readonly` scope is non-sensitive, so no verification review is required.
-
-## 6. Domain + TLS
+## 5. Domain + TLS
 
 - In the Coolify service, add the domain (e.g. `rp.<your-domain>`).
 - Coolify's proxy terminates TLS and issues the certificate automatically. Point the DNS record at the Coolify server first.
 
-## 7. Sync: read-driven, with a scheduled floor
+## 6. Sync: read-driven, with a scheduled floor
 
 The server keeps data fresh two ways, and you configure only the second:
 
@@ -108,7 +108,7 @@ curl -fsS -X POST "http://localhost:8790/api/jobs/sync?site=<site-id>" \
 
 > The single-job guard is in-process, so it assumes **one** server instance. Don't scale the service to multiple replicas against the same volume without adding a shared lock — concurrent syncs would race the delete-then-insert writes.
 
-## 8. Connecting afterwards
+## 7. Connecting afterwards
 
 - **Mac CLI/TUI** (`apps/tui`, remote-only): set `RP_API_URL=https://rp.<your-domain>` and `RP_TOKEN=<token>` (env wins), or run `rp init` to store them in `~/.config/rankstas-paradise/client.json`. Then `bun --cwd apps/tui run src/main.ts` opens the dashboard, or append a command for the agent CLI. There is no local-data mode anymore — the TUI always talks to the server.
 - **opencode agents**: connect over MCP at `/mcp` with the same `RP_TOKEN`.

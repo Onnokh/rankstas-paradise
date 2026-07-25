@@ -29,17 +29,19 @@ bun run check        # tsc --build across every package
 bun test             # full workspace test suite
 ```
 
-Run the server locally with `bun --cwd apps/server run serve` (= `bun run apps/server/src/main.ts`). It needs `RP_TOKEN` set (bearer, fail-closed), plus `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` (or a `config.json`) for live data; add `--debug` for the isolated fake fixture. Point a UI at it with `RP_API_URL` + `RP_TOKEN`.
+Run the server locally with `bun --cwd apps/server run serve` (= `bun run apps/server/src/main.ts`). It needs `RP_TOKEN` set (bearer, fail-closed), plus a `config.json` and a service-account key for live data; add `--debug` for the isolated fake fixture. Point a UI at it with `RP_API_URL` + `RP_TOKEN`.
 
 ## First connection
 
-1. In Google Cloud Console, create or select a personal project, enable **Google Search Console API**, and create an OAuth Client with application type **Desktop app**.
-2. Copy `config.example.json` to `config.json`, then set your site(s) and paste the client ID/secret — either into the file, or into `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` env vars (env wins).
-3. Mint the Google token once, locally: run the interactive `connectGoogle` bootstrap (the `SearchConsole` domain service, [packages/domain/src/search-console/search-console.ts](packages/domain/src/search-console/search-console.ts)) to complete Google’s read-only authorization in the browser. It writes `google-token.json`, which the server then refreshes headlessly (see [docs/deploy.md](docs/deploy.md)).
+1. In Google Cloud Console, create or select a project, enable **Google Search Console API**, and create a **service account** with a JSON key. Save the key as `google-service-account.json` in the app home.
+2. Copy `config.example.json` to `config.json` and set your site(s).
+3. In Search Console → **Settings → Users and permissions**, add the service account's email (`…@….iam.gserviceaccount.com`) as an **Owner** of each property. Without this every call returns 403.
+
+Full walkthrough, including the `gcloud` commands, is in [docs/deploy.md](docs/deploy.md). There is no browser-based authorization step and nothing that expires on a timer — the server signs a JWT with the key and exchanges it for a short-lived access token.
 
 The tool requests only `https://www.googleapis.com/auth/webmasters.readonly`.
 
-State lives in an XDG app home (`${XDG_CONFIG_HOME:-~/.config}/rankstas-paradise`), never next to the code: the OAuth token, per-site SQLite and registry CSV, and `config.json`.
+State lives in an XDG app home (`${XDG_CONFIG_HOME:-~/.config}/rankstas-paradise`), never next to the code: the service-account key, per-site SQLite and registry CSV, and `config.json`.
 
 ## Keyword registry
 

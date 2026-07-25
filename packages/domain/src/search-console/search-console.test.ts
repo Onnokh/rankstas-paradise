@@ -1,20 +1,13 @@
 // SearchConsole client tests. No network: a fake HttpClient layer returns canned
-// responses so we can exercise the two resilience behaviours that matter —
-// refresh-on-401-then-retry, and retry-then-give-up on persistent 5xx/429.
+// responses so we can exercise the behaviours that matter — service-account
+// token minting and caching, remint-on-401-then-retry, and retry-then-give-up on
+// persistent 5xx/429.
 import { afterEach, beforeEach, expect, test } from "bun:test"
+import { generateKeyPairSync } from "node:crypto"
 import { unlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import {
-  Cause,
-  Duration,
-  Effect,
-  Exit,
-  Fiber,
-  Layer,
-  Redacted,
-  Schema,
-} from "effect"
+import { Cause, Duration, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 import { TestClock } from "effect/testing"
 
@@ -40,39 +33,41 @@ const site = Schema.decodeUnknownSync(Site)({
 })
 
 const seoConfig = Schema.decodeUnknownSync(
-  Schema.Struct({
-    googleClientId: Schema.String,
-    googleClientSecret: Schema.Redacted(Schema.String),
-    siteUrl: Schema.String,
-  }),
-)({
-  googleClientId: "client-id",
-  googleClientSecret: Redacted.make("client-secret") as never,
-  siteUrl: "https://example.com",
+  Schema.Struct({ siteUrl: Schema.String }),
+)({ siteUrl: "https://example.com" })
+
+let serviceAccountPath = ""
+
+// A throwaway RSA keypair, generated once for the whole file: the JWT-bearer
+// path really signs its assertion, so the tests need a key the crypto layer
+// accepts. Only the private half is used.
+const { privateKey } = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+  privateKeyEncoding: { type: "pkcs8", format: "pem" },
+  publicKeyEncoding: { type: "spki", format: "pem" },
 })
 
-let tokenPath = ""
-
-const writeToken = (token: {
-  access_token: string
-  refresh_token?: string
-  expires_in: number
-  created_at: number
-}) => Bun.write(tokenPath, JSON.stringify(token, null, 2))
-
-const readTokenFile = async () =>
-  JSON.parse(await Bun.file(tokenPath).text()) as {
-    access_token: string
-    refresh_token?: string
-  }
+const writeServiceAccountKey = (
+  overrides: Record<string, unknown> = {},
+) =>
+  Bun.write(
+    serviceAccountPath,
+    JSON.stringify({
+      type: "service_account",
+      client_email: "rp@example.iam.gserviceaccount.com",
+      private_key: privateKey,
+      token_uri: "https://oauth2.googleapis.com/token",
+      ...overrides,
+    }),
+  )
 
 beforeEach(() => {
-  tokenPath = join(tmpdir(), `rp-sc-token-${crypto.randomUUID()}.json`)
+  serviceAccountPath = join(tmpdir(), `rp-sc-sa-${crypto.randomUUID()}.json`)
 })
 
 afterEach(() => {
   try {
-    unlinkSync(tokenPath)
+    unlinkSync(serviceAccountPath)
   } catch {
     // best-effort cleanup
   }
@@ -105,7 +100,7 @@ const fakeHttp = (handler: (href: string) => { status: number; body: unknown }) 
 
 const configLayer = Layer.mock(Config.Service)({
   load: () => Effect.succeed(seoConfig),
-  tokenPath: () => Effect.succeed(tokenPath),
+  serviceAccountPath: () => Effect.succeed(serviceAccountPath),
 })
 
 const currentSiteLayer = Layer.mock(CurrentSite.Service)({
@@ -121,22 +116,17 @@ const buildLayer = (http: Layer.Layer<HttpClient.HttpClient>) =>
 
 // --- tests ---
 
-test("refreshes the token on a 401, then retries the request", async () => {
-  await writeToken({
-    access_token: "stale-access",
-    refresh_token: "refresh-1",
-    expires_in: 3600,
-    created_at: Date.now(),
-  })
+test("mints a fresh token on a 401, then retries the request", async () => {
+  await writeServiceAccountKey()
 
   let queryCalls = 0
-  let refreshCalls = 0
+  let grantCalls = 0
   const http = fakeHttp((href) => {
     if (href.includes("oauth2.googleapis.com/token")) {
-      refreshCalls += 1
+      grantCalls += 1
       return {
         status: 200,
-        body: { access_token: "fresh-access", expires_in: 3600 },
+        body: { access_token: `access-${grantCalls}`, expires_in: 3600 },
       }
     }
     if (href.includes("searchAnalytics/query")) {
@@ -164,15 +154,10 @@ test("refreshes the token on a 401, then retries the request", async () => {
     .fetchSearchConsoleSnapshots(["2024-01-01"])
     .pipe(Effect.provide(buildLayer(http)), Effect.runPromise)
 
-  expect(queryCalls).toBe(2) // initial 401 + one retry after refresh
-  expect(refreshCalls).toBe(1)
+  expect(queryCalls).toBe(2) // initial 401 + one retry with a fresh token
+  expect(grantCalls).toBe(2) // the 401 forces a remint past the cache
   expect(snapshots).toHaveLength(1)
   expect(snapshots[0]).toMatchObject({ query: "shirt", clicks: 5 })
-
-  // The refreshed token was persisted to the token file.
-  const persisted = await readTokenFile()
-  expect(persisted.access_token).toBe("fresh-access")
-  expect(persisted.refresh_token).toBe("refresh-1")
 })
 
 const squashError = <A>(exit: Exit.Exit<A, SearchConsoleError>) =>
@@ -205,15 +190,12 @@ const runToExitWithClock = <A, R>(
   )
 
 test("retries then gives up on a persistent 5xx", async () => {
-  await writeToken({
-    access_token: "valid-access",
-    refresh_token: "refresh-1",
-    expires_in: 3600,
-    created_at: Date.now(),
-  })
+  await writeServiceAccountKey()
 
   let queryCalls = 0
   const http = fakeHttp((href) => {
+    if (href.includes("oauth2.googleapis.com/token"))
+      return { status: 200, body: { access_token: "sa-access", expires_in: 3600 } }
     if (href.includes("searchAnalytics/query")) {
       queryCalls += 1
       return { status: 503, body: { error: "unavailable" } }
@@ -234,15 +216,12 @@ test("retries then gives up on a persistent 5xx", async () => {
 })
 
 test("retries then gives up on a persistent 429", async () => {
-  await writeToken({
-    access_token: "valid-access",
-    refresh_token: "refresh-1",
-    expires_in: 3600,
-    created_at: Date.now(),
-  })
+  await writeServiceAccountKey()
 
   let queryCalls = 0
   const http = fakeHttp((href) => {
+    if (href.includes("oauth2.googleapis.com/token"))
+      return { status: 200, body: { access_token: "sa-access", expires_in: 3600 } }
     if (href.includes("searchAnalytics/query")) {
       queryCalls += 1
       return { status: 429, body: { error: "rate limited" } }
@@ -263,15 +242,12 @@ test("retries then gives up on a persistent 429", async () => {
 })
 
 test("a permanent 403 surfaces as an auth error without retrying", async () => {
-  await writeToken({
-    access_token: "valid-access",
-    refresh_token: "refresh-1",
-    expires_in: 3600,
-    created_at: Date.now(),
-  })
+  await writeServiceAccountKey()
 
   let queryCalls = 0
   const http = fakeHttp((href) => {
+    if (href.includes("oauth2.googleapis.com/token"))
+      return { status: 200, body: { access_token: "sa-access", expires_in: 3600 } }
     if (href.includes("searchAnalytics/query")) {
       queryCalls += 1
       return { status: 403, body: { error: "forbidden" } }
@@ -286,4 +262,154 @@ test("a permanent 403 surfaces as an auth error without retrying", async () => {
   expect(Exit.isFailure(exit)).toBe(true)
   expect(squashError(exit)).toBeInstanceOf(SearchConsoleAuthError)
   expect(queryCalls).toBe(1) // 403 is not transient — no retries
+})
+
+// --- service-account auth ---
+
+test("a service-account key mints a token via the JWT-bearer grant", async () => {
+  await writeServiceAccountKey()
+
+  let assertion: string | undefined
+  let grantType: string | undefined
+  let bearer: string | undefined
+  const http = Layer.succeed(
+    HttpClient.HttpClient,
+    HttpClient.make((request, url) => {
+      if (url.href.includes("oauth2.googleapis.com/token")) {
+        // bodyUrlParams encodes to a Uint8Array; decode it back to read the form.
+        const encoded = (request.body as { body: Uint8Array }).body
+        const body = new URLSearchParams(new TextDecoder().decode(encoded))
+        grantType = body.get("grant_type") ?? undefined
+        assertion = body.get("assertion") ?? undefined
+        return Effect.succeed(
+          jsonResponse(request, 200, {
+            access_token: "sa-access",
+            expires_in: 3600,
+          }),
+        )
+      }
+      bearer = request.headers.authorization
+      return Effect.succeed(
+        jsonResponse(request, 200, {
+          rows: [
+            {
+              keys: ["2024-01-01"],
+              clicks: 3,
+              impressions: 30,
+              ctr: 0.1,
+              position: 4,
+            },
+          ],
+        }),
+      )
+    }),
+  )
+
+  const totals = await SearchConsole.use
+    .fetchDailyTotals(["2024-01-01"])
+    .pipe(Effect.provide(buildLayer(http)), Effect.runPromise)
+
+  expect(totals.site).toHaveLength(1)
+  expect(bearer).toBe("Bearer sa-access")
+  expect(grantType).toBe("urn:ietf:params:oauth:grant-type:jwt-bearer")
+
+  // A three-segment RS256 assertion whose claims name the service account and
+  // the read-only Search Console scope.
+  const segments = (assertion ?? "").split(".")
+  expect(segments).toHaveLength(3)
+  const header = JSON.parse(Buffer.from(segments[0]!, "base64url").toString())
+  const claims = JSON.parse(Buffer.from(segments[1]!, "base64url").toString())
+  expect(header).toMatchObject({ alg: "RS256", typ: "JWT" })
+  expect(claims.iss).toBe("rp@example.iam.gserviceaccount.com")
+  expect(claims.scope).toBe(
+    "https://www.googleapis.com/auth/webmasters.readonly",
+  )
+  expect(claims.exp - claims.iat).toBe(3600)
+})
+
+test("the minted token is used as the bearer and never written to disk", async () => {
+  await writeServiceAccountKey()
+  const keyBefore = await Bun.file(serviceAccountPath).text()
+
+  let grantCalls = 0
+  let bearer: string | undefined
+  const http = Layer.succeed(
+    HttpClient.HttpClient,
+    HttpClient.make((request, url) => {
+      if (url.href.includes("oauth2.googleapis.com/token")) {
+        grantCalls += 1
+        return Effect.succeed(
+          jsonResponse(request, 200, {
+            access_token: "sa-access",
+            expires_in: 3600,
+          }),
+        )
+      }
+      bearer = request.headers.authorization
+      return Effect.succeed(jsonResponse(request, 200, { rows: [] }))
+    }),
+  )
+
+  await SearchConsole.use
+    .fetchDailyTotals(["2024-01-01"])
+    .pipe(Effect.provide(buildLayer(http)), Effect.runPromise)
+
+  expect(grantCalls).toBe(1)
+  expect(bearer).toBe("Bearer sa-access")
+  // The key file is read-only to this service — nothing rotates on disk, which
+  // is what lets the deploy mount it read-only.
+  expect(await Bun.file(serviceAccountPath).text()).toBe(keyBefore)
+})
+
+test("the minted service-account token is cached across calls", async () => {
+  await writeServiceAccountKey()
+
+  let grantCalls = 0
+  const http = fakeHttp((href) => {
+    if (href.includes("oauth2.googleapis.com/token")) {
+      grantCalls += 1
+      return { status: 200, body: { access_token: "sa-access", expires_in: 3600 } }
+    }
+    return { status: 200, body: { rows: [] } }
+  })
+
+  const layer = buildLayer(http)
+  await Effect.gen(function* () {
+    yield* SearchConsole.use.fetchDailyTotals(["2024-01-01"])
+    yield* SearchConsole.use.fetchDailyTotals(["2024-01-02"])
+    yield* SearchConsole.use.fetchDailyTotals(["2024-01-03"])
+  }).pipe(Effect.provide(layer), Effect.runPromise)
+
+  expect(grantCalls).toBe(1)
+})
+
+test("a malformed service-account key fails as an auth error", async () => {
+  // Missing private_key — there is no second credential to fall back to, so this
+  // must surface rather than turn into a confusing downstream failure.
+  await writeServiceAccountKey({ private_key: undefined })
+
+  const http = fakeHttp(() => ({ status: 200, body: { rows: [] } }))
+
+  const exit = await SearchConsole.use
+    .fetchDailyTotals(["2024-01-01"])
+    .pipe(Effect.exit, Effect.provide(buildLayer(http)), Effect.runPromise)
+
+  expect(Exit.isFailure(exit)).toBe(true)
+  expect(squashError(exit)).toBeInstanceOf(SearchConsoleAuthError)
+})
+
+test("hasGoogleConnection reflects whether a readable key is present", async () => {
+  const http = fakeHttp(() => ({ status: 200, body: {} }))
+  const check = () =>
+    SearchConsole.use
+      .hasGoogleConnection()
+      .pipe(Effect.provide(buildLayer(http)), Effect.runPromise)
+
+  // No key file yet.
+  expect(await check()).toBe(false)
+  await writeServiceAccountKey()
+  expect(await check()).toBe(true)
+  // Present but unusable reads as "not connected" rather than throwing.
+  await writeServiceAccountKey({ client_email: undefined })
+  expect(await check()).toBe(false)
 })

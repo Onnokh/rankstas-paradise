@@ -78,8 +78,6 @@ export const startServer = async (
     ...(process.env as Record<string, string>),
     XDG_CONFIG_HOME: configHome,
     SEO_PORT: String(port),
-    GOOGLE_CLIENT_ID: "dummy-client-id",
-    GOOGLE_CLIENT_SECRET: "dummy-client-secret",
   }
   if (token === null) delete env.RP_TOKEN
   else env.RP_TOKEN = token

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Cause, Effect, Exit, Layer, Redacted } from "effect"
+import { Cause, Effect, Exit, Layer } from "effect"
 
 import { Config } from "../config/config.ts"
 import { type SeoConfig } from "../config/schema.ts"
@@ -9,7 +9,7 @@ import { Sites } from "./sites.ts"
 
 // A fake Config layer providing values directly — no real env/file. Only the
 // fields the Sites/CurrentSite code reads matter (siteUrl, sites, dataDirectory,
-// debugMode); the rest are filled with plausible placeholders.
+// debugMode); the key path is a plausible placeholder.
 const fakeConfig = (
   config: Partial<SeoConfig>,
   opts: { dataDirectory?: string; debugMode?: boolean } = {},
@@ -20,14 +20,12 @@ const fakeConfig = (
     Config.Service.of({
       load: () =>
         Effect.succeed({
-          googleClientId: config.googleClientId ?? "client-id",
-          googleClientSecret:
-            config.googleClientSecret ?? Redacted.make("secret"),
           siteUrl: config.siteUrl ?? "sc-domain:example.com",
           sites: config.sites,
         }),
       dataDirectory: () => Effect.succeed(dataDirectory),
-      tokenPath: () => Effect.succeed(`${dataDirectory}/google-token.json`),
+      serviceAccountPath: () =>
+        Effect.succeed(`${dataDirectory}/google-service-account.json`),
       debugMode: () => Effect.succeed(opts.debugMode ?? false),
       ensureDataDirectory: () => Effect.void,
     }),

@@ -50,7 +50,7 @@ Agents acting on "new-demand" signals need to add mappings. `registry add` appen
 
 ## Command surface
 
-New entry point `src/cli.ts` (main.ts dispatches: no args → TUI, args → CLI). Every command prints a single JSON document on stdout; errors go to stderr with a non-zero exit code. Read commands never call Google and never open OAuth (`--sync` opts in; a missing/expired token fails with a message telling the human to run the TUI once). Every response embeds `latestDate` and the window boundaries used, so the agent knows data freshness.
+New entry point `src/cli.ts` (main.ts dispatches: no args → TUI, args → CLI). Every command prints a single JSON document on stdout; errors go to stderr with a non-zero exit code. Read commands never call Google (`--sync` opts in; a missing or unusable service-account key fails with a message naming the path it looked at). Every response embeds `latestDate` and the window boundaries used, so the agent knows data freshness.
 
 | Command | Answers | Source |
 | --- | --- | --- |
