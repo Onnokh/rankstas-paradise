@@ -128,6 +128,56 @@ test("saveSnapshots persists rows and reads aggregate correctly", async () => {
   ])
 })
 
+test("topQueries excludes every configured brand term, not just the first", async () => {
+  const multiBrandSite: Site = {
+    ...site,
+    brandTerms: ["brandy", "acme"],
+  }
+  const multiBrandDir = mkdtempSync(join(tmpdir(), "rp-storage-multibrand-"))
+  const multiBrandDbPath = join(multiBrandDir, "search-console.sqlite")
+  const multiBrandRuntime = ManagedRuntime.make(
+    Storage.layer.pipe(
+      Layer.provide(
+        Layer.succeed(CurrentSite.Service, {
+          current: () => Effect.succeed(multiBrandSite),
+          dataDirectory: () => Effect.succeed(multiBrandDir),
+          databasePath: () => Effect.succeed(multiBrandDbPath),
+          registryPath: () => Effect.succeed(join(multiBrandDir, "keyword-registry.csv")),
+          sitemapPath: () => Effect.succeed(join(multiBrandDir, "sitemap.json")),
+        } satisfies CurrentSite.Interface),
+      ),
+    ),
+  )
+
+  try {
+    await multiBrandRuntime.runPromise(
+      Storage.use.saveSnapshots([
+        snapshot({ query: "widget", clicks: 5, impressions: 100, position: 8 }),
+        snapshot({
+          query: "brandy shoes",
+          clicks: 2,
+          impressions: 10,
+          ctr: 0.2,
+          position: 3,
+        }),
+        snapshot({
+          query: "acme widgets",
+          clicks: 3,
+          impressions: 20,
+          ctr: 0.15,
+          position: 4,
+        }),
+      ]),
+    )
+
+    const top = await multiBrandRuntime.runPromise(Storage.use.topQueries())
+    expect(top.rows.map((row) => row.query)).toEqual(["widget"])
+  } finally {
+    await multiBrandRuntime.dispose()
+    rmSync(multiBrandDir, { recursive: true, force: true })
+  }
+})
+
 test("saveDailyTotals feeds pagesWindowOverview true totals + coverage", async () => {
   await run(
     Storage.use.saveSnapshots([

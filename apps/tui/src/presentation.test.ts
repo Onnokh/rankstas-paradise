@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { BoxRenderable, TextRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 
-import { detailSummaryHeight } from "./presentation.ts"
+import { detailSummaryHeight, masterVisibleRowLimit } from "./presentation.ts"
 
 const renderRegistrySummary = async (
   rendererWidth: number,
@@ -64,6 +64,22 @@ const renderRegistrySummary = async (
   renderer.destroy()
   return frame
 }
+
+test("masterVisibleRowLimit subtracts base chrome from renderer height", () => {
+  expect(masterVisibleRowLimit(40, { hasTableHeader: false })).toBe(28)
+})
+
+test("masterVisibleRowLimit subtracts one row when the table has a header", () => {
+  expect(masterVisibleRowLimit(40, { hasTableHeader: true })).toBe(27)
+})
+
+test("masterVisibleRowLimit subtracts extra chrome for future strips", () => {
+  expect(masterVisibleRowLimit(40, { hasTableHeader: false, extraChrome: 5 })).toBe(23)
+})
+
+test("masterVisibleRowLimit never returns less than one visible row", () => {
+  expect(masterVisibleRowLimit(5, { hasTableHeader: true, extraChrome: 5 })).toBe(1)
+})
 
 test("registry detail summary leaves room for the Google index line", async () => {
   const expected = "Google index: Discovered - currently not indexed"

@@ -1,6 +1,6 @@
 import { BoxRenderable, createCliRenderer, fg, StyledText, t, TextRenderable } from "@opentui/core"
 
-import { detailSummaryHeight, logKindLabel, opportunityLabels, phaseFor, readableIntent, setActiveOrigin, shortAction, signalExplanation, signalMeaning, signalReason, sparkline } from "./presentation.ts"
+import { detailSummaryHeight, logKindLabel, masterVisibleRowLimit, opportunityLabels, phaseFor, readableIntent, setActiveOrigin, shortAction, signalExplanation, signalMeaning, signalReason, sparkline } from "./presentation.ts"
 import { loadSiteCatalog, loadTuiData, type TuiData } from "./tuiData.ts"
 import type { HistoryDay, LogFeedEntry, LogReadout, OpportunityKind, OpportunitySignal, RegistryEntry, RegistryTargetProgress, Site } from "./types.ts"
 
@@ -228,7 +228,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
   const selectedRow = () => rows()[selected]
   const visibleRows = <T>(items: readonly T[]) => {
     const hasTableHeader = view === "registry" || view === "history" || view === "log" || (view === "opportunities" && renderer.width >= 120)
-    const limit = Math.max(1, renderer.height - 12 - (hasTableHeader ? 1 : 0))
+    const limit = masterVisibleRowLimit(renderer.height, { hasTableHeader, extraChrome: 0 })
     const start = Math.min(Math.max(0, selected - Math.floor(limit / 2)), Math.max(0, items.length - limit))
     return { start, items: items.slice(start, start + limit) }
   }

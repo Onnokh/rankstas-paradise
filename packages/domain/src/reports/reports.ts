@@ -7,6 +7,7 @@
 // identically.
 import { Context, Effect, Layer } from "effect"
 
+import { isBrandQuery } from "../brand.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { type RegistryEntry, type RegistryPatch } from "../registry/schema.ts"
 import { type RegistryError } from "../registry/schema.ts"
@@ -896,13 +897,6 @@ export const verdictFor = (
     ],
   }
 }
-
-// Whether a query contains any of the active site's brand terms.
-export const isBrandQuery = (
-  query: string,
-  brandTerms: ReadonlyArray<string>,
-): boolean =>
-  brandTerms.some((term) => query.toLowerCase().includes(term.toLowerCase()))
 
 // A unicode sparkline for a series; `lowerIsBetter` inverts (e.g. position).
 export const sparkline = (

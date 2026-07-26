@@ -22,6 +22,20 @@ export const detailSummaryHeight = (
   ? rendererWidth >= 120 ? 9 : 13
   : rendererWidth >= 120 ? 8 : 11
 
+export const MASTER_TABLE_BASE_CHROME = 12
+
+export const masterVisibleRowLimit = (
+  rendererHeight: number,
+  options: { readonly hasTableHeader: boolean; readonly extraChrome?: number },
+): number =>
+  Math.max(
+    1,
+    rendererHeight
+      - MASTER_TABLE_BASE_CHROME
+      - (options.hasTableHeader ? 1 : 0)
+      - (options.extraChrome ?? 0),
+  )
+
 // The active site's canonical origin, refreshed on startup and site switch.
 let activeOrigin = ""
 export const setActiveOrigin = (origin: string): void => {
