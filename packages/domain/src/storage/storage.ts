@@ -13,6 +13,7 @@ import { type SqlError } from "effect/unstable/sql"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 
 import { brandLikePatterns } from "../brand.ts"
+import { type BingSiteDailyTotal } from "../bing-webmaster/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import {
   type DailySnapshot,
@@ -51,6 +52,9 @@ export interface Interface {
   readonly saveDailyTotals: (
     totals: DailyTotals,
     fetchedDates: ReadonlyArray<string>,
+  ) => Effect.Effect<void, StorageError>
+  readonly saveBingSiteDaily: (
+    rows: ReadonlyArray<BingSiteDailyTotal>,
   ) => Effect.Effect<void, StorageError>
   readonly savePageIndexStatuses: (
     statuses: ReadonlyArray<PageIndexStatus>,
@@ -125,6 +129,10 @@ export interface Interface {
     end: string,
     includeBrand?: boolean,
   ) => Effect.Effect<Metrics, StorageError>
+  readonly bingSiteDailyBetween: (
+    start: string,
+    end: string,
+  ) => Effect.Effect<ReadonlyArray<BingSiteDailyTotal>, StorageError>
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -271,6 +279,12 @@ export const layer = Layer.effect(
         verdict text not null,
         coverage_state text not null default '',
         inspected_at text not null default current_timestamp
+      )`,
+      `create table if not exists bing_site_daily (
+        date text primary key,
+        clicks integer not null,
+        impressions integer not null,
+        collected_at text not null default current_timestamp
       )`,
     ]
     yield* Effect.forEach(ddl, (statement) => sql.unsafe(statement)).pipe(
@@ -894,6 +908,28 @@ export const layer = Layer.effect(
         }),
       )
 
+    const saveBingSiteDailyI = (rows: ReadonlyArray<BingSiteDailyTotal>) =>
+      sql.withTransaction(
+        Effect.gen(function* () {
+          for (const row of rows)
+            yield* sql`
+              insert into bing_site_daily (date, clicks, impressions)
+              values (${row.date}, ${row.clicks}, ${row.impressions})
+              on conflict(date) do update set
+                clicks = excluded.clicks,
+                impressions = excluded.impressions,
+                collected_at = current_timestamp`
+        }),
+      )
+
+    const bingSiteDailyBetweenI = (start: string, end: string) =>
+      Effect.gen(function* () {
+        return yield* sql<BingSiteDailyTotal>`
+          select date, clicks, impressions from bing_site_daily
+          where date between ${start} and ${end}
+          order by date`
+      })
+
     const savePageIndexStatusesI = (statuses: ReadonlyArray<PageIndexStatus>) =>
       sql.withTransaction(
         Effect.gen(function* () {
@@ -1032,6 +1068,8 @@ export const layer = Layer.effect(
         saveSnapshotsI(snapshots, fetchedDates).pipe(mapErr("saveSnapshots")),
       saveDailyTotals: (totals, fetchedDates) =>
         saveDailyTotalsI(totals, fetchedDates).pipe(mapErr("saveDailyTotals")),
+      saveBingSiteDaily: (rows) =>
+        saveBingSiteDailyI(rows).pipe(mapErr("saveBingSiteDaily")),
       savePageIndexStatuses: (statuses) =>
         savePageIndexStatusesI(statuses).pipe(mapErr("savePageIndexStatuses")),
       pruneIndexStatuses: (targetUrls) =>
@@ -1080,6 +1118,8 @@ export const layer = Layer.effect(
         metricsBetweenI(targetUrl, start, end, includeBrand).pipe(
           mapErr("metricsBetween"),
         ),
+      bingSiteDailyBetween: (start, end) =>
+        bingSiteDailyBetweenI(start, end).pipe(mapErr("bingSiteDailyBetween")),
     } satisfies Interface
   }),
 )

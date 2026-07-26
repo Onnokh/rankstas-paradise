@@ -114,6 +114,16 @@ const snapshot = Schema.decodeUnknownSync(DashboardSnapshot)({
       },
     },
   ],
+  engineTotals: {
+    google: {
+      d28: { impressions: 120, clicks: 4, ctr: 0.033, daysCollected: 28, windowDays: 28 },
+      d7: { impressions: 40, clicks: 2, ctr: 0.05, daysCollected: 7, windowDays: 7 },
+    },
+    bing: {
+      d28: { impressions: 70, clicks: 4, ctr: 4 / 70, daysCollected: 8, windowDays: 28 },
+      d7: { impressions: 18, clicks: 1, ctr: 1 / 18, daysCollected: 7, windowDays: 7 },
+    },
+  },
 })
 
 const mockLayer = Layer.mock(ApiClient.Service, {

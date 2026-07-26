@@ -2,7 +2,8 @@ import { expect, test } from "bun:test"
 import { BoxRenderable, TextRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 
-import { detailSummaryHeight, masterVisibleRowLimit } from "./presentation.ts"
+import { detailSummaryHeight, formatHomeCardStrip, homeCardStripHeight, masterVisibleRowLimit } from "./presentation.ts"
+import type { EngineTotals } from "./types.ts"
 
 const renderRegistrySummary = async (
   rendererWidth: number,
@@ -79,6 +80,37 @@ test("masterVisibleRowLimit subtracts extra chrome for future strips", () => {
 
 test("masterVisibleRowLimit never returns less than one visible row", () => {
   expect(masterVisibleRowLimit(5, { hasTableHeader: true, extraChrome: 5 })).toBe(1)
+})
+
+const sampleTotals: EngineTotals = {
+  google: {
+    d28: { impressions: 368, clicks: 36, ctr: 0.098, daysCollected: 28, windowDays: 28 },
+    d7: { impressions: 92, clicks: 9, ctr: 0.098, daysCollected: 7, windowDays: 7 },
+  },
+  bing: {
+    d28: { impressions: 70, clicks: 4, ctr: 0.061, daysCollected: 8, windowDays: 28 },
+    d7: { impressions: 18, clicks: 1, ctr: 0.056, daysCollected: 7, windowDays: 7 },
+  },
+}
+
+test("homeCardStripHeight is five lines on home when the terminal is tall enough", () => {
+  expect(homeCardStripHeight("home", 40)).toBe(5)
+  expect(homeCardStripHeight("home", 29)).toBe(1)
+  expect(homeCardStripHeight("registry", 40)).toBe(0)
+})
+
+test("formatHomeCardStrip labels a partial Bing 28d window", () => {
+  const strip = formatHomeCardStrip(sampleTotals, 120, 40)
+  expect(strip).toContain("28d · 8d")
+  expect(strip).toContain("368")
+  expect(strip).toContain("70")
+})
+
+test("formatHomeCardStrip collapses to one line on short terminals", () => {
+  const strip = formatHomeCardStrip(sampleTotals, 120, 24)
+  expect(strip.split("\n")).toHaveLength(1)
+  expect(strip).toContain("IMPRESSIONS")
+  expect(strip).toContain("CTR")
 })
 
 test("registry detail summary leaves room for the Google index line", async () => {

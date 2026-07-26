@@ -1,6 +1,6 @@
 import { BoxRenderable, createCliRenderer, fg, StyledText, t, TextRenderable } from "@opentui/core"
 
-import { detailSummaryHeight, logKindLabel, masterVisibleRowLimit, opportunityLabels, phaseFor, readableIntent, setActiveOrigin, shortAction, signalExplanation, signalMeaning, signalReason, sparkline } from "./presentation.ts"
+import { detailSummaryHeight, formatHomeCardStrip, homeCardStripHeight, logKindLabel, masterVisibleRowLimit, opportunityLabels, phaseFor, readableIntent, setActiveOrigin, shortAction, signalExplanation, signalMeaning, signalReason, sparkline } from "./presentation.ts"
 import { loadSiteCatalog, loadTuiData, type TuiData } from "./tuiData.ts"
 import type { HistoryDay, LogFeedEntry, LogReadout, OpportunityKind, OpportunitySignal, RegistryEntry, RegistryTargetProgress, Site } from "./types.ts"
 
@@ -184,6 +184,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
   const app = new BoxRenderable(renderer, { width: "100%", height: "100%", flexDirection: "column", padding: 1, gap: 1 })
   const header = new TextRenderable(renderer, { height: 1, flexShrink: 0, overflow: "hidden", content: "", fg: "#F7FAFC", attributes: 1 })
   const nav = new TextRenderable(renderer, { height: 1, flexShrink: 0, overflow: "hidden", content: "", fg: "#CBD5E0" })
+  const cardStrip = new TextRenderable(renderer, { height: 0, flexShrink: 0, overflow: "hidden", content: "", fg: "#E2E8F0" })
   const split = new BoxRenderable(renderer, { flexDirection: "row", flexGrow: 1, gap: 1 })
   const master = new BoxRenderable(renderer, { width: "47%", flexShrink: 0, borderStyle: "single", borderColor: "#4A5568", padding: 1, flexDirection: "column" })
   const detail = new BoxRenderable(renderer, { flexGrow: 1, minWidth: 0, overflow: "hidden", borderStyle: "single", borderColor: "#4A5568", padding: 1, flexDirection: "column" })
@@ -220,6 +221,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
   split.add(detail)
   app.add(header)
   app.add(nav)
+  app.add(cardStrip)
   app.add(split)
   app.add(footer)
   renderer.root.add(app)
@@ -228,7 +230,9 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
   const selectedRow = () => rows()[selected]
   const visibleRows = <T>(items: readonly T[]) => {
     const hasTableHeader = view === "registry" || view === "history" || view === "log" || (view === "opportunities" && renderer.width >= 120)
-    const limit = masterVisibleRowLimit(renderer.height, { hasTableHeader, extraChrome: 0 })
+    const stripHeight = homeCardStripHeight(view, renderer.height)
+    const extraChrome = stripHeight > 0 ? stripHeight + 1 : 0
+    const limit = masterVisibleRowLimit(renderer.height, { hasTableHeader, extraChrome })
     const start = Math.min(Math.max(0, selected - Math.floor(limit / 2)), Math.max(0, items.length - limit))
     return { start, items: items.slice(start, start + limit) }
   }
@@ -294,6 +298,11 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
     const site = sites[siteIndex]!
     header.content = `Ranksta’s Paradise  ·  ${site.origin}  ·  ${summary.rows} Search Console rows across ${summary.dates} finalized days  ·  LIVE`
     nav.content = views.map((item, index) => `${index === activeView ? "[" : " "}${item.key} ${item.label}${index === activeView ? "]" : " "}`).join("  ")
+    const stripHeight = homeCardStripHeight(view, renderer.height)
+    cardStrip.height = stripHeight
+    cardStrip.content = stripHeight > 0
+      ? formatHomeCardStrip(data.engineTotals, renderer.width, renderer.height)
+      : ""
     if (view === "home") {
       selected = Math.max(0, Math.min(selected, homeCategories.length - 1))
       const grouped = new Map(opportunityKinds.map((kind) => [kind, data.digest.signals.filter((signal) => signal.kind === kind)]))

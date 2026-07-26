@@ -4,7 +4,15 @@
 import { mkdir } from "node:fs/promises"
 import { homedir } from "node:os"
 
-import { Config, ConfigProvider, Context, Effect, Layer } from "effect"
+import {
+  Config,
+  ConfigProvider,
+  Context,
+  Effect,
+  Layer,
+  Option,
+  Redacted,
+} from "effect"
 
 import { serviceUse } from "../service-use.ts"
 import { ConfigLoadError, type SeoConfig } from "./schema.ts"
@@ -20,6 +28,8 @@ export interface Interface {
   readonly serviceAccountPath: () => Effect.Effect<string>
   // Whether the process was launched with --debug (isolated fake database).
   readonly debugMode: () => Effect.Effect<boolean>
+  // Optional Bing Webmaster API key. Absent ⇒ Bing collection is off.
+  readonly bingApiKey: () => Effect.Effect<Option.Option<Redacted.Redacted<string>>>
   // Create the data directory if it does not exist.
   readonly ensureDataDirectory: () => Effect.Effect<void, ConfigLoadError>
 }
@@ -68,6 +78,7 @@ export const layer = Layer.effect(
     // `--debug` inspection is gone: debug is config now (DEBUG env / provider),
     // defaulting to false. A typo'd value fails loudly instead of silently off.
     const debug = yield* Config.boolean("DEBUG").pipe(Config.withDefault(false))
+    const bingKey = yield* Config.option(Config.redacted("BING_API_KEY"))
 
     // Read config.json off the volume. A missing file is soft (the environment
     // may satisfy every required field); an unreadable or malformed file is a
@@ -123,6 +134,7 @@ export const layer = Layer.effect(
       dataDirectory: () => Effect.succeed(dataDir),
       serviceAccountPath: () => Effect.succeed(serviceAccountFile),
       debugMode: () => Effect.succeed(debug),
+      bingApiKey: () => Effect.succeed(bingKey),
       ensureDataDirectory: () =>
         Effect.tryPromise({
           try: () => mkdir(dataDir, { recursive: true }),

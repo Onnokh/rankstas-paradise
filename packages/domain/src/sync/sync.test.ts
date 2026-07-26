@@ -12,6 +12,8 @@ import { Database } from "bun:sqlite"
 import { Effect, Layer, ManagedRuntime } from "effect"
 
 import { Config } from "../config/config.ts"
+import { BingWebmaster } from "../bing-webmaster/bing-webmaster.ts"
+import { BingAuthError, type BingSiteDailyTotal } from "../bing-webmaster/schema.ts"
 import {
   type DailySnapshot,
   type DailyTotals,
@@ -65,10 +67,12 @@ interface Recorder {
   snapshotFetches: Array<ReadonlyArray<string>>
   totalFetches: Array<ReadonlyArray<string>>
   inspectFetches: Array<ReadonlyArray<string>>
+  bingFetches: number
 }
 
 const searchConsoleMock = (recorder: Recorder) =>
   Layer.mock(SearchConsole.Service)({
+    hasGoogleConnection: () => Effect.succeed(true),
     fetchSearchConsoleSnapshots: (dates) =>
       Effect.sync(() => {
         recorder.snapshotFetches.push(dates)
@@ -123,6 +127,28 @@ const sitemapMock = Layer.mock(Sitemap.Service)({
   refreshSitemapPages: () => Effect.succeed([]),
 })
 
+const bingWebmasterMock = (
+  recorder: Recorder,
+  rows: ReadonlyArray<BingSiteDailyTotal> | "fail",
+) =>
+  Layer.mock(BingWebmaster.Service)({
+    hasBingConnection: () => Effect.succeed(true),
+    fetchSiteDailyTotals: () =>
+      rows === "fail"
+        ? Effect.fail(
+            new BingAuthError({ message: "Bing is down for this test." }),
+          )
+        : Effect.sync(() => {
+            recorder.bingFetches += 1
+            return rows
+          }),
+  })
+
+const bingOffMock = Layer.mock(BingWebmaster.Service)({
+  hasBingConnection: () => Effect.succeed(false),
+  fetchSiteDailyTotals: () => Effect.die("should not be called"),
+})
+
 const configMock = Layer.mock(Config.Service)({
   debugMode: () => Effect.succeed(false),
 })
@@ -138,10 +164,16 @@ const currentSiteLayer = (dir: string, dbPath: string) =>
 
 // --- harness ----------------------------------------------------------------
 
-const makeRuntime = (dir: string, dbPath: string, recorder: Recorder) => {
+const makeRuntime = (
+  dir: string,
+  dbPath: string,
+  recorder: Recorder,
+  bing: Layer.Layer<BingWebmaster.Service> = bingOffMock,
+) => {
   const currentSite = currentSiteLayer(dir, dbPath)
   const deps = Layer.mergeAll(
     searchConsoleMock(recorder),
+    bing,
     Storage.layer.pipe(Layer.provide(currentSite)),
     registryMock,
     sitemapMock,
@@ -159,7 +191,7 @@ let runtime: ReturnType<typeof makeRuntime>
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "rp-sync-"))
   dbPath = join(dir, "search-console.sqlite")
-  recorder = { snapshotFetches: [], totalFetches: [], inspectFetches: [] }
+  recorder = { snapshotFetches: [], totalFetches: [], inspectFetches: [], bingFetches: 0 }
   runtime = makeRuntime(dir, dbPath, recorder)
 })
 
@@ -218,4 +250,34 @@ test("a stale reconciliation window is re-fetched as a unit", async () => {
   // Exactly the newest-5-days window, fetched as one call.
   expect(recorder.snapshotFetches).toHaveLength(2)
   expect([...recorder.snapshotFetches[1]!].sort()).toEqual([...reconWindow].sort())
+})
+
+test("a Bing failure leaves the Google sync successful", async () => {
+  runtime = makeRuntime(dir, dbPath, recorder, bingWebmasterMock(recorder, "fail"))
+  const summary = await run(Sync.use.syncSearchConsole())
+
+  expect(recorder.snapshotFetches).toHaveLength(1)
+  expect(summary).toContain("Saved 28 Search Console rows")
+  expect(summary).toContain("Bing site totals: skipped")
+})
+
+test("a connected Bing sync saves site daily rows", async () => {
+  const bingRows = [
+    { date: daysAgo(2), clicks: 4, impressions: 70 },
+    { date: daysAgo(3), clicks: 1, impressions: 18 },
+  ]
+  runtime = makeRuntime(
+    dir,
+    dbPath,
+    recorder,
+    bingWebmasterMock(recorder, bingRows),
+  )
+  const summary = await run(Sync.use.syncSearchConsole())
+
+  expect(recorder.bingFetches).toBe(1)
+  expect(summary).toContain("Bing site totals: 2 days saved (5 clicks)")
+  const stored = await run(
+    Storage.use.bingSiteDailyBetween(daysAgo(3), daysAgo(2)),
+  )
+  expect(stored).toHaveLength(2)
 })

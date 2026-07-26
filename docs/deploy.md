@@ -25,10 +25,11 @@ Without the volume the key and history are lost on every redeploy.
 | `RP_TOKEN` | yes (secret) | Bearer token required on every request. Use a long random value. |
 | `XDG_CONFIG_HOME` | yes | Set to `/data` (see above). |
 | `GOOGLE_SERVICE_ACCOUNT_FILE` | no | Override the key path. Defaults to `<app home>/google-service-account.json`. |
+| `BING_API_KEY` | no | Optional Bing Webmaster API key. One key per user, valid for every verified property. When absent, Bing collection is off. |
 | `SITE_URL` | no | Overrides `siteUrl` from `config.json`. |
 | `SEO_PORT` | no | Defaults to 8790. |
 
-No Google credentials go in env: the only one is the service-account key file on the volume (next step). See [packages/domain/src/config/config.ts](../packages/domain/src/config/config.ts) — env takes precedence, `config.json` is the fallback.
+No Google credentials go in env: the only one is the service-account key file on the volume (next step). Bing is optional: set `BING_API_KEY` when you want site-level Bing totals collected on the daily sync. See [packages/domain/src/config/config.ts](../packages/domain/src/config/config.ts) — env takes precedence, `config.json` is the fallback.
 
 ## 4. Google authentication — a service-account key
 

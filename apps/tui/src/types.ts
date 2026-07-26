@@ -28,3 +28,5 @@ export type ActionKind = Exclude<LogKind, "note">
 export type Metrics = OpportunitySignal["current"]
 export type RegistryPerformance =
   DashboardSnapshot["performances"][number]["performance"]
+export type EngineTotals = DashboardSnapshot["engineTotals"]
+export type EngineWindowTotals = EngineTotals["google"]["d28"]

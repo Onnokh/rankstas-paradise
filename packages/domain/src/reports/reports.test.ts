@@ -357,6 +357,10 @@ beforeAll(async () => {
         kind: "content-update",
         note: "Expanded the comparison table.",
       })
+      yield* storage.saveBingSiteDaily([
+        { date: "2026-07-10", clicks: 4, impressions: 70 },
+        { date: "2026-07-11", clicks: 1, impressions: 18 },
+      ])
     }),
   )
 }, 60_000)
@@ -537,4 +541,18 @@ test("dashboardSnapshot returns RAW internal shapes", async () => {
   // Per-target series are the raw 28-day RegistryPerformance (metrics not tidied).
   const perf = snapshot.performances[0]?.performance
   expect(perf?.days.length).toBe(28)
+})
+
+test("engineTotals aggregates google and bing over 28d and 7d windows", async () => {
+  const snapshot = await run(Reports.use.dashboardSnapshot())
+  const totals = snapshot.engineTotals
+
+  expect(totals.google.d28.windowDays).toBe(28)
+  expect(totals.google.d28.impressions).toBeGreaterThan(0)
+  expect(totals.google.d28.daysCollected).toBe(28)
+  expect(totals.bing.d28.clicks).toBe(5)
+  expect(totals.bing.d28.impressions).toBe(88)
+  expect(totals.bing.d28.daysCollected).toBe(2)
+  expect(totals.bing.d28.ctr).toBeCloseTo(5 / 88, 4)
+  expect(totals.bing.d7.clicks).toBe(5)
 })

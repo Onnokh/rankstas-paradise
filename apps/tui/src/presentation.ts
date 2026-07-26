@@ -9,6 +9,8 @@
 // `setActiveOrigin` whenever the active site changes (see tui.ts `inSite`).
 import type {
   ActionKind,
+  EngineTotals,
+  EngineWindowTotals,
   LogKind,
   OpportunityKind,
   OpportunitySignal,
@@ -35,6 +37,97 @@ export const masterVisibleRowLimit = (
       - (options.hasTableHeader ? 1 : 0)
       - (options.extraChrome ?? 0),
   )
+
+export const homeCardStripHeight = (
+  view: string,
+  rendererHeight: number,
+): number =>
+  view !== "home" ? 0 : rendererHeight >= 30 ? 5 : 1
+
+const formatCardCount = (value: number) =>
+  value >= 10_000
+    ? `${Math.round(value / 1_000)}k`
+    : value >= 1_000
+      ? `${(value / 1_000).toFixed(1)}k`
+      : value.toString()
+
+const formatCardPct = (ctr: number) => `${(ctr * 100).toFixed(1)}%`
+
+const windowLabel = (window: EngineWindowTotals) =>
+  window.daysCollected < window.windowDays
+    ? `${window.windowDays}d · ${window.daysCollected}d`
+    : `${window.windowDays}d`
+
+const cardColumn = (
+  title: string,
+  columnWidth: number,
+  formatValue: (window: EngineWindowTotals) => string,
+  google28: EngineWindowTotals,
+  bing28: EngineWindowTotals,
+  google7: EngineWindowTotals,
+  bing7: EngineWindowTotals,
+  collapsed: boolean,
+) => {
+  const label28 = windowLabel(bing28)
+  const inner = collapsed
+    ? `${label28} ${formatValue(google28)} G · ${formatValue(bing28)} B`
+    : [
+        `${label28.padEnd(6)} ${formatValue(google28).padStart(5)} G · ${formatValue(bing28).padStart(4)} B`,
+        `${"7d".padEnd(6)} ${formatValue(google7).padStart(5)} G · ${formatValue(bing7).padStart(4)} B`,
+      ].join("\n")
+  const titleLine = title.toUpperCase().slice(0, Math.max(4, columnWidth - 2))
+  if (collapsed) return `${titleLine}: ${inner}`
+  const top = `┌ ${titleLine}${"─".repeat(Math.max(0, columnWidth - titleLine.length - 1))}┐`
+  const body = inner.split("\n").map((line) => `│ ${line.padEnd(columnWidth - 2)} │`).join("\n")
+  const bottom = `└${"─".repeat(columnWidth - 2)}┘`
+  return [top, body, bottom].join("\n")
+}
+
+export const formatHomeCardStrip = (
+  totals: EngineTotals,
+  width: number,
+  rendererHeight: number,
+): string => {
+  const collapsed = rendererHeight < 30
+  const columnWidth = Math.max(18, Math.floor((width - 4) / 3))
+  const impressions = cardColumn(
+    "Impressions",
+    columnWidth,
+    (window) => formatCardCount(window.impressions),
+    totals.google.d28,
+    totals.bing.d28,
+    totals.google.d7,
+    totals.bing.d7,
+    collapsed,
+  )
+  const clicks = cardColumn(
+    "Clicks",
+    columnWidth,
+    (window) => formatCardCount(window.clicks),
+    totals.google.d28,
+    totals.bing.d28,
+    totals.google.d7,
+    totals.bing.d7,
+    collapsed,
+  )
+  const ctr = cardColumn(
+    "CTR",
+    columnWidth,
+    (window) => formatCardPct(window.ctr),
+    totals.google.d28,
+    totals.bing.d28,
+    totals.google.d7,
+    totals.bing.d7,
+    collapsed,
+  )
+  if (collapsed) return `${impressions}   ${clicks}   ${ctr}`
+  const lines = [0, 1, 2].map((index) =>
+    [impressions, clicks, ctr]
+      .map((card) => card.split("\n")[index] ?? "")
+      .join("  "),
+  )
+  return lines.join("\n")
+}
 
 // The active site's canonical origin, refreshed on startup and site switch.
 let activeOrigin = ""

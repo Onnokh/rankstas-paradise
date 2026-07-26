@@ -29,6 +29,8 @@ import {
 import {
   type DashboardSnapshot,
   type EntrySummary,
+  type EngineTotals,
+  type EngineWindowTotals,
   type HistoryReport,
   type LogAddInput,
   type LogAddResult,
@@ -126,6 +128,53 @@ export const layer = Layer.effect(
             Effect.fail(new ReportsError({ message: cause.message, cause })),
         }),
       )
+
+    const aggregateEngineWindow = (
+      rows: ReadonlyArray<{
+        readonly date: string
+        readonly clicks: number
+        readonly impressions: number
+      }>,
+      start: string,
+      end: string,
+      windowDays: number,
+    ): EngineWindowTotals => {
+      const inWindow = rows.filter(
+        (row) => row.date >= start && row.date <= end,
+      )
+      const impressions = inWindow.reduce(
+        (total, row) => total + row.impressions,
+        0,
+      )
+      const clicks = inWindow.reduce((total, row) => total + row.clicks, 0)
+      return {
+        impressions,
+        clicks,
+        ctr: impressions > 0 ? clicks / impressions : 0,
+        daysCollected: inWindow.length,
+        windowDays,
+      }
+    }
+
+    const engineTotals = (): Effect.Effect<EngineTotals, StorageError> =>
+      Effect.gen(function* () {
+        const googleDays = yield* storage.historyWithPending(485)
+        const latestDate =
+          googleDays.at(-1)?.date ?? (yield* storage.finalizationCutoff())
+        const start28 = dateDaysBefore(latestDate, 27)
+        const start7 = dateDaysBefore(latestDate, 6)
+        const bingRows = yield* storage.bingSiteDailyBetween(start28, latestDate)
+        return {
+          google: {
+            d28: aggregateEngineWindow(googleDays, start28, latestDate, 28),
+            d7: aggregateEngineWindow(googleDays, start7, latestDate, 7),
+          },
+          bing: {
+            d28: aggregateEngineWindow(bingRows, start28, latestDate, 28),
+            d7: aggregateEngineWindow(bingRows, start7, latestDate, 7),
+          },
+        }
+      })
 
     // A log entry's before/after readout (see LogReadout). Windows are symmetric
     // 28/28 around the action date; the after window shrinks to available data
@@ -666,12 +715,14 @@ export const layer = Layer.effect(
         wrap(
           Effect.gen(function* () {
             const days = yield* storage.historyWithPending(limit)
+            const totals = yield* engineTotals()
             return {
               days: days.map((day) => ({
                 date: day.date,
                 provisional: day.provisional ?? false,
                 ...tidy(day),
               })),
+              engineTotals: totals,
             }
           }),
         ),
@@ -710,6 +761,7 @@ export const layer = Layer.effect(
                     })),
                   ),
             )
+            const totals = yield* engineTotals()
             return {
               summary,
               registry: entries,
@@ -721,6 +773,7 @@ export const layer = Layer.effect(
               history,
               recentActions,
               performances,
+              engineTotals: totals,
             }
           }),
         ),

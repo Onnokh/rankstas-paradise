@@ -147,6 +147,29 @@ export const LogAddInput = Schema.Struct({
 }).annotate({ identifier: "LogAddInput" })
 export interface LogAddInput extends Schema.Schema.Type<typeof LogAddInput> {}
 
+export const EngineWindowTotals = Schema.Struct({
+  impressions: Schema.Number,
+  clicks: Schema.Number,
+  ctr: Schema.Number,
+  daysCollected: Schema.Number,
+  windowDays: Schema.Number,
+}).annotate({ identifier: "EngineWindowTotals" })
+export interface EngineWindowTotals
+  extends Schema.Schema.Type<typeof EngineWindowTotals> {}
+
+export const EnginePairTotals = Schema.Struct({
+  d28: EngineWindowTotals,
+  d7: EngineWindowTotals,
+}).annotate({ identifier: "EnginePairTotals" })
+export interface EnginePairTotals
+  extends Schema.Schema.Type<typeof EnginePairTotals> {}
+
+export const EngineTotals = Schema.Struct({
+  google: EnginePairTotals,
+  bing: EnginePairTotals,
+}).annotate({ identifier: "EngineTotals" })
+export interface EngineTotals extends Schema.Schema.Type<typeof EngineTotals> {}
+
 export const DashboardSnapshot = Schema.Struct({
   summary: Schema.Struct({ rows: Schema.Number, dates: Schema.Number }),
   registry: Schema.Array(RegistryEntry),
@@ -163,6 +186,7 @@ export const DashboardSnapshot = Schema.Struct({
       performance: RegistryPerformance,
     }),
   ),
+  engineTotals: EngineTotals,
 }).annotate({ identifier: "DashboardSnapshot" })
 export interface DashboardSnapshot
   extends Schema.Schema.Type<typeof DashboardSnapshot> {}
@@ -392,6 +416,7 @@ export const HistoryReport = Schema.Struct({
       position: Schema.Number,
     }),
   ),
+  engineTotals: EngineTotals,
 }).annotate({ identifier: "HistoryReport" })
 export interface HistoryReport
   extends Schema.Schema.Type<typeof HistoryReport> {}
