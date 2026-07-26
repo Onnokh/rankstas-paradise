@@ -22,6 +22,7 @@ import { Config } from "../config/config.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { serviceUse } from "../service-use.ts"
 import {
+  type BingQueryWindowRow,
   type BingSiteDailyTotal,
   BingAuthError,
   BingDecodeError,
@@ -35,6 +36,10 @@ export interface Interface {
     ReadonlyArray<BingSiteDailyTotal>,
     BingError
   >
+  readonly fetchQueryWindow: () => Effect.Effect<
+    ReadonlyArray<BingQueryWindowRow>,
+    BingError
+  >
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -43,8 +48,8 @@ export class Service extends Context.Service<Service, Interface>()(
 
 export const use = serviceUse(Service)
 
-const baseUrl =
-  "https://ssl.bing.com/webmaster/api.svc/json/GetRankAndTrafficStats"
+const jsonApi = (method: string) =>
+  `https://ssl.bing.com/webmaster/api.svc/json/${method}`
 
 const authErrorCodes = new Set([3, 7, 14])
 
@@ -75,8 +80,19 @@ const BingTrafficRowRaw = Schema.Struct({
   Impressions: Schema.Number,
 })
 
-const BingEnvelopeRaw = Schema.Struct({
+const BingTrafficEnvelopeRaw = Schema.Struct({
   d: Schema.Array(BingTrafficRowRaw),
+})
+
+const BingQueryRowRaw = Schema.Struct({
+  Query: Schema.String,
+  Clicks: Schema.Number,
+  Impressions: Schema.Number,
+  AvgImpressionPosition: Schema.Number,
+})
+
+const BingQueryEnvelopeRaw = Schema.Struct({
+  d: Schema.Array(BingQueryRowRaw),
 })
 
 const BingErrorBody = Schema.Struct({
@@ -116,20 +132,22 @@ export const layer = Layer.effect(
         }),
       )
 
-    const decodeResponse = (
-      response: HttpClientResponse.HttpClientResponse,
-    ): Effect.Effect<ReadonlyArray<BingSiteDailyTotal>, BingError> =>
+    const readJson = (response: HttpClientResponse.HttpClientResponse) =>
+      response.json.pipe(
+        Effect.mapError(
+          (cause) =>
+            new BingDecodeError({
+              message: "The Bing Webmaster response body could not be read.",
+              cause,
+            }),
+        ),
+      )
+
+    const classifyErrorBody = (
+      json: unknown,
+      status: number,
+    ): Effect.Effect<void, BingError> =>
       Effect.gen(function* () {
-        const status = response.status
-        const json = yield* response.json.pipe(
-          Effect.mapError(
-            (cause) =>
-              new BingDecodeError({
-                message: "The Bing Webmaster response body could not be read.",
-                cause,
-              }),
-          ),
-        )
         const errorBody = yield* Schema.decodeUnknownEffect(BingErrorBody)(
           json,
         ).pipe(Effect.option)
@@ -160,9 +178,42 @@ export const layer = Layer.effect(
               status,
             }),
           )
-        const envelope = yield* Schema.decodeUnknownEffect(BingEnvelopeRaw)(
-          json,
-        ).pipe(
+      })
+
+    const withApiKey = <A>(
+      method: string,
+      decode: (
+        response: HttpClientResponse.HttpClientResponse,
+      ) => Effect.Effect<A, BingError>,
+    ) =>
+      Effect.gen(function* () {
+        const key = yield* config.bingApiKey()
+        if (Option.isNone(key))
+          return yield* Effect.fail(
+            new BingAuthError({
+              message: "No Bing API key is configured.",
+            }),
+          )
+        const site = yield* currentSite.current()
+        const request = HttpClientRequest.get(jsonApi(method)).pipe(
+          HttpClientRequest.setUrlParams({
+            apikey: Redacted.value(key.value),
+            siteUrl: site.origin,
+          }),
+        )
+        const response = yield* executeWithRetry(request)
+        return yield* decode(response)
+      })
+
+    const decodeSiteDailyTotals = (
+      response: HttpClientResponse.HttpClientResponse,
+    ): Effect.Effect<ReadonlyArray<BingSiteDailyTotal>, BingError> =>
+      Effect.gen(function* () {
+        const json = yield* readJson(response)
+        yield* classifyErrorBody(json, response.status)
+        const envelope = yield* Schema.decodeUnknownEffect(
+          BingTrafficEnvelopeRaw,
+        )(json).pipe(
           Effect.mapError(
             (cause) =>
               new BingDecodeError({
@@ -179,6 +230,32 @@ export const layer = Layer.effect(
         }))
       })
 
+    const decodeQueryWindow = (
+      response: HttpClientResponse.HttpClientResponse,
+    ): Effect.Effect<ReadonlyArray<BingQueryWindowRow>, BingError> =>
+      Effect.gen(function* () {
+        const json = yield* readJson(response)
+        yield* classifyErrorBody(json, response.status)
+        const envelope = yield* Schema.decodeUnknownEffect(
+          BingQueryEnvelopeRaw,
+        )(json).pipe(
+          Effect.mapError(
+            (cause) =>
+              new BingDecodeError({
+                message:
+                  "The Bing Webmaster response did not match its expected shape.",
+                cause,
+              }),
+          ),
+        )
+        return envelope.d.map((row) => ({
+          query: row.Query,
+          clicks: row.Clicks,
+          impressions: row.Impressions,
+          position: row.AvgImpressionPosition,
+        }))
+      })
+
     const impl: Interface = {
       hasBingConnection: () =>
         config.bingApiKey().pipe(
@@ -187,24 +264,11 @@ export const layer = Layer.effect(
         ),
 
       fetchSiteDailyTotals: Effect.fn("BingWebmaster.fetchSiteDailyTotals")(
-        function* () {
-          const key = yield* config.bingApiKey()
-          if (Option.isNone(key))
-            return yield* Effect.fail(
-              new BingAuthError({
-                message: "No Bing API key is configured.",
-              }),
-            )
-          const site = yield* currentSite.current()
-          const request = HttpClientRequest.get(baseUrl).pipe(
-            HttpClientRequest.setUrlParams({
-              apikey: Redacted.value(key.value),
-              siteUrl: site.origin,
-            }),
-          )
-          const response = yield* executeWithRetry(request)
-          return yield* decodeResponse(response)
-        },
+        () => withApiKey("GetRankAndTrafficStats", decodeSiteDailyTotals),
+      ),
+
+      fetchQueryWindow: Effect.fn("BingWebmaster.fetchQueryWindow")(() =>
+        withApiKey("GetQueryStats", decodeQueryWindow),
       ),
     }
 

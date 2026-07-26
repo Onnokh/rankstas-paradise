@@ -13,7 +13,7 @@ import { type SqlError } from "effect/unstable/sql"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 
 import { brandLikePatterns } from "../brand.ts"
-import { type BingSiteDailyTotal } from "../bing-webmaster/schema.ts"
+import { type BingQueryWindowRow, type BingSiteDailyTotal } from "../bing-webmaster/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import {
   type DailySnapshot,
@@ -55,6 +55,10 @@ export interface Interface {
   ) => Effect.Effect<void, StorageError>
   readonly saveBingSiteDaily: (
     rows: ReadonlyArray<BingSiteDailyTotal>,
+  ) => Effect.Effect<void, StorageError>
+  readonly saveBingQueryWindow: (
+    capturedDate: string,
+    rows: ReadonlyArray<BingQueryWindowRow>,
   ) => Effect.Effect<void, StorageError>
   readonly savePageIndexStatuses: (
     statuses: ReadonlyArray<PageIndexStatus>,
@@ -133,6 +137,13 @@ export interface Interface {
     start: string,
     end: string,
   ) => Effect.Effect<ReadonlyArray<BingSiteDailyTotal>, StorageError>
+  readonly bingQueryWindowLatest: () => Effect.Effect<
+    { readonly capturedDate: string; readonly rows: ReadonlyArray<BingQueryWindowRow> } | null,
+    StorageError
+  >
+  readonly googleKeywordMetricsBetween: (
+    page: string, keyword: string, start: string, end: string,
+  ) => Effect.Effect<Metrics, StorageError>
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -285,6 +296,15 @@ export const layer = Layer.effect(
         clicks integer not null,
         impressions integer not null,
         collected_at text not null default current_timestamp
+      )`,
+      `create table if not exists bing_query_window (
+        captured_date text not null,
+        query text not null,
+        clicks integer not null,
+        impressions integer not null,
+        position real not null,
+        collected_at text not null default current_timestamp,
+        primary key (captured_date, query)
       )`,
     ]
     yield* Effect.forEach(ddl, (statement) => sql.unsafe(statement)).pipe(
@@ -930,6 +950,37 @@ export const layer = Layer.effect(
           order by date`
       })
 
+    const saveBingQueryWindowI = (capturedDate: string, rows: ReadonlyArray<BingQueryWindowRow>) =>
+      sql.withTransaction(Effect.gen(function* () {
+        yield* sql`delete from bing_query_window where captured_date = ${capturedDate}`
+        for (const row of rows)
+          yield* sql`insert into bing_query_window (captured_date, query, clicks, impressions, position)
+            values (${capturedDate}, ${row.query}, ${row.clicks}, ${row.impressions}, ${row.position})`
+      }))
+
+    const bingQueryWindowLatestI = Effect.gen(function* () {
+      const latest = yield* sql<{ captured_date: string | null }>`
+        select max(captured_date) as captured_date from bing_query_window`
+      const capturedDate = latest[0]?.captured_date
+      if (!capturedDate) return null
+      const rows = yield* sql<BingQueryWindowRow>`
+        select query, clicks, impressions, position from bing_query_window
+        where captured_date = ${capturedDate} order by query`
+      return { capturedDate, rows }
+    })
+
+    const googleKeywordMetricsBetweenI = (page: string, keyword: string, start: string, end: string) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<Metrics>`
+          select coalesce(sum(impressions), 0) as impressions,
+                 coalesce(sum(clicks), 0) as clicks,
+                 case when sum(impressions) > 0 then sum(clicks) * 1.0 / sum(impressions) else 0 end as ctr,
+                 case when sum(impressions) > 0 then sum(position * impressions) * 1.0 / sum(impressions) else 0 end as position
+          from search_snapshot
+          where page = ${page} and lower(query) = lower(${keyword}) and date between ${start} and ${end}`
+        return rows[0]!
+      })
+
     const savePageIndexStatusesI = (statuses: ReadonlyArray<PageIndexStatus>) =>
       sql.withTransaction(
         Effect.gen(function* () {
@@ -1070,6 +1121,8 @@ export const layer = Layer.effect(
         saveDailyTotalsI(totals, fetchedDates).pipe(mapErr("saveDailyTotals")),
       saveBingSiteDaily: (rows) =>
         saveBingSiteDailyI(rows).pipe(mapErr("saveBingSiteDaily")),
+      saveBingQueryWindow: (capturedDate, rows) =>
+        saveBingQueryWindowI(capturedDate, rows).pipe(mapErr("saveBingQueryWindow")),
       savePageIndexStatuses: (statuses) =>
         savePageIndexStatusesI(statuses).pipe(mapErr("savePageIndexStatuses")),
       pruneIndexStatuses: (targetUrls) =>
@@ -1120,6 +1173,9 @@ export const layer = Layer.effect(
         ),
       bingSiteDailyBetween: (start, end) =>
         bingSiteDailyBetweenI(start, end).pipe(mapErr("bingSiteDailyBetween")),
+      bingQueryWindowLatest: () => bingQueryWindowLatestI.pipe(mapErr("bingQueryWindowLatest")),
+      googleKeywordMetricsBetween: (page, keyword, start, end) =>
+        googleKeywordMetricsBetweenI(page, keyword, start, end).pipe(mapErr("googleKeywordMetricsBetween")),
     } satisfies Interface
   }),
 )

@@ -1,6 +1,6 @@
 import { BoxRenderable, createCliRenderer, fg, StyledText, t, TextRenderable } from "@opentui/core"
 
-import { detailSummaryHeight, formatHomeCardStrip, homeCardStripHeight, logKindLabel, masterVisibleRowLimit, opportunityLabels, phaseFor, readableIntent, setActiveOrigin, shortAction, signalExplanation, signalMeaning, signalReason, sparkline } from "./presentation.ts"
+import { bingInventoryKeywordNote, detailSummaryHeight, formatHomeCardStrip, homeCardStripHeight, keywordEngineLine, logKindLabel, masterVisibleRowLimit, opportunityLabels, phaseFor, readableIntent, setActiveOrigin, shortAction, signalExplanation, signalMeaning, signalReason, sparkline } from "./presentation.ts"
 import { loadSiteCatalog, loadTuiData, type TuiData } from "./tuiData.ts"
 import type { HistoryDay, LogFeedEntry, LogReadout, OpportunityKind, OpportunitySignal, RegistryEntry, RegistryTargetProgress, Site } from "./types.ts"
 
@@ -578,9 +578,12 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
       ].join("\n")
       detailBody.content = t`${measurementStatus}\n\n${fg("#F7FAFC")("WHY THIS IS AN OPPORTUNITY")}\n${entry.whyOpportunity || "No opportunity rationale has been recorded for this page."}\n\n${performanceDetails}\n\n${fg("#F7FAFC")(activityDetails)}`
       detailBottomTitle.content = `KEYWORDS · ${keywordEntries.length}`
-      detailBottomBody.content = keywordEntries.length > 0
-        ? keywordEntries.map((mapped, index) => `${index + 1}. ${mapped.keyword}`).join("\n")
-        : "No keyword target assigned; this page is tracked as sitemap inventory."
+      const windowsForTarget = data.keywordWindows.filter((window) => window.targetUrl === progress.targetUrl)
+      detailBottomBody.content = inventoryOnly
+        ? `No keyword target assigned; this page is tracked as sitemap inventory.\n\n${bingInventoryKeywordNote}`
+        : keywordEntries.length > 0
+          ? keywordEntries.map((mapped, index) => { const window = windowsForTarget.find((candidate) => candidate.keyword.toLowerCase() === mapped.keyword.toLowerCase()); return `${index + 1}. ${window ? keywordEngineLine(window) : mapped.keyword}` }).join("\n")
+          : "No keyword target assigned; this page is tracked as sitemap inventory."
     }
     const legend = view === "registry"
       ? "   ·   Dim rows: Google reports this page is not indexed."

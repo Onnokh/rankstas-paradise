@@ -30,6 +30,8 @@ import { CurrentSite } from "@rp/domain/sites/current-site"
 import { type RegistryEntry } from "@rp/domain/registry/schema"
 import { Registry } from "@rp/domain/registry/registry"
 import {
+  bingInventoryKeywordNote,
+  keywordEngineLine,
   logKindLabel,
   opportunityLabels,
   phaseFor,
@@ -418,6 +420,8 @@ const registryFeed = Effect.gen(function* () {
   const debug = yield* CurrentSiteDebug
   const origin = yield* CurrentSiteOrigin
   const registry = yield* Registry.use.loadRegistry()
+  const registryReport = yield* Reports.use.registryList()
+  const keywordsByTarget = new Map(registryReport.targets.map((target) => [target.targetUrl, target.keywords]))
   const targets = yield* Storage.use.registryTargetProgress(registry)
   const logByTarget = new Map<string, LogFeedEntry[]>()
   for (const entry of yield* Reports.use.logFeed()) logByTarget.set(entry.path, [...(logByTarget.get(entry.path) ?? []), entry])
@@ -508,9 +512,7 @@ const registryFeed = Effect.gen(function* () {
           ? [{ kind: "dspark", slot: "rail", label: "Impressions · 14d", values: trendDays.map((day) => day.impressions) } as DetailNode]
           : []),
         { kind: "dsect", slot: "rail", text: `KEYWORDS · ${keywordEntries.length}` },
-        ...(keywordEntries.length > 0
-          ? keywordEntries.map((mapped) => ({ kind: "dchip", slot: "rail", text: mapped.keyword } as DetailNode))
-          : [{ kind: "dtext", slot: "rail", text: "No keyword target assigned; this page is tracked as sitemap inventory." } as DetailNode]),
+        ...(inventoryOnly ? [{ kind: "dtext", slot: "rail", text: "No keyword target assigned; this page is tracked as sitemap inventory." } as DetailNode, { kind: "dtext", slot: "rail", text: bingInventoryKeywordNote } as DetailNode] : (keywordsByTarget.get(progress.targetUrl) ?? []).length > 0 ? (keywordsByTarget.get(progress.targetUrl) ?? []).map((mapped) => ({ kind: "dlist", slot: "rail", text: keywordEngineLine({ keyword: mapped.keyword, targetUrl: progress.targetUrl, google7d: mapped.google7d, bing7d: mapped.bing7d }) }) as DetailNode) : [{ kind: "dtext", slot: "rail", text: "No keyword target assigned; this page is tracked as sitemap inventory." } as DetailNode]),
       ],
     })
     index += 1

@@ -361,6 +361,13 @@ beforeAll(async () => {
         { date: "2026-07-10", clicks: 4, impressions: 70 },
         { date: "2026-07-11", clicks: 1, impressions: 18 },
       ])
+      yield* storage.saveBingQueryWindow("2026-07-12", [
+        { query: "pocket alternative", clicks: 3, impressions: 12, position: 5 },
+        { query: "chrome read later extension", clicks: 0, impressions: 4, position: 9 },
+      ])
+      yield* storage.saveBingQueryWindow("2026-07-10", [
+        { query: "pocket alternative", clicks: 99, impressions: 999, position: 1 },
+      ])
     }),
   )
 }, 60_000)
@@ -555,4 +562,18 @@ test("engineTotals aggregates google and bing over 28d and 7d windows", async ()
   expect(totals.bing.d28.daysCollected).toBe(2)
   expect(totals.bing.d28.ctr).toBeCloseTo(5 / 88, 4)
   expect(totals.bing.d7.clicks).toBe(5)
+})
+
+
+test("keywordWindows join exact registry keywords on the newest Bing capture only", async () => {
+  const snapshot = await run(Reports.use.dashboardSnapshot())
+  const pocket = snapshot.keywordWindows.find((window) => window.targetUrl === "/pocket-alternative" && window.keyword === "pocket alternative")
+  expect(pocket?.bing7d).toEqual({ impressions: 12, clicks: 3, ctr: 0.25, position: 5 })
+  expect(pocket?.google7d.impressions).toBeGreaterThan(0)
+  const list = await run(Reports.use.registryList())
+  const pocketKeyword = list.targets.find((target) => target.targetUrl === "/pocket-alternative")?.keywords.find((keyword) => keyword.keyword === "pocket alternative")
+  expect(pocketKeyword?.bing7d?.clicks).toBe(3)
+  const latest = await runtime.runPromise(Storage.use.bingQueryWindowLatest())
+  expect(latest?.capturedDate).toBe("2026-07-12")
+  expect(latest?.rows).toHaveLength(2)
 })

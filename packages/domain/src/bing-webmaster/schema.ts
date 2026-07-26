@@ -9,6 +9,15 @@ export const BingSiteDailyTotal = Schema.Struct({
 export interface BingSiteDailyTotal
   extends Schema.Schema.Type<typeof BingSiteDailyTotal> {}
 
+export const BingQueryWindowRow = Schema.Struct({
+  query: Schema.String,
+  clicks: Schema.Number,
+  impressions: Schema.Number,
+  position: Schema.Number,
+}).annotate({ identifier: "BingQueryWindowRow" })
+export interface BingQueryWindowRow
+  extends Schema.Schema.Type<typeof BingQueryWindowRow> {}
+
 export class BingAuthError extends Schema.TaggedErrorClass<BingAuthError>()(
   "BingAuthError",
   {

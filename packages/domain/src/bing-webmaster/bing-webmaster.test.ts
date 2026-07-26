@@ -184,3 +184,12 @@ test("fetch without a key fails as BingAuthError", async () => {
 
   expect(squashError(exit)).toBeInstanceOf(BingAuthError)
 })
+
+
+test("fetchQueryWindow unwraps d and maps AvgImpressionPosition", async () => {
+  let href = ""
+  const http = fakeHttp((url) => { href = url; return { status: 200, body: { d: [{ __type: "QueryStats:#Microsoft.Bing.Webmaster.Api", Query: "pocket alternative", Clicks: 2, Impressions: 25, AvgImpressionPosition: 6, AvgClickPosition: -1 }] } } })
+  const rows = await BingWebmaster.use.fetchQueryWindow().pipe(Effect.provide(buildLayer(http, "secret-key")), Effect.runPromise)
+  expect(href).toContain("GetQueryStats")
+  expect(rows).toEqual([{ query: "pocket alternative", clicks: 2, impressions: 25, position: 6 }])
+})

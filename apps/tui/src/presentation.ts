@@ -11,10 +11,12 @@ import type {
   ActionKind,
   EngineTotals,
   EngineWindowTotals,
+  KeywordEngineWindow,
   LogKind,
   OpportunityKind,
   OpportunitySignal,
   RegistryTargetProgress,
+  TidyMetrics,
 } from "./types.ts"
 
 export const detailSummaryHeight = (
@@ -210,6 +212,19 @@ export const actionKindLabels: Record<ActionKind, string> = {
 }
 
 export const logKindLabel = (kind: LogKind): string => kind === "note" ? "Note" : actionKindLabels[kind]
+
+export const bingInventoryKeywordNote =
+  "Bing has no page-level keyword data; figures cannot be attributed to inventory-only pages."
+
+const formatEngine7d = (label: string, metrics: TidyMetrics) =>
+  `${label}: ${metrics.impressions} impr · ${metrics.clicks} clk · pos ${
+    label === "B" ? metrics.position.toFixed(0) : metrics.position.toFixed(1)
+  }`
+
+export const keywordEngineLine = (window: KeywordEngineWindow): string =>
+  `${window.keyword} — ${formatEngine7d("G", window.google7d)} · ${
+    window.bing7d ? formatEngine7d("B", window.bing7d) : "B: —"
+  }`
 
 export const sparkline = (values: readonly number[], lowerIsBetter = false) => {
   const observed = values.filter((value) => value > 0)

@@ -178,17 +178,27 @@ export const layer = Layer.effect(
       const bingNote = yield* bingWebmaster.hasBingConnection().pipe(
         Effect.flatMap((connected) =>
           connected
-            ? bingWebmaster.fetchSiteDailyTotals().pipe(
-                Effect.flatMap((rows) =>
-                  storage.saveBingSiteDaily(rows).pipe(
-                    Effect.as(
-                      `Bing site totals: ${rows.length} days saved (${rows.reduce((total, row) => total + row.clicks, 0)} clicks).`,
-                    ),
+            ? Effect.gen(function* () {
+                const rows = yield* bingWebmaster.fetchSiteDailyTotals()
+                yield* storage.saveBingSiteDaily(rows)
+                let message = `Bing site totals: ${rows.length} days saved (${rows.reduce((total, row) => total + row.clicks, 0)} clicks).`
+                const queryResult = yield* bingWebmaster.fetchQueryWindow().pipe(
+                  Effect.flatMap((queryRows) => {
+                    const capturedDate = new Date().toISOString().slice(0, 10)
+                    return storage.saveBingQueryWindow(capturedDate, queryRows).pipe(
+                      Effect.as(
+                        `Bing query window: ${queryRows.length} queries captured on ${capturedDate}.`,
+                      ),
+                    )
+                  }),
+                  Effect.catchCause(() =>
+                    Effect.succeed("Bing query window: skipped (fetch failed)."),
                   ),
-                ),
-                Effect.catchCause(() =>
-                  Effect.succeed("Bing site totals: skipped (fetch failed)."),
-                ),
+                )
+                message += ` ${queryResult}`
+                return message
+              }).pipe(
+                Effect.catchCause(() => Effect.succeed("Bing site totals: skipped (fetch failed).")),
               )
             : Effect.succeed("Bing: off (no API key)."),
         ),

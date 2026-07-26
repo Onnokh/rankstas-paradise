@@ -124,6 +124,7 @@ const snapshot = Schema.decodeUnknownSync(DashboardSnapshot)({
       d7: { impressions: 18, clicks: 1, ctr: 1 / 18, daysCollected: 7, windowDays: 7 },
     },
   },
+  keywordWindows: [],
 })
 
 const mockLayer = Layer.mock(ApiClient.Service, {

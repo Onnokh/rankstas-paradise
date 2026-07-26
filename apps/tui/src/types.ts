@@ -30,3 +30,5 @@ export type RegistryPerformance =
   DashboardSnapshot["performances"][number]["performance"]
 export type EngineTotals = DashboardSnapshot["engineTotals"]
 export type EngineWindowTotals = EngineTotals["google"]["d28"]
+export type KeywordEngineWindow = DashboardSnapshot["keywordWindows"][number]
+export type TidyMetrics = KeywordEngineWindow["google7d"]

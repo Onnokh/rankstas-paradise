@@ -170,6 +170,15 @@ export const EngineTotals = Schema.Struct({
 }).annotate({ identifier: "EngineTotals" })
 export interface EngineTotals extends Schema.Schema.Type<typeof EngineTotals> {}
 
+export const KeywordEngineWindow = Schema.Struct({
+  keyword: Schema.String,
+  targetUrl: Schema.String,
+  google7d: TidyMetrics,
+  bing7d: Schema.NullOr(TidyMetrics),
+}).annotate({ identifier: "KeywordEngineWindow" })
+export interface KeywordEngineWindow
+  extends Schema.Schema.Type<typeof KeywordEngineWindow> {}
+
 export const DashboardSnapshot = Schema.Struct({
   summary: Schema.Struct({ rows: Schema.Number, dates: Schema.Number }),
   registry: Schema.Array(RegistryEntry),
@@ -187,6 +196,7 @@ export const DashboardSnapshot = Schema.Struct({
     }),
   ),
   engineTotals: EngineTotals,
+  keywordWindows: Schema.Array(KeywordEngineWindow),
 }).annotate({ identifier: "DashboardSnapshot" })
 export interface DashboardSnapshot
   extends Schema.Schema.Type<typeof DashboardSnapshot> {}
@@ -367,6 +377,8 @@ export const RegistryListReport = Schema.Struct({
           cluster: Schema.String,
           intent: Schema.String,
           country: Schema.String,
+          google7d: TidyMetrics,
+          bing7d: Schema.NullOr(TidyMetrics),
         }),
       ),
     }),

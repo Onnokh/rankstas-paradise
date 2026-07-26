@@ -68,6 +68,7 @@ interface Recorder {
   totalFetches: Array<ReadonlyArray<string>>
   inspectFetches: Array<ReadonlyArray<string>>
   bingFetches: number
+  bingQueryFetches: number
 }
 
 const searchConsoleMock = (recorder: Recorder) =>
@@ -142,11 +143,28 @@ const bingWebmasterMock = (
             recorder.bingFetches += 1
             return rows
           }),
+    fetchQueryWindow: () =>
+      rows === "fail"
+        ? Effect.fail(
+            new BingAuthError({ message: "Bing is down for this test." }),
+          )
+        : Effect.sync(() => {
+            recorder.bingQueryFetches += 1
+            return [
+              {
+                query: "widget",
+                clicks: 2,
+                impressions: 20,
+                position: 4,
+              },
+            ]
+          }),
   })
 
 const bingOffMock = Layer.mock(BingWebmaster.Service)({
   hasBingConnection: () => Effect.succeed(false),
   fetchSiteDailyTotals: () => Effect.die("should not be called"),
+  fetchQueryWindow: () => Effect.die("should not be called"),
 })
 
 const configMock = Layer.mock(Config.Service)({
@@ -191,7 +209,7 @@ let runtime: ReturnType<typeof makeRuntime>
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "rp-sync-"))
   dbPath = join(dir, "search-console.sqlite")
-  recorder = { snapshotFetches: [], totalFetches: [], inspectFetches: [], bingFetches: 0 }
+  recorder = { snapshotFetches: [], totalFetches: [], inspectFetches: [], bingFetches: 0, bingQueryFetches: 0 }
   runtime = makeRuntime(dir, dbPath, recorder)
 })
 
@@ -275,9 +293,15 @@ test("a connected Bing sync saves site daily rows", async () => {
   const summary = await run(Sync.use.syncSearchConsole())
 
   expect(recorder.bingFetches).toBe(1)
+  expect(recorder.bingQueryFetches).toBe(1)
   expect(summary).toContain("Bing site totals: 2 days saved (5 clicks)")
+  expect(summary).toContain("Bing query window: 1 queries captured on")
   const stored = await run(
     Storage.use.bingSiteDailyBetween(daysAgo(3), daysAgo(2)),
   )
   expect(stored).toHaveLength(2)
+  const queryWindow = await run(Storage.use.bingQueryWindowLatest())
+  expect(queryWindow?.rows).toEqual([
+    { query: "widget", clicks: 2, impressions: 20, position: 4 },
+  ])
 })

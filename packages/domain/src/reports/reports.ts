@@ -32,6 +32,7 @@ import {
   type EngineTotals,
   type EngineWindowTotals,
   type HistoryReport,
+  type KeywordEngineWindow,
   type LogAddInput,
   type LogAddResult,
   type LogFeedEntry,
@@ -175,6 +176,69 @@ export const layer = Layer.effect(
           },
         }
       })
+
+    const metricsFromBingRow = (row: {
+      readonly clicks: number
+      readonly impressions: number
+      readonly position: number
+    }): Metrics => ({
+      impressions: row.impressions,
+      clicks: row.clicks,
+      ctr: row.impressions > 0 ? row.clicks / row.impressions : 0,
+      position: row.position,
+    })
+
+    const keywordWindowsFor = (
+      entries: ReadonlyArray<RegistryEntry>,
+    ): Effect.Effect<ReadonlyArray<KeywordEngineWindow>, StorageError> =>
+      Effect.gen(function* () {
+        const latestDate = yield* storage.latestSnapshotDate()
+        const bingCapture = yield* storage.bingQueryWindowLatest()
+        const bingByQuery = new Map(
+          bingCapture?.rows.map((row) => [row.query.toLowerCase(), row]) ?? [],
+        )
+        const keywordEntries = entries.filter((entry) => entry.keyword.trim())
+        if (!latestDate) {
+          return keywordEntries.map((entry) => ({
+            keyword: entry.keyword,
+            targetUrl: entry.targetUrl,
+            google7d: tidy(zeroMetrics),
+            bing7d: null,
+          }))
+        }
+        const start7 = dateDaysBefore(latestDate, 6)
+        return yield* Effect.forEach(keywordEntries, (entry) =>
+          Effect.gen(function* () {
+            const google7d = yield* storage.googleKeywordMetricsBetween(
+              `${origin}${entry.targetUrl}`,
+              entry.keyword,
+              start7,
+              latestDate,
+            )
+            const bingRow = bingCapture
+              ? bingByQuery.get(entry.keyword.toLowerCase())
+              : undefined
+            return {
+              keyword: entry.keyword,
+              targetUrl: entry.targetUrl,
+              google7d: tidy(google7d),
+              bing7d: bingCapture
+                ? tidy(bingRow ? metricsFromBingRow(bingRow) : zeroMetrics)
+                : null,
+            }
+          }),
+        )
+      })
+
+    const keywordWindowForEntry = (
+      windows: ReadonlyArray<KeywordEngineWindow>,
+      entry: RegistryEntry,
+    ) =>
+      windows.find(
+        (window) =>
+          window.targetUrl === entry.targetUrl &&
+          window.keyword.toLowerCase() === entry.keyword.toLowerCase(),
+      )
 
     // A log entry's before/after readout (see LogReadout). Windows are symmetric
     // 28/28 around the action date; the after window shrinks to available data
@@ -554,6 +618,7 @@ export const layer = Layer.effect(
           Effect.gen(function* () {
             const entries = yield* registry.loadRegistry()
             const targets = yield* storage.registryTargetProgress(entries)
+            const keywordWindows = yield* keywordWindowsFor(entries)
             return {
               targets: targets.map((progress) => {
                 const first = progress.entries[0]!
@@ -575,12 +640,17 @@ export const layer = Layer.effect(
                   baseline: progress.baseline ? tidy(progress.baseline) : null,
                   keywords: progress.entries
                     .filter((entry) => entry.keyword.trim())
-                    .map((entry) => ({
-                      keyword: entry.keyword,
-                      cluster: entry.cluster,
-                      intent: entry.intent,
-                      country: entry.country,
-                    })),
+                    .map((entry) => {
+                      const window = keywordWindowForEntry(keywordWindows, entry)
+                      return {
+                        keyword: entry.keyword,
+                        cluster: entry.cluster,
+                        intent: entry.intent,
+                        country: entry.country,
+                        google7d: window?.google7d ?? tidy(zeroMetrics),
+                        bing7d: window?.bing7d ?? null,
+                      }
+                    }),
                 }
               }),
             }
@@ -762,6 +832,7 @@ export const layer = Layer.effect(
                   ),
             )
             const totals = yield* engineTotals()
+            const keywordWindows = yield* keywordWindowsFor(entries)
             return {
               summary,
               registry: entries,
@@ -774,6 +845,7 @@ export const layer = Layer.effect(
               recentActions,
               performances,
               engineTotals: totals,
+              keywordWindows,
             }
           }),
         ),
@@ -820,6 +892,17 @@ export const tidyWindow = (window: {
 // Reduce a full-URL page to a site-relative path when it is on the active site.
 export const pathOf = (page: string, origin: string): string =>
   page.startsWith(origin) ? new URL(page).pathname : page
+
+export const bingInventoryKeywordNote =
+  "Bing has no page-level keyword data; figures cannot be attributed to inventory-only pages."
+
+const formatEngine7d = (label: string, metrics: TidyMetrics) =>
+  `${label}: ${metrics.impressions} impr · ${metrics.clicks} clk · pos ${label === "B" ? metrics.position.toFixed(0) : metrics.position.toFixed(1)}`
+
+export const keywordEngineLine = (window: KeywordEngineWindow): string =>
+  `${window.keyword} — ${formatEngine7d("G", window.google7d)} · ${
+    window.bing7d ? formatEngine7d("B", window.bing7d) : "B: —"
+  }`
 
 // A target's lifecycle phase for display (PAGE/LIVE/NONE/PRE/NEW).
 export const phaseFor = (progress: RegistryTargetProgress): string => {
