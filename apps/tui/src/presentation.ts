@@ -7,6 +7,8 @@
 // thread-local site context (`currentSiteOrigin()`). A remote-only client
 // has no such context, so the active origin is set explicitly via
 // `setActiveOrigin` whenever the active site changes (see tui.ts `inSite`).
+import { bold, dim, fg, StyledText, t } from "@opentui/core"
+
 import type {
   ActionKind,
   EngineTotals,
@@ -62,11 +64,17 @@ export const masterVisibleRowLimit = (
       - (options.extraChrome ?? 0),
   )
 
+/**
+ * Outer height of the Home engine strip when using real bordered BoxRenderables
+ * (same chrome as master/detail: single border + padding 1).
+ * Full: 2 border + 2 padding + title + 2 metric rows = 7.
+ * Collapsed: 2 border + 2 padding + 1 summary row = 5.
+ */
 export const homeCardStripHeight = (
   view: string,
   rendererHeight: number,
 ): number =>
-  view !== "home" ? 0 : rendererHeight >= 30 ? 5 : 1
+  view !== "home" ? 0 : rendererHeight >= 30 ? 7 : 5
 
 const formatCardCount = (value: number) =>
   value >= 10_000
@@ -77,80 +85,74 @@ const formatCardCount = (value: number) =>
 
 const formatCardPct = (ctr: number) => `${(ctr * 100).toFixed(1)}%`
 
+/** Compact window label so partial Bing windows still fit a narrow card. */
 const windowLabel = (window: EngineWindowTotals) =>
   window.daysCollected < window.windowDays
-    ? `${window.windowDays}d · ${window.daysCollected}d`
+    ? `${window.windowDays}d·${window.daysCollected}d`
     : `${window.windowDays}d`
 
-const cardColumn = (
-  title: string,
-  columnWidth: number,
-  formatValue: (window: EngineWindowTotals) => string,
-  google28: EngineWindowTotals,
-  bing28: EngineWindowTotals,
-  google7: EngineWindowTotals,
-  bing7: EngineWindowTotals,
-  collapsed: boolean,
-) => {
-  const label28 = windowLabel(bing28)
-  const inner = collapsed
-    ? `${label28} ${formatValue(google28)} G · ${formatValue(bing28)} B`
-    : [
-        `${label28.padEnd(6)} ${formatValue(google28).padStart(5)} G · ${formatValue(bing28).padStart(4)} B`,
-        `${"7d".padEnd(6)} ${formatValue(google7).padStart(5)} G · ${formatValue(bing7).padStart(4)} B`,
-      ].join("\n")
-  const titleLine = title.toUpperCase().slice(0, Math.max(4, columnWidth - 2))
-  if (collapsed) return `${titleLine}: ${inner}`
-  const top = `┌ ${titleLine}${"─".repeat(Math.max(0, columnWidth - titleLine.length - 1))}┐`
-  const body = inner.split("\n").map((line) => `│ ${line.padEnd(columnWidth - 2)} │`).join("\n")
-  const bottom = `└${"─".repeat(columnWidth - 2)}┘`
-  return [top, body, bottom].join("\n")
+/** Flatten StyledText for tests / plain-string asserts. */
+export const styledTextPlain = (text: StyledText): string =>
+  text.chunks.map((chunk) => chunk.text).join("")
+
+/** One engine pair: bold bright numbers, dim engine names. */
+const enginePairChunks = (google: string, bing: string, numberColor: string) => [
+  bold(fg(numberColor)(google)),
+  dim(" Google · "),
+  bold(fg(numberColor)(bing)),
+  dim(" Bing"),
+]
+
+export type HomeEngineCard = {
+  readonly title: string
+  readonly body: StyledText
 }
 
-export const formatHomeCardStrip = (
+/**
+ * Per-card copy for the three bordered Home KPI boxes.
+ * Numbers lead; window labels trail dim so the metrics read as the hierarchy.
+ */
+export const homeEngineCards = (
   totals: EngineTotals,
-  width: number,
-  rendererHeight: number,
-): string => {
-  const collapsed = rendererHeight < 30
-  const columnWidth = Math.max(18, Math.floor((width - 4) / 3))
-  const impressions = cardColumn(
-    "Impressions",
-    columnWidth,
-    (window) => formatCardCount(window.impressions),
-    totals.google.d28,
-    totals.bing.d28,
-    totals.google.d7,
-    totals.bing.d7,
-    collapsed,
-  )
-  const clicks = cardColumn(
-    "Clicks",
-    columnWidth,
-    (window) => formatCardCount(window.clicks),
-    totals.google.d28,
-    totals.bing.d28,
-    totals.google.d7,
-    totals.bing.d7,
-    collapsed,
-  )
-  const ctr = cardColumn(
-    "CTR",
-    columnWidth,
-    (window) => formatCardPct(window.ctr),
-    totals.google.d28,
-    totals.bing.d28,
-    totals.google.d7,
-    totals.bing.d7,
-    collapsed,
-  )
-  if (collapsed) return `${impressions}   ${clicks}   ${ctr}`
-  const lines = [0, 1, 2].map((index) =>
-    [impressions, clicks, ctr]
-      .map((card) => card.split("\n")[index] ?? "")
-      .join("  "),
-  )
-  return lines.join("\n")
+  collapsed: boolean,
+): readonly [HomeEngineCard, HomeEngineCard, HomeEngineCard] => {
+  const card = (
+    title: string,
+    formatValue: (window: EngineWindowTotals) => string,
+  ): HomeEngineCard => {
+    const label28 = windowLabel(totals.bing.d28)
+    const primary = [
+      ...enginePairChunks(
+        formatValue(totals.google.d28),
+        formatValue(totals.bing.d28),
+        "#F7FAFC",
+      ),
+      dim("  "),
+      dim(label28),
+    ]
+    if (collapsed) {
+      return { title: title.toUpperCase(), body: new StyledText(primary) }
+    }
+    return {
+      title: title.toUpperCase(),
+      body: new StyledText([
+        ...primary,
+        ...t`\n`.chunks,
+        ...enginePairChunks(
+          formatValue(totals.google.d7),
+          formatValue(totals.bing.d7),
+          "#A0AEC0",
+        ),
+        dim("  "),
+        dim("7d"),
+      ]),
+    }
+  }
+  return [
+    card("Impressions", (window) => formatCardCount(window.impressions)),
+    card("Clicks", (window) => formatCardCount(window.clicks)),
+    card("CTR", (window) => formatCardPct(window.ctr)),
+  ]
 }
 
 // The active site's canonical origin, refreshed on startup and site switch.
@@ -238,31 +240,39 @@ export const logKindLabel = (kind: LogKind): string => kind === "note" ? "Note" 
 export const bingInventoryKeywordNote =
   "Bing has no page-level keyword data; figures cannot be attributed to inventory-only pages."
 
-const formatEngine7d = (label: string, metrics: TidyMetrics) =>
-  `${label}: ${metrics.impressions} impr · ${metrics.clicks} clk · pos ${
-    label === "B" ? metrics.position.toFixed(0) : metrics.position.toFixed(1)
-  }`
+/** Compact 7d figures: impressions/clicks/ctr% (pos). */
+const formatEngineCompact = (
+  label: string,
+  metrics: TidyMetrics,
+  positionDigits: number,
+) =>
+  `${label}: ${metrics.impressions}/${metrics.clicks}/${(metrics.ctr * 100).toFixed(1)}% (pos ${metrics.position.toFixed(positionDigits)})`
 
-export const keywordEngineLine = (window: KeywordEngineWindow): string =>
-  `${window.keyword} — ${formatEngine7d("G", window.google7d)} · ${
-    window.bing7d ? formatEngine7d("B", window.bing7d) : "B: —"
-  }`
-
-export const queryEngineLine = (
-  query: string,
+/** Shared Google/Bing metrics line used by registry keywords and query detail. */
+export const engineMetricsLine = (
   google: TidyMetrics | null,
   bing: TidyMetrics | null,
 ): string =>
-  `${query} — ${google ? formatEngine7d("G", google) : "G: —"} · ${
-    bing ? formatEngine7d("B", bing) : "B: —"
-  }`
+  [
+    google ? formatEngineCompact("Google", google, 1) : "Google: —",
+    bing ? formatEngineCompact("Bing", bing, 0) : "Bing: —",
+  ].join(" - ")
 
-export const queryMetricSummary = (label: string, metrics: TidyMetrics | null) =>
-  metrics
-    ? `${label}: ${metrics.impressions} impressions · ${metrics.clicks} clicks · ${(metrics.ctr * 100).toFixed(1)}% CTR · position ${
-        label === "Bing" ? metrics.position.toFixed(0) : metrics.position.toFixed(1)
-      }`
-    : `${label}: no data in this window`
+export type KeywordEngineBlock = {
+  readonly title: string
+  readonly metrics: string
+}
+
+/** Registry keyword block: title on its own line, engines on the next. */
+export const keywordEngineBlock = (window: KeywordEngineWindow): KeywordEngineBlock => ({
+  title: window.keyword,
+  metrics: engineMetricsLine(window.google7d, window.bing7d),
+})
+
+export const keywordEngineLine = (window: KeywordEngineWindow): string => {
+  const block = keywordEngineBlock(window)
+  return `${block.title}\n${block.metrics}`
+}
 
 export const sparkline = (values: readonly number[], lowerIsBetter = false) => {
   const observed = values.filter((value) => value > 0)

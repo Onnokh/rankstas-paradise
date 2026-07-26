@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { BoxRenderable, TextRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 
-import { detailSummaryHeight, formatBingIndexLine, formatHomeCardStrip, homeCardStripHeight, masterVisibleRowLimit } from "./presentation.ts"
+import { detailSummaryHeight, engineMetricsLine, formatBingIndexLine, homeCardStripHeight, homeEngineCards, keywordEngineBlock, masterVisibleRowLimit, styledTextPlain } from "./presentation.ts"
 import type { EngineTotals } from "./types.ts"
 
 const renderRegistrySummary = async (
@@ -93,24 +93,51 @@ const sampleTotals: EngineTotals = {
   },
 }
 
-test("homeCardStripHeight is five lines on home when the terminal is tall enough", () => {
-  expect(homeCardStripHeight("home", 40)).toBe(5)
-  expect(homeCardStripHeight("home", 29)).toBe(1)
+test("homeCardStripHeight accounts for bordered Box chrome on home", () => {
+  expect(homeCardStripHeight("home", 40)).toBe(7)
+  expect(homeCardStripHeight("home", 29)).toBe(5)
   expect(homeCardStripHeight("registry", 40)).toBe(0)
 })
 
-test("formatHomeCardStrip labels a partial Bing 28d window", () => {
-  const strip = formatHomeCardStrip(sampleTotals, 120, 40)
-  expect(strip).toContain("28d · 8d")
-  expect(strip).toContain("368")
-  expect(strip).toContain("70")
+test("homeEngineCards lead with bold numbers and trail window labels", () => {
+  const [impressions, clicks, ctr] = homeEngineCards(sampleTotals, false)
+  expect(impressions.title).toBe("IMPRESSIONS")
+  expect(clicks.title).toBe("CLICKS")
+  expect(ctr.title).toBe("CTR")
+  const body = styledTextPlain(impressions.body)
+  expect(body).toContain("368")
+  expect(body).toContain("70")
+  expect(body).toContain("28d·8d")
+  expect(body.split("\n")).toHaveLength(2)
+  expect(body.indexOf("368")).toBeLessThan(body.indexOf("28d·8d"))
 })
 
-test("formatHomeCardStrip collapses to one line on short terminals", () => {
-  const strip = formatHomeCardStrip(sampleTotals, 120, 24)
-  expect(strip.split("\n")).toHaveLength(1)
-  expect(strip).toContain("IMPRESSIONS")
-  expect(strip).toContain("CTR")
+test("homeEngineCards collapse to a single body row on short terminals", () => {
+  const [impressions] = homeEngineCards(sampleTotals, true)
+  const body = styledTextPlain(impressions.body)
+  expect(body.split("\n")).toHaveLength(1)
+  expect(body).toContain("368")
+  expect(body).toContain("28d·8d")
+  expect(body.indexOf("368")).toBeLessThan(body.indexOf("28d·8d"))
+})
+
+test("keywordEngineBlock separates white title from compact engine metrics", () => {
+  const block = keywordEngineBlock({
+    keyword: "Chrome read later extension",
+    targetUrl: "/chrome-read-later",
+    google7d: { impressions: 12, clicks: 1, ctr: 0.083, position: 8.4 },
+    bing7d: { impressions: 3, clicks: 0, ctr: 0, position: 11 },
+  })
+  expect(block.title).toBe("Chrome read later extension")
+  expect(block.metrics).toBe("Google: 12/1/8.3% (pos 8.4) - Bing: 3/0/0.0% (pos 11)")
+})
+
+test("engineMetricsLine matches the compact query/keyword format", () => {
+  expect(engineMetricsLine(
+    { impressions: 199, clicks: 51, ctr: 0.256, position: 2.4 },
+    { impressions: 20, clicks: 6, ctr: 0.3, position: 5 },
+  )).toBe("Google: 199/51/25.6% (pos 2.4) - Bing: 20/6/30.0% (pos 5)")
+  expect(engineMetricsLine(null, null)).toBe("Google: — - Bing: —")
 })
 
 test("registry detail summary leaves room for the Google index line", async () => {

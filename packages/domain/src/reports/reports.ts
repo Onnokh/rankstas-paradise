@@ -1033,13 +1033,18 @@ export const pathOf = (page: string, origin: string): string =>
 export const bingInventoryKeywordNote =
   "Bing has no page-level keyword data; figures cannot be attributed to inventory-only pages."
 
-const formatEngine7d = (label: string, metrics: TidyMetrics) =>
-  `${label}: ${metrics.impressions} impr · ${metrics.clicks} clk · pos ${label === "B" ? metrics.position.toFixed(0) : metrics.position.toFixed(1)}`
+const formatEngineCompact = (
+  label: string,
+  metrics: TidyMetrics,
+  positionDigits: number,
+) =>
+  `${label}: ${metrics.impressions}/${metrics.clicks}/${(metrics.ctr * 100).toFixed(1)}% (pos ${metrics.position.toFixed(positionDigits)})`
 
 export const keywordEngineLine = (window: KeywordEngineWindow): string =>
-  `${window.keyword} — ${formatEngine7d("G", window.google7d)} · ${
-    window.bing7d ? formatEngine7d("B", window.bing7d) : "B: —"
-  }`
+  `${window.keyword}\n${[
+    formatEngineCompact("Google", window.google7d, 1),
+    window.bing7d ? formatEngineCompact("Bing", window.bing7d, 0) : "Bing: —",
+  ].join(" - ")}`
 
 // A target's lifecycle phase for display (PAGE/LIVE/NONE/PRE/NEW).
 export const phaseFor = (progress: RegistryTargetProgress): string => {

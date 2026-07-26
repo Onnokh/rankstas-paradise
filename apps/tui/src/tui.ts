@@ -1,6 +1,6 @@
-import { BoxRenderable, createCliRenderer, fg, StyledText, t, TextRenderable } from "@opentui/core"
+import { BoxRenderable, createCliRenderer, dim, fg, StyledText, t, TextRenderable } from "@opentui/core"
 
-import { bingInventoryKeywordNote, detailSummaryHeight, formatBingIndexLine, formatHomeCardStrip, homeCardStripHeight, keywordEngineLine, logKindLabel, masterVisibleRowLimit, opportunityLabels, phaseFor, queryEngineLine, queryMetricSummary, readableIntent, setActiveOrigin, shortAction, signalExplanation, signalMeaning, signalReason, sparkline } from "./presentation.ts"
+import { bingInventoryKeywordNote, detailSummaryHeight, engineMetricsLine, formatBingIndexLine, homeCardStripHeight, homeEngineCards, keywordEngineBlock, logKindLabel, masterVisibleRowLimit, opportunityLabels, phaseFor, readableIntent, setActiveOrigin, shortAction, signalExplanation, signalMeaning, signalReason, sparkline } from "./presentation.ts"
 import { loadSiteCatalog, loadTuiData, type TuiData } from "./tuiData.ts"
 import type { HistoryDay, LogFeedEntry, LogReadout, OpportunityKind, OpportunitySignal, QueriesRow, RegistryEntry, RegistryTargetProgress, Site } from "./types.ts"
 
@@ -204,7 +204,26 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
   const app = new BoxRenderable(renderer, { width: "100%", height: "100%", flexDirection: "column", padding: 1, gap: 1 })
   const header = new TextRenderable(renderer, { height: 1, flexShrink: 0, overflow: "hidden", content: "", fg: "#F7FAFC", attributes: 1 })
   const nav = new TextRenderable(renderer, { height: 1, flexShrink: 0, overflow: "hidden", content: "", fg: "#CBD5E0" })
-  const cardStrip = new TextRenderable(renderer, { height: 0, flexShrink: 0, overflow: "hidden", content: "", fg: "#E2E8F0" })
+  // Home KPI strip — real bordered boxes like master/detail (not unicode frames in text).
+  const cardStrip = new BoxRenderable(renderer, { height: 0, flexShrink: 0, flexDirection: "row", gap: 1, overflow: "hidden" })
+  const makeEngineCard = () => {
+    const box = new BoxRenderable(renderer, {
+      flexGrow: 1,
+      minWidth: 0,
+      overflow: "hidden",
+      borderStyle: "single",
+      borderColor: "#4A5568",
+      padding: 1,
+      flexDirection: "column",
+    })
+    const title = new TextRenderable(renderer, { height: 1, flexShrink: 0, content: "", fg: "#F6AD55", attributes: 1 })
+    const body = new TextRenderable(renderer, { flexGrow: 1, minHeight: 0, overflow: "hidden", content: "", fg: "#E2E8F0" })
+    box.add(title)
+    box.add(body)
+    return { box, title, body }
+  }
+  const engineCards = [makeEngineCard(), makeEngineCard(), makeEngineCard()] as const
+  for (const card of engineCards) cardStrip.add(card.box)
   const split = new BoxRenderable(renderer, { flexDirection: "row", flexGrow: 1, gap: 1 })
   const master = new BoxRenderable(renderer, { width: "47%", flexShrink: 0, borderStyle: "single", borderColor: "#4A5568", padding: 1, flexDirection: "column" })
   const detail = new BoxRenderable(renderer, { flexGrow: 1, minWidth: 0, overflow: "hidden", borderStyle: "single", borderColor: "#4A5568", padding: 1, flexDirection: "column" })
@@ -318,7 +337,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
     detailGuideBody.content = ""
     const showBottomPanel = (view === "registry" && data.registryTargets.length > 0) || view === "history"
     detailBottom.height = showBottomPanel
-      ? view === "history" ? (renderer.height >= 32 ? 14 : 8) : (renderer.height >= 32 ? 8 : 5)
+      ? view === "history" ? (renderer.height >= 32 ? 14 : 8) : (renderer.height >= 32 ? 14 : 10)
       : 0
     detailBottom.border = showBottomPanel ? ["top"] : false
     const site = sites[siteIndex]!
@@ -326,9 +345,20 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
     nav.content = views.map((item, index) => `${index === activeView ? "[" : " "}${item.key} ${item.label}${index === activeView ? "]" : " "}`).join("  ")
     const stripHeight = homeCardStripHeight(view, renderer.height)
     cardStrip.height = stripHeight
-    cardStrip.content = stripHeight > 0
-      ? formatHomeCardStrip(data.engineTotals, renderer.width, renderer.height)
-      : ""
+    if (stripHeight > 0) {
+      const cards = homeEngineCards(data.engineTotals, renderer.height < 30)
+      for (const [index, card] of engineCards.entries()) {
+        card.box.border = true
+        card.title.content = cards[index]!.title
+        card.body.content = cards[index]!.body
+      }
+    } else {
+      for (const card of engineCards) {
+        card.box.border = false
+        card.title.content = ""
+        card.body.content = ""
+      }
+    }
     if (view === "home") {
       selected = Math.max(0, Math.min(selected, homeCategories.length - 1))
       const grouped = new Map(opportunityKinds.map((kind) => [kind, data.digest.signals.filter((signal) => signal.kind === kind)]))
@@ -546,17 +576,12 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
       const row = item as QueriesRow
       const report = data.queries
       detailSummaryTitle.content = row.query
-      detailSummaryBody.content = [
-        queryEngineLine(row.query, row.google, row.bing),
-        `Mapped target: ${row.mappedTarget ?? "Unmapped"}`,
-        `Google page: ${row.page ?? "—"}`,
-        `Window: Google ${report.window.google.start ?? "—"} → ${report.window.google.end ?? "—"} · Bing capture ${report.window.bing.capturedDate ?? "—"}`,
-      ].join("\n")
-      detailTitle.content = "ENGINE COMPARISON · 7 DAYS"
+      detailSummaryBody.content = t`${dim(engineMetricsLine(row.google, row.bing))}
+Mapped target: ${row.mappedTarget ?? "Unmapped"}
+Google page: ${row.page ?? "—"}
+Window: Google ${report.window.google.start ?? "—"} → ${report.window.google.end ?? "—"} · Bing capture ${report.window.bing.capturedDate ?? "—"}`
+      detailTitle.content = ""
       detailBody.content = [
-        queryMetricSummary("Google", row.google),
-        queryMetricSummary("Bing", row.bing),
-        "",
         report.note ?? "Google figures are aggregated to a matched 7-day window. Bing figures come from the newest rolling capture only.",
         row.page ? "Press Enter to open the Google ranking page." : "No Google ranking page is available for this query in the current window.",
       ].join("\n")
@@ -638,11 +663,26 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
       detailBody.content = t`${measurementStatus}\n\n${fg("#F7FAFC")("WHY THIS IS AN OPPORTUNITY")}\n${entry.whyOpportunity || "No opportunity rationale has been recorded for this page."}\n\n${performanceDetails}\n\n${fg("#F7FAFC")(activityDetails)}`
       detailBottomTitle.content = `KEYWORDS · ${keywordEntries.length}`
       const windowsForTarget = data.keywordWindows.filter((window) => window.targetUrl === progress.targetUrl)
-      detailBottomBody.content = inventoryOnly
-        ? `No keyword target assigned; this page is tracked as sitemap inventory.\n\n${bingInventoryKeywordNote}`
-        : keywordEntries.length > 0
-          ? keywordEntries.map((mapped, index) => { const window = windowsForTarget.find((candidate) => candidate.keyword.toLowerCase() === mapped.keyword.toLowerCase()); return `${index + 1}. ${window ? keywordEngineLine(window) : mapped.keyword}` }).join("\n")
-          : "No keyword target assigned; this page is tracked as sitemap inventory."
+      if (inventoryOnly) {
+        detailBottomBody.content = `No keyword target assigned; this page is tracked as sitemap inventory.\n\n${bingInventoryKeywordNote}`
+      } else if (keywordEntries.length === 0) {
+        detailBottomBody.content = "No keyword target assigned; this page is tracked as sitemap inventory."
+      } else {
+        const chunks = []
+        for (const [index, mapped] of keywordEntries.entries()) {
+          if (index > 0) chunks.push(...t`\n`.chunks)
+          const window = windowsForTarget.find(
+            (candidate) => candidate.keyword.toLowerCase() === mapped.keyword.toLowerCase(),
+          )
+          if (window) {
+            const block = keywordEngineBlock(window)
+            chunks.push(...t`${fg("#F7FAFC")(block.title)}\n${dim(block.metrics)}`.chunks)
+          } else {
+            chunks.push(...t`${fg("#F7FAFC")(mapped.keyword)}`.chunks)
+          }
+        }
+        detailBottomBody.content = new StyledText(chunks)
+      }
     }
     const legend = view === "registry"
       ? "   ·   Dim rows: Google reports this page is not indexed."
