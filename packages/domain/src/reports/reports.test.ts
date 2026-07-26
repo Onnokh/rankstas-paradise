@@ -501,14 +501,13 @@ test("pageReport rejects a non-slash path", async () => {
   expect(exit._tag).toBe("Failure")
 })
 
-test("queriesReport excludes brand queries by default", async () => {
+test("queriesReport excludes brand queries by default for both engines", async () => {
   const report = await run(Reports.use.queriesReport())
+  expect(report.window.days).toBe(7)
   expect(report.queries.length).toBeGreaterThan(0)
-  // "sleevy chrome extension" is a brand query and must be filtered out.
   expect(
     report.queries.some((query) => query.query === "sleevy chrome extension"),
   ).toBe(false)
-  // No returned query is flagged as brand.
   expect(report.queries.every((query) => query.brand === false)).toBe(true)
 })
 
@@ -516,6 +515,57 @@ test("queriesReport includes brand queries when requested", async () => {
   const report = await run(Reports.use.queriesReport({ includeBrand: true }))
   expect(
     report.queries.some((query) => query.query === "sleevy chrome extension"),
+  ).toBe(true)
+})
+
+test("queriesReport outer-joins google-only and bing-only queries", async () => {
+  await runtime.runPromise(
+    Storage.use.saveBingQueryWindow("2026-07-12", [
+      { query: "pocket alternative", clicks: 3, impressions: 12, position: 5 },
+      { query: "chrome read later extension", clicks: 0, impressions: 4, position: 9 },
+      { query: "bing only query", clicks: 2, impressions: 8, position: 11 },
+    ]),
+  )
+  const report = await run(Reports.use.queriesReport())
+  const bingOnly = report.queries.find((row) => row.query === "bing only query")
+  expect(bingOnly?.google).toBeNull()
+  expect(bingOnly?.bing?.clicks).toBe(2)
+  const googleOnly = report.queries.find((row) => row.query === "raycast save links")
+  expect(googleOnly?.google?.impressions).toBeGreaterThan(0)
+  expect(googleOnly?.bing).toBeNull()
+  await runtime.runPromise(
+    Storage.use.saveBingQueryWindow("2026-07-12", [
+      { query: "pocket alternative", clicks: 3, impressions: 12, position: 5 },
+      { query: "chrome read later extension", clicks: 0, impressions: 4, position: 9 },
+    ]),
+  )
+})
+
+test("queriesReport reads the newest Bing capture only", async () => {
+  const report = await run(Reports.use.queriesReport())
+  const pocket = report.queries.find((row) => row.query === "pocket alternative")
+  expect(pocket?.bing?.clicks).toBe(3)
+  expect(pocket?.bing?.impressions).toBe(12)
+  expect(report.window.bing.capturedDate).toBe("2026-07-12")
+})
+
+test("queriesReport collapses Google to query level across pages", async () => {
+  const report = await run(Reports.use.queriesReport())
+  const readLater = report.queries.filter((row) => row.query === "read later app")
+  expect(readLater).toHaveLength(1)
+  expect(readLater[0]?.google?.impressions).toBeGreaterThan(31)
+})
+
+test("queriesReport page option scopes Google and omits Bing with a note", async () => {
+  const report = await run(
+    Reports.use.queriesReport({ page: "/chrome-extension" }),
+  )
+  expect(report.unsupported?.bing).toEqual(["page"])
+  expect(report.note).toContain("Bing cannot report page-scoped")
+  expect(report.queries.every((row) => row.bing === null)).toBe(true)
+  expect(report.queries.every((row) => row.page === "/chrome-extension")).toBe(true)
+  expect(
+    report.queries.some((row) => row.query === "chrome read later extension"),
   ).toBe(true)
 })
 

@@ -248,6 +248,22 @@ export const keywordEngineLine = (window: KeywordEngineWindow): string =>
     window.bing7d ? formatEngine7d("B", window.bing7d) : "B: —"
   }`
 
+export const queryEngineLine = (
+  query: string,
+  google: TidyMetrics | null,
+  bing: TidyMetrics | null,
+): string =>
+  `${query} — ${google ? formatEngine7d("G", google) : "G: —"} · ${
+    bing ? formatEngine7d("B", bing) : "B: —"
+  }`
+
+export const queryMetricSummary = (label: string, metrics: TidyMetrics | null) =>
+  metrics
+    ? `${label}: ${metrics.impressions} impressions · ${metrics.clicks} clicks · ${(metrics.ctr * 100).toFixed(1)}% CTR · position ${
+        label === "Bing" ? metrics.position.toFixed(0) : metrics.position.toFixed(1)
+      }`
+    : `${label}: no data in this window`
+
 export const sparkline = (values: readonly number[], lowerIsBetter = false) => {
   const observed = values.filter((value) => value > 0)
   if (observed.length === 0) return "·".repeat(values.length)

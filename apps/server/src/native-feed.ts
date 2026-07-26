@@ -53,7 +53,7 @@ import {
   type SnapshotSummary,
 } from "@rp/domain/storage/schema"
 
-export type FeedView = "home" | "opportunities" | "history" | "registry" | "log"
+export type FeedView = "home" | "opportunities" | "history" | "registry" | "log" | "queries"
 
 type Tone = "up" | "down" | "flat" | "warn" | ""
 
@@ -371,6 +371,95 @@ const opportunitiesFeed = Effect.gen(function* () {
   return document(summary, debug, siteKpis(history56), ["TYPE", "QUERY", "IMPR", "CLICKS", "POS", "SCORE"], rows)
 })
 
+const engineMetricCards = (
+  label: string,
+  metrics: Metrics | null,
+  integerPosition = false,
+): DetailNode[] =>
+  metrics
+    ? [
+        {
+          kind: "dmetric",
+          label: `${label} impressions`,
+          value: String(metrics.impressions),
+        },
+        {
+          kind: "dmetric",
+          label: `${label} clicks`,
+          value: String(metrics.clicks),
+        },
+        {
+          kind: "dkv",
+          label: `${label} CTR`,
+          value: pct(metrics.ctr),
+        },
+        {
+          kind: "dkv",
+          label: `${label} position`,
+          value:
+            metrics.position > 0
+              ? integerPosition
+                ? metrics.position.toFixed(0)
+                : metrics.position.toFixed(1)
+              : "—",
+        },
+      ]
+    : [{ kind: "dinfo", text: `${label}: no data in this window.` }]
+
+const queriesFeed = Effect.gen(function* () {
+  const summary = yield* Storage.use.snapshotSummary()
+  const debug = yield* CurrentSiteDebug
+  const origin = yield* CurrentSiteOrigin
+  const report = yield* Reports.use.queriesReport()
+  const meta: Meta[] = [
+    {
+      label: "Window",
+      value: report.window.google.start && report.window.google.end
+        ? `${shortDate(report.window.google.start)} – ${shortDate(report.window.google.end)}`
+        : "—",
+    },
+    {
+      label: "Bing capture",
+      value: report.window.bing.capturedDate
+        ? shortDate(report.window.bing.capturedDate)
+        : "—",
+    },
+    { label: "Queries", value: String(report.queries.length) },
+    { label: "Engine match", value: "Google 7d · Bing rolling window" },
+  ]
+  const rows: FeedRow[] = report.queries.map((row, index) => ({
+    id: index,
+    columns: [
+      row.query,
+      row.page ?? "—",
+      row.google?.impressions ?? "—",
+      row.bing?.impressions ?? "—",
+      row.google?.clicks ?? "—",
+      row.bing?.clicks ?? "—",
+    ],
+    url: row.page ? `${origin}${row.page}` : "",
+    icon: "search",
+    tone: "",
+    nodes: [
+      title(row.query),
+      { kind: "dkv", label: "Mapped target", value: row.mappedTarget ?? "Unmapped" },
+      { kind: "dkv", label: "Google page", value: row.page ?? "—" },
+      sect("Google · 7 days"),
+      ...engineMetricCards("Google", row.google),
+      sect("Bing · rolling window"),
+      ...engineMetricCards("Bing", row.bing, true),
+      ...(report.note ? [info(report.note)] : []),
+    ],
+  }))
+  return document(
+    summary,
+    debug,
+    meta,
+    ["QUERY", "PAGE", "G IMPR", "B IMPR", "G CLK", "B CLK"],
+    rows,
+  )
+})
+
 const historyFeed = Effect.gen(function* () {
   const summary = yield* Storage.use.snapshotSummary()
   const debug = yield* CurrentSiteDebug
@@ -539,5 +628,7 @@ export const feedFor = (view: FeedView) => {
       return registryFeed
     case "log":
       return logView
+    case "queries":
+      return queriesFeed
   }
 }

@@ -7,7 +7,7 @@ import { expect, test } from "bun:test"
 import { Effect, Layer, ManagedRuntime, Schema } from "effect"
 
 import { ApiClient } from "@rp/api-client/client"
-import { DashboardSnapshot } from "@rp/api-client/schema"
+import { DashboardSnapshot, QueriesReport } from "@rp/api-client/schema"
 
 import { toTuiData } from "./tuiData.ts"
 
@@ -78,6 +78,10 @@ const snapshot = Schema.decodeUnknownSync(DashboardSnapshot)({
       indexStatus: "indexed",
       coverageState: "Submitted and indexed",
       inspectedAt: "2026-07-19",
+      bingInIndex: null,
+      bingDiscoveredAt: null,
+      bingLastCrawledAt: null,
+      bingInspectedAt: null,
     },
   ],
   logEntries: [
@@ -127,14 +131,33 @@ const snapshot = Schema.decodeUnknownSync(DashboardSnapshot)({
   keywordWindows: [],
 })
 
+const queries = Schema.decodeUnknownSync(QueriesReport)({
+  window: {
+    days: 7,
+    google: { start: "2026-07-14", end: "2026-07-20" },
+    bing: { capturedDate: "2026-07-20" },
+  },
+  queries: [
+    {
+      query: "widget guide",
+      brand: false,
+      mappedTarget: "/guide",
+      page: "/guide",
+      google: { impressions: 120, clicks: 4, ctr: 0.033, position: 8.2 },
+      bing: { impressions: 10, clicks: 1, ctr: 0.1, position: 6 },
+    },
+  ],
+})
+
 const mockLayer = Layer.mock(ApiClient.Service, {
   dashboard: () => Effect.succeed(snapshot),
+  queries: () => Effect.succeed(queries),
 })
 
 test("tuiData assembles the home payload from a mocked ApiClient", async () => {
   const runtime = ManagedRuntime.make(mockLayer)
   const raw = await runtime.runPromise(ApiClient.use.dashboard())
-  const data = toTuiData(raw)
+  const data = toTuiData(raw, queries)
 
   // Home view reads these directly.
   expect(data.summary.rows).toBe(42)
@@ -147,6 +170,7 @@ test("tuiData assembles the home payload from a mocked ApiClient", async () => {
   // back to the empty performance so the renderer never sees undefined.
   expect(data.performance("/guide", false).total.impressions).toBe(120)
   expect(data.performance("/missing", false).days).toEqual([])
+  expect(data.queries.queries[0]?.bing?.clicks).toBe(1)
 
   await runtime.dispose()
 })

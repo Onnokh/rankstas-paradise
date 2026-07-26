@@ -328,19 +328,29 @@ export interface PageReport extends Schema.Schema.Type<typeof PageReport> {}
 
 export const QueriesReport = Schema.Struct({
   window: Schema.Struct({
-    currentStart: Schema.NullOr(Schema.String),
-    currentEnd: Schema.NullOr(Schema.String),
-    previousStart: Schema.NullOr(Schema.String),
-    previousEnd: Schema.NullOr(Schema.String),
+    days: Schema.Literal(7),
+    google: Schema.Struct({
+      start: Schema.NullOr(Schema.String),
+      end: Schema.NullOr(Schema.String),
+    }),
+    bing: Schema.Struct({
+      capturedDate: Schema.NullOr(Schema.String),
+    }),
   }),
+  note: Schema.optional(Schema.String),
+  unsupported: Schema.optional(
+    Schema.Struct({
+      bing: Schema.Array(Schema.Literal("page")),
+    }),
+  ),
   queries: Schema.Array(
     Schema.Struct({
       query: Schema.String,
-      page: Schema.String,
       brand: Schema.Boolean,
       mappedTarget: Schema.NullOr(Schema.String),
-      current: TidyMetrics,
-      previous: Schema.NullOr(TidyMetrics),
+      page: Schema.NullOr(Schema.String),
+      google: Schema.NullOr(TidyMetrics),
+      bing: Schema.NullOr(TidyMetrics),
     }),
   ),
 }).annotate({ identifier: "QueriesReport" })

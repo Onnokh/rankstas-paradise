@@ -175,6 +175,7 @@ export const apiGroup = HttpApiGroup.make("api")
   .add(HttpApiEndpoint.get("tuiHistory", "/tui/history.txt", { query: { site: S } }))
   .add(HttpApiEndpoint.get("tuiRegistry", "/tui/registry.txt", { query: { site: S } }))
   .add(HttpApiEndpoint.get("tuiLog", "/tui/log.txt", { query: { site: S } }))
+  .add(HttpApiEndpoint.get("tuiQueries", "/tui/queries.txt", { query: { site: S } }))
 
 export const Api = HttpApi.make("rankstas-paradise").add(apiGroup)
 

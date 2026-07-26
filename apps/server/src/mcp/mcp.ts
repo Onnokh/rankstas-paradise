@@ -152,22 +152,22 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     "queries",
     {
       description:
-        "Top search queries, optionally scoped to a page, with brand and mapping flags.",
+        "Observed search queries with Google 7-day and Bing rolling-window metrics side by side. Bing never reports page-scoped traffic; use page only to filter Google.",
       inputSchema: {
         site,
-        page: z.string().optional().describe("Page path to scope queries to."),
+        page: z.string().optional().describe("Page path to scope Google queries to."),
         window: z
           .number()
           .int()
           .positive()
           .optional()
-          .describe("Window length in days (default 28)."),
+          .describe("Ignored — the report is locked to a matched 7-day Google window."),
         minImpressions: z
           .number()
           .int()
           .nonnegative()
           .optional()
-          .describe("Drop queries below this impression count."),
+          .describe("Drop queries below this impression count on either engine."),
         includeBrand: z
           .boolean()
           .optional()

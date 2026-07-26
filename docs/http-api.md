@@ -10,7 +10,7 @@
 | `GET /api/status` | `status` |
 | `GET /api/pages?window=N` | `pages --window N` |
 | `GET /api/page?path=/x` | `page /x` |
-| `GET /api/queries?page=&window=&min-impressions=&include-brand=true&limit=` | `queries …` |
+| `GET /api/queries?page=&window=&min-impressions=&include-brand=true&limit=` | dual-engine `queries` report (Google 7d + Bing rolling window; `window` is ignored) |
 | `GET /api/opportunities?kind=` | `opportunities --kind` |
 | `GET /api/registry` | `registry` |
 | `GET /api/log?path=` | `log list` |
@@ -45,7 +45,7 @@ app-core subset has no JSON parser:
 
 - `GET /sites.txt` — the site catalog.
 - `GET /pages.txt?site=<id>&window=N` — pipe-delimited page lines.
-- `GET /tui/{home,opportunities,history,registry,log}.txt?site=<id>` — the full
+- `GET /tui/{home,opportunities,history,registry,log,queries}.txt?site=<id>` — the full
   TUI-mirroring view feeds (tab-separated, typed detail nodes).
 
 These come from [apps/server/src/native-feed.ts](../apps/server/src/native-feed.ts). The complete wire grammar (line kinds, tones, slots) is documented in [native-app-contract.md](native-app-contract.md). All report formatting happens server-side; the native app only splits bytes.

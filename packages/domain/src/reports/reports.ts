@@ -557,14 +557,12 @@ export const layer = Layer.effect(
       queriesReport: (options = {}) =>
         wrap(
           Effect.gen(function* () {
+            const windowDays = 7
+            const pageScoped = options.page != null && options.page !== ""
+            const includeBrand = options.includeBrand === true
+            const minImpressions = options.minImpressions ?? 0
+            const limit = options.limit ?? 50
             const entries = yield* registry.loadRegistry()
-            const result = yield* storage.topQueries({
-              page: options.page ? `${origin}${options.page}` : undefined,
-              windowDays: options.windowDays ?? 28,
-              minImpressions: options.minImpressions ?? 0,
-              includeBrand: options.includeBrand === true,
-              limit: options.limit ?? 50,
-            })
             const keywordTargets = new Map(
               entries
                 .filter((entry) => entry.keyword.trim())
@@ -573,22 +571,104 @@ export const layer = Layer.effect(
                   entry.targetUrl,
                 ]),
             )
+            const googleResult = yield* storage.topQueries({
+              page: pageScoped ? `${origin}${options.page}` : undefined,
+              windowDays,
+              minImpressions: 0,
+              includeBrand,
+              limit: 10_000,
+            })
+            type GoogleRow = {
+              readonly query: string
+              readonly page: string
+              readonly metrics: Metrics
+            }
+            const googleByQuery = new Map<string, GoogleRow>()
+            for (const row of googleResult.rows) {
+              const key = row.query.toLowerCase()
+              const existing = googleByQuery.get(key)
+              if (!existing) {
+                googleByQuery.set(key, {
+                  query: row.query,
+                  page: row.page,
+                  metrics: row.current,
+                })
+                continue
+              }
+              if (pageScoped) continue
+              const page =
+                row.current.impressions > existing.metrics.impressions
+                  ? row.page
+                  : existing.page
+              googleByQuery.set(key, {
+                query: existing.query,
+                page,
+                metrics: mergeMetrics(existing.metrics, row.current),
+              })
+            }
+            const bingCapture = pageScoped
+              ? null
+              : yield* storage.bingQueryWindowLatest()
+            const bingByQuery = new Map<
+              string,
+              { readonly query: string; readonly metrics: Metrics }
+            >()
+            if (bingCapture) {
+              for (const row of bingCapture.rows) {
+                if (!includeBrand && isBrandQuery(row.query, brandTerms)) continue
+                bingByQuery.set(row.query.toLowerCase(), {
+                  query: row.query,
+                  metrics: metricsFromBingRow(row),
+                })
+              }
+            }
+            const allKeys = new Set([
+              ...googleByQuery.keys(),
+              ...bingByQuery.keys(),
+            ])
+            const impressionScore = (google: Metrics | null, bing: Metrics | null) =>
+              Math.max(google?.impressions ?? 0, bing?.impressions ?? 0)
+            const queries = [...allKeys]
+              .map((key) => {
+                const google = googleByQuery.get(key)
+                const bing = bingByQuery.get(key)
+                const query = google?.query ?? bing!.query
+                return {
+                  query,
+                  brand: isBrandQuery(query, brandTerms),
+                  mappedTarget: keywordTargets.get(key) ?? null,
+                  page: google ? pathOf(google.page, origin) : null,
+                  google: google ? tidy(google.metrics) : null,
+                  bing: pageScoped ? null : bing ? tidy(bing.metrics) : null,
+                }
+              })
+              .filter(
+                (row) => impressionScore(row.google, row.bing) >= minImpressions,
+              )
+              .sort(
+                (left, right) =>
+                  impressionScore(right.google, right.bing) -
+                  impressionScore(left.google, left.bing),
+              )
+              .slice(0, limit)
             return {
               window: {
-                currentStart: result.currentStart,
-                currentEnd: result.latestDate,
-                previousStart: result.previousStart,
-                previousEnd: result.previousEnd,
+                days: 7 as const,
+                google: {
+                  start: googleResult.currentStart,
+                  end: googleResult.latestDate,
+                },
+                bing: {
+                  capturedDate: bingCapture?.capturedDate ?? null,
+                },
               },
-              queries: result.rows.map((row) => ({
-                query: row.query,
-                page: pathOf(row.page, origin),
-                brand: isBrandQuery(row.query, brandTerms),
-                mappedTarget:
-                  keywordTargets.get(row.query.toLowerCase()) ?? null,
-                current: tidy(row.current),
-                previous: row.previous ? tidy(row.previous) : null,
-              })),
+              ...(pageScoped
+                ? {
+                    note: "Bing cannot report page-scoped query traffic; Bing metrics are omitted.",
+                    unsupported: { bing: ["page"] as const },
+                  }
+                : {}),
+              queries,
             }
           }),
         ),
@@ -922,6 +1002,19 @@ export const tidy = (metrics: Metrics): TidyMetrics => ({
   ctr: Number(metrics.ctr.toFixed(4)),
   position: Number(metrics.position.toFixed(1)),
 })
+
+const mergeMetrics = (left: Metrics, right: Metrics): Metrics => {
+  const impressions = left.impressions + right.impressions
+  const clicks = left.clicks + right.clicks
+  const weightedPosition =
+    left.position * left.impressions + right.position * right.impressions
+  return {
+    impressions,
+    clicks,
+    ctr: impressions > 0 ? clicks / impressions : 0,
+    position: impressions > 0 ? weightedPosition / impressions : 0,
+  }
+}
 
 export const tidyWindow = (window: {
   readonly current: Metrics
