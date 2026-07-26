@@ -255,6 +255,14 @@ export const SnapshotDateRange = Schema.Struct({
 export interface SnapshotDateRange
   extends Schema.Schema.Type<typeof SnapshotDateRange> {}
 
+export const BingSiteDailyDateRange = Schema.Struct({
+  first: Schema.NullOr(Schema.String),
+  last: Schema.NullOr(Schema.String),
+  count: Schema.Number,
+}).annotate({ identifier: "BingSiteDailyDateRange" })
+export interface BingSiteDailyDateRange
+  extends Schema.Schema.Type<typeof BingSiteDailyDateRange> {}
+
 export const BaselineCapture = Schema.Struct({
   targets: Schema.Number,
   windowStart: Schema.String,

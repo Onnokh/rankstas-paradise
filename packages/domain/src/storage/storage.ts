@@ -24,6 +24,7 @@ import { type RegistryEntry } from "../registry/schema.ts"
 import { serviceUse } from "../service-use.ts"
 import {
   type BaselineCapture,
+  type BingSiteDailyDateRange,
   type HistoryDay,
   type LogEntry,
   type LogEntryInput,
@@ -104,6 +105,16 @@ export interface Interface {
   ) => Effect.Effect<ReadonlyArray<string>, StorageError>
   readonly snapshotDateRange: () => Effect.Effect<
     SnapshotDateRange,
+    StorageError
+  >
+  readonly missingBingSiteDailyDates: (
+    candidates: ReadonlyArray<string>,
+  ) => Effect.Effect<ReadonlyArray<string>, StorageError>
+  readonly bingSyncedWithinHours: (
+    maxAgeHours: number,
+  ) => Effect.Effect<boolean, StorageError>
+  readonly bingSiteDailyDateRange: () => Effect.Effect<
+    BingSiteDailyDateRange,
     StorageError
   >
   readonly snapshotSummary: () => Effect.Effect<SnapshotSummary, StorageError>
@@ -1185,6 +1196,34 @@ export const layer = Layer.effect(
       return rows[0] ?? { first: null, last: null }
     })
 
+    const missingBingSiteDailyDatesI = (candidates: ReadonlyArray<string>) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{ date: string }>`select date from bing_site_daily`
+        const stored = new Set(rows.map((row) => row.date))
+        return [...new Set(candidates)].filter((date) => !stored.has(date))
+      })
+
+    const bingSyncedWithinHoursI = (maxAgeHours: number) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{ fresh: number }>`
+          select exists(
+            select 1 from bing_site_daily
+            where collected_at > datetime('now', ${`-${maxAgeHours} hours`})
+          ) as fresh`
+        return rows[0]?.fresh === 1
+      })
+
+    const bingSiteDailyDateRangeI = Effect.gen(function* () {
+      const rows = yield* sql<{
+        first: string | null
+        last: string | null
+        count: number
+      }>`
+        select min(date) as first, max(date) as last, count(*) as count
+        from bing_site_daily`
+      return rows[0] ?? { first: null, last: null, count: 0 }
+    })
+
     const snapshotSummaryI = Effect.gen(function* () {
       const rows = yield* sql<{ rows: number; dates: number }>`
         select (select count(*) from search_snapshot) as rows,
@@ -1233,6 +1272,14 @@ export const layer = Layer.effect(
           mapErr("recentlyInspectedBingUrls"),
         ),
       snapshotDateRange: () => snapshotDateRangeI.pipe(mapErr("snapshotDateRange")),
+      missingBingSiteDailyDates: (candidates) =>
+        missingBingSiteDailyDatesI(candidates).pipe(
+          mapErr("missingBingSiteDailyDates"),
+        ),
+      bingSyncedWithinHours: (maxAgeHours) =>
+        bingSyncedWithinHoursI(maxAgeHours).pipe(mapErr("bingSyncedWithinHours")),
+      bingSiteDailyDateRange: () =>
+        bingSiteDailyDateRangeI.pipe(mapErr("bingSiteDailyDateRange")),
       snapshotSummary: () => snapshotSummaryI.pipe(mapErr("snapshotSummary")),
       latestSnapshotDate: () =>
         latestSnapshotDateI.pipe(mapErr("latestSnapshotDate")),

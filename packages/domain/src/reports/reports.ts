@@ -5,9 +5,10 @@
 // Pure presentation helpers and shared copy live at the bottom as plain
 // exported functions/constants (no service, no site) so both frontends format
 // identically.
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Option } from "effect"
 
 import { isBrandQuery } from "../brand.ts"
+import { Config } from "../config/config.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { type RegistryEntry, type RegistryPatch } from "../registry/schema.ts"
 import { type RegistryError } from "../registry/schema.ts"
@@ -111,6 +112,7 @@ export const layer = Layer.effect(
     const storage = yield* Storage.Service
     const registry = yield* Registry.Service
     const sitemap = yield* Sitemap.Service
+    const config = yield* Config.Service
     const site = yield* CurrentSite.Service
     const resolved = yield* site.current()
     const origin = resolved.origin
@@ -321,6 +323,27 @@ export const layer = Layer.effect(
             )
             const actions = yield* storage.listLog()
             const keywords = entries.filter((entry) => entry.keyword.trim())
+            const bingKey = yield* config.bingApiKey()
+            const bing = Option.isNone(bingKey)
+              ? null
+              : yield* Effect.gen(function* () {
+                  const today = new Date().toISOString().slice(0, 10)
+                  const expectedEnd = dateDaysBefore(today, 2)
+                  const expectedStart = dateDaysBefore(expectedEnd, 7)
+                  const expectedDates = datesBetween(expectedStart, expectedEnd)
+                  const range = yield* storage.bingSiteDailyDateRange()
+                  const missingDates =
+                    yield* storage.missingBingSiteDailyDates(expectedDates)
+                  const syncedWithinHours =
+                    yield* storage.bingSyncedWithinHours(24)
+                  return {
+                    firstDate: range.first,
+                    lastDate: range.last,
+                    collectedDays: range.count,
+                    missingDates,
+                    syncedWithinHours,
+                  }
+                })
             return {
               data: {
                 firstDate: range.first,
@@ -340,6 +363,7 @@ export const layer = Layer.effect(
                 unmapped: unmapped.map((page) => page.path),
               },
               actions: actions.length,
+              bing,
             }
           }),
         ),
@@ -865,6 +889,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Storage.defaultLayer),
   Layer.provide(Registry.defaultLayer),
   Layer.provide(Sitemap.defaultLayer),
+  Layer.provide(Config.defaultLayer),
   Layer.provide(CurrentSite.defaultLayer),
 )
 
@@ -877,6 +902,17 @@ const dateDaysBefore = (date: string, days: number): string => {
   const value = new Date(`${date}T00:00:00.000Z`)
   value.setUTCDate(value.getUTCDate() - days)
   return value.toISOString().slice(0, 10)
+}
+
+const datesBetween = (start: string, end: string): ReadonlyArray<string> => {
+  const dates: Array<string> = []
+  const date = new Date(`${start}T00:00:00.000Z`)
+  const last = new Date(`${end}T00:00:00.000Z`)
+  while (date <= last) {
+    dates.push(date.toISOString().slice(0, 10))
+    date.setUTCDate(date.getUTCDate() + 1)
+  }
+  return dates
 }
 
 // Round a metric's ctr/position for display.

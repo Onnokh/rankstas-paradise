@@ -222,6 +222,15 @@ export const StatusReport = Schema.Struct({
     unmapped: Schema.Array(Schema.String),
   }),
   actions: Schema.Number,
+  bing: Schema.NullOr(
+    Schema.Struct({
+      firstDate: Schema.NullOr(Schema.String),
+      lastDate: Schema.NullOr(Schema.String),
+      collectedDays: Schema.Number,
+      missingDates: Schema.Array(Schema.String),
+      syncedWithinHours: Schema.Boolean,
+    }),
+  ),
 }).annotate({ identifier: "StatusReport" })
 export interface StatusReport extends Schema.Schema.Type<typeof StatusReport> {}
 

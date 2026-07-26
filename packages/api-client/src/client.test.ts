@@ -104,6 +104,7 @@ const statusBody = {
   registry: { targets: 3, keywords: 5, clusters: 2 },
   sitemap: { pages: 20, unmapped: ["/x"] },
   actions: 4,
+  bing: null,
 }
 
 const registryAddBody = {

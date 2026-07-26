@@ -85,6 +85,12 @@ test("empty database reads return zeroed/null shapes", async () => {
     first: null,
     last: null,
   })
+  expect(await run(Storage.use.bingSiteDailyDateRange())).toEqual({
+    first: null,
+    last: null,
+    count: 0,
+  })
+  expect(await run(Storage.use.bingSyncedWithinHours(24))).toBe(false)
   const digest = await run(Storage.use.opportunityDigest([]))
   expect(digest.latestDate).toBeNull()
   expect(digest.signals).toEqual([])
@@ -356,6 +362,30 @@ test("capturePageBaselines + registryProgress", async () => {
   expect(progress[0]?.state).toBe("measuring")
   expect(progress[0]?.baseline).not.toBeNull()
   expect(progress[0]?.target.impressions).toBe(80)
+})
+
+test("saveBingSiteDaily tracks coverage, freshness, and missing dates", async () => {
+  await run(
+    Storage.use.saveBingSiteDaily([
+      { date: "2024-01-10", clicks: 1, impressions: 10 },
+      { date: "2024-01-11", clicks: 2, impressions: 20 },
+    ]),
+  )
+  expect(await run(Storage.use.bingSiteDailyDateRange())).toEqual({
+    first: "2024-01-10",
+    last: "2024-01-11",
+    count: 2,
+  })
+  expect(
+    await run(
+      Storage.use.missingBingSiteDailyDates([
+        "2024-01-10",
+        "2024-01-11",
+        "2024-01-12",
+      ]),
+    ),
+  ).toEqual(["2024-01-12"])
+  expect(await run(Storage.use.bingSyncedWithinHours(24))).toBe(true)
 })
 
 test("saveBingUrlInfos upserts crawl status and respects freshness", async () => {

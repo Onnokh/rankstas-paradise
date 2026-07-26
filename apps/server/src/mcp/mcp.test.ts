@@ -39,6 +39,7 @@ const fakeStatus: StatusReport = {
   registry: { targets: 2, keywords: 3, clusters: 1 },
   sitemap: { pages: 5, unmapped: ["/orphan"] },
   actions: 4,
+  bing: null,
 }
 
 const fakeLogged: LogAddResult = {
