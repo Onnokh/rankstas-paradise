@@ -1,6 +1,7 @@
 // BingWebmaster service: the Bing Webmaster Tools API boundary for site-level
-// daily totals (GetRankAndTrafficStats). Auth is a single API key per user;
-// the active property comes from CurrentSite.origin.
+// daily totals (GetRankAndTrafficStats), query stats (GetQueryStats), and
+// per-URL crawl info (GetUrlInfo). Auth is a single API key per user; the
+// active property comes from CurrentSite.origin.
 import {
   Context,
   Duration,
@@ -24,6 +25,8 @@ import { serviceUse } from "../service-use.ts"
 import {
   type BingQueryWindowRow,
   type BingSiteDailyTotal,
+  type BingUrlInfo,
+  type BingUrlInfoInspection,
   BingAuthError,
   BingDecodeError,
   type BingError,
@@ -40,6 +43,9 @@ export interface Interface {
     ReadonlyArray<BingQueryWindowRow>,
     BingError
   >
+  readonly fetchUrlInfo: (
+    targetUrls: ReadonlyArray<string>,
+  ) => Effect.Effect<BingUrlInfoInspection, BingError>
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -52,6 +58,8 @@ const jsonApi = (method: string) =>
   `https://ssl.bing.com/webmaster/api.svc/json/${method}`
 
 const authErrorCodes = new Set([3, 7, 14])
+const urlInfoAuthErrorCodes = new Set([3, 14])
+const urlInfoConcurrency = 8
 
 const isTransientStatus = (status: number) => status === 429 || status >= 500
 const isOkStatus = (status: number) => status >= 200 && status < 300
@@ -67,11 +75,38 @@ const transientRetrySchedule = Schedule.exponential(
 
 // .NET JSON dates: "/Date(1784876400000-0700)/" — ms is UTC epoch; offset
 // is informational and already applied.
+const dotNetDatePattern = /^\/Date\((-?\d+)([+-]\d{4})?\)\/$/
+
 export const parseDotNetDate = (value: string): string => {
-  const match = /^\/Date\((\d+)([+-]\d{4})?\)\/$/.exec(value)
+  const match = dotNetDatePattern.exec(value)
   if (!match)
     throw new Error(`Not a .NET JSON date: ${value}`)
   return new Date(Number(match[1])).toISOString().slice(0, 10)
+}
+
+export const isNotInIndexSentinel = (
+  documentSize: number,
+  discoveryDate: string,
+): boolean => {
+  if (documentSize !== 0) return false
+  if (discoveryDate.startsWith("0001") || discoveryDate.includes("0001-01-01"))
+    return true
+  const match = dotNetDatePattern.exec(discoveryDate)
+  if (match) return new Date(Number(match[1])).getUTCFullYear() <= 1
+  try {
+    return parseDotNetDate(discoveryDate).startsWith("0001")
+  } catch {
+    return false
+  }
+}
+
+const optionalDotNetDate = (value: string | undefined): string | null => {
+  if (!value) return null
+  try {
+    return parseDotNetDate(value)
+  } catch {
+    return null
+  }
 }
 
 const BingTrafficRowRaw = Schema.Struct({
@@ -93,6 +128,17 @@ const BingQueryRowRaw = Schema.Struct({
 
 const BingQueryEnvelopeRaw = Schema.Struct({
   d: Schema.Array(BingQueryRowRaw),
+})
+
+const BingUrlInfoRowRaw = Schema.Struct({
+  DiscoveryDate: Schema.String,
+  LastCrawledDate: Schema.optional(Schema.String),
+  AnchorCount: Schema.Number,
+  DocumentSize: Schema.Number,
+})
+
+const BingUrlInfoEnvelopeRaw = Schema.Struct({
+  d: BingUrlInfoRowRaw,
 })
 
 const BingErrorBody = Schema.Struct({
@@ -256,6 +302,69 @@ export const layer = Layer.effect(
         }))
       })
 
+    const decodeUrlInfoResponse = (
+      targetUrl: string,
+      response: HttpClientResponse.HttpClientResponse,
+    ): Effect.Effect<BingUrlInfo, BingError> =>
+      Effect.gen(function* () {
+        const json = yield* readJson(response)
+        const errorBody = yield* Schema.decodeUnknownEffect(BingErrorBody)(
+          json,
+        ).pipe(Effect.option)
+        if (Option.isSome(errorBody)) {
+          const { ErrorCode, Message } = errorBody.value
+          if (urlInfoAuthErrorCodes.has(ErrorCode))
+            return yield* Effect.fail(
+              new BingAuthError({
+                message:
+                  Message ??
+                  `Bing Webmaster rejected the request (ErrorCode ${ErrorCode}).`,
+                errorCode: ErrorCode,
+              }),
+            )
+          return yield* Effect.fail(
+            new BingHttpError({
+              message:
+                Message ??
+                `Bing Webmaster returned ErrorCode ${ErrorCode} (HTTP ${response.status}).`,
+              status: response.status,
+            }),
+          )
+        }
+        yield* classifyErrorBody(json, response.status)
+        const envelope = yield* Schema.decodeUnknownEffect(
+          BingUrlInfoEnvelopeRaw,
+        )(json).pipe(
+          Effect.mapError(
+            (cause) =>
+              new BingDecodeError({
+                message:
+                  "The Bing Webmaster GetUrlInfo response did not match its expected shape.",
+                cause,
+              }),
+          ),
+        )
+        const row = envelope.d
+        if (isNotInIndexSentinel(row.DocumentSize, row.DiscoveryDate)) {
+          return {
+            targetUrl,
+            discoveredAt: null,
+            lastCrawledAt: null,
+            anchorCount: row.AnchorCount,
+            documentSize: row.DocumentSize,
+            inIndex: false,
+          }
+        }
+        return {
+          targetUrl,
+          discoveredAt: optionalDotNetDate(row.DiscoveryDate),
+          lastCrawledAt: optionalDotNetDate(row.LastCrawledDate),
+          anchorCount: row.AnchorCount,
+          documentSize: row.DocumentSize,
+          inIndex: true,
+        }
+      })
+
     const impl: Interface = {
       hasBingConnection: () =>
         config.bingApiKey().pipe(
@@ -270,6 +379,41 @@ export const layer = Layer.effect(
       fetchQueryWindow: Effect.fn("BingWebmaster.fetchQueryWindow")(() =>
         withApiKey("GetQueryStats", decodeQueryWindow),
       ),
+
+      fetchUrlInfo: Effect.fn("BingWebmaster.fetchUrlInfo")(function* (
+        targetUrls: ReadonlyArray<string>,
+      ) {
+        const key = yield* config.bingApiKey()
+        if (Option.isNone(key))
+          return yield* Effect.fail(
+            new BingAuthError({
+              message: "No Bing API key is configured.",
+            }),
+          )
+        const site = yield* currentSite.current()
+        const unique = [...new Set(targetUrls)]
+        const results = yield* Effect.forEach(
+          unique,
+          (targetUrl) =>
+            Effect.gen(function* () {
+              const request = HttpClientRequest.get(jsonApi("GetUrlInfo")).pipe(
+                HttpClientRequest.setUrlParams({
+                  apikey: Redacted.value(key.value),
+                  siteUrl: site.origin,
+                  url: targetUrl,
+                }),
+              )
+              const response = yield* executeWithRetry(request)
+              return yield* decodeUrlInfoResponse(targetUrl, response)
+            }).pipe(Effect.option),
+          { concurrency: urlInfoConcurrency },
+        )
+        const infos = results.filter(Option.isSome).map((result) => result.value)
+        return {
+          infos,
+          failed: results.length - infos.length,
+        } satisfies BingUrlInfoInspection
+      }),
     }
 
     return impl

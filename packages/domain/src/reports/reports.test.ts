@@ -368,6 +368,16 @@ beforeAll(async () => {
       yield* storage.saveBingQueryWindow("2026-07-10", [
         { query: "pocket alternative", clicks: 99, impressions: 999, position: 1 },
       ])
+      yield* storage.saveBingUrlInfos([
+        {
+          targetUrl: `${ORIGIN}/pocket-alternative`,
+          discoveredAt: "2024-03-01",
+          lastCrawledAt: "2024-06-15",
+          anchorCount: 2,
+          documentSize: 2048,
+          inIndex: true,
+        },
+      ])
     }),
   )
 }, 60_000)
@@ -428,6 +438,10 @@ test("pageReport returns path, verdict, and top queries for a mapped page", asyn
   )
   expect(pocket).toBeDefined()
   expect(pocket?.brand).toBe(false)
+  expect(report.bingInIndex).toBe(true)
+  expect(report.bingDiscoveredAt).toBe("2024-03-01")
+  expect(report.bingLastCrawledAt).toBe("2024-06-15")
+  expect(report.bingInspectedAt).not.toBeNull()
 })
 
 test("pageReport rejects a non-slash path", async () => {

@@ -1,6 +1,6 @@
 import { BoxRenderable, createCliRenderer, fg, StyledText, t, TextRenderable } from "@opentui/core"
 
-import { bingInventoryKeywordNote, detailSummaryHeight, formatHomeCardStrip, homeCardStripHeight, keywordEngineLine, logKindLabel, masterVisibleRowLimit, opportunityLabels, phaseFor, readableIntent, setActiveOrigin, shortAction, signalExplanation, signalMeaning, signalReason, sparkline } from "./presentation.ts"
+import { bingInventoryKeywordNote, detailSummaryHeight, formatBingIndexLine, formatHomeCardStrip, homeCardStripHeight, keywordEngineLine, logKindLabel, masterVisibleRowLimit, opportunityLabels, phaseFor, readableIntent, setActiveOrigin, shortAction, signalExplanation, signalMeaning, signalReason, sparkline } from "./presentation.ts"
 import { loadSiteCatalog, loadTuiData, type TuiData } from "./tuiData.ts"
 import type { HistoryDay, LogFeedEntry, LogReadout, OpportunityKind, OpportunitySignal, RegistryEntry, RegistryTargetProgress, Site } from "./types.ts"
 
@@ -543,6 +543,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
       const impressionEndpoints = endpoint(impressionValues, (value) => Math.round(value).toString())
       const positionEndpoints = endpoint(positionValues, (value) => value.toFixed(1))
       detailSummaryTitle.content = progress.targetUrl
+      const bingIndexLine = formatBingIndexLine(progress)
       detailSummaryBody.content = [
         `Page: ${progress.targetUrl}`,
         `Current 28 days: ${performance.total.impressions} impressions · ${performance.total.clicks} clicks · ${(performance.total.ctr * 100).toFixed(1)}% CTR · position ${performance.total.position.toFixed(1)}`,
@@ -554,6 +555,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
         `Search intent: ${readableIntent(entry.intent)}`,
         `Registry: ${entry.priority} · ${entry.country} · ${keywordEntries.length} keywords`,
         `Google index: ${indexDetail}`,
+        ...(bingIndexLine ? [bingIndexLine] : []),
       ].join("\n")
       detailTitle.content = inventoryOnly ? "PAGE PERFORMANCE · ALL QUERIES" : "NON-BRAND PERFORMANCE"
       const performanceDetails = [

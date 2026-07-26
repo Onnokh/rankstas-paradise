@@ -10,7 +10,7 @@ import { TestClock } from "effect/testing"
 import { Config } from "../config/config.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { Site } from "../sites/schema.ts"
-import { BingWebmaster, parseDotNetDate } from "./bing-webmaster.ts"
+import { BingWebmaster, isNotInIndexSentinel, parseDotNetDate } from "./bing-webmaster.ts"
 import {
   BingAuthError,
   BingHttpError,
@@ -68,6 +68,77 @@ const buildLayer = (http: Layer.Layer<HttpClient.HttpClient>, key?: string) =>
 
 test("parseDotNetDate converts ms epoch to ISO date", () => {
   expect(parseDotNetDate("/Date(1784876400000-0700)/")).toBe("2026-07-24")
+})
+
+test("isNotInIndexSentinel detects Bing's year-1 discovery date", () => {
+  expect(isNotInIndexSentinel(0, "/Date(-62135596800000)/")).toBe(true)
+  expect(isNotInIndexSentinel(2048, "/Date(1711929600000)/")).toBe(false)
+})
+
+test("fetchUrlInfo unwraps crawl dates and detects the not-indexed sentinel", async () => {
+  const http = fakeHttp((url) => {
+    if (url.includes("url=https%3A%2F%2Fexample.com%2Findexed"))
+      return {
+        status: 200,
+        body: {
+          d: {
+            DiscoveryDate: "/Date(1709251200000)/",
+            LastCrawledDate: "/Date(1718409600000)/",
+            AnchorCount: 2,
+            DocumentSize: 2048,
+          },
+        },
+      }
+    if (url.includes("url=https%3A%2F%2Fexample.com%2Fmissing"))
+      return {
+        status: 200,
+        body: {
+          d: {
+            DiscoveryDate: "/Date(-62135596800000)/",
+            AnchorCount: 0,
+            DocumentSize: 0,
+          },
+        },
+      }
+    return { status: 400, body: { ErrorCode: 7, Message: "InvalidUrl" } }
+  })
+  const result = await BingWebmaster.use
+    .fetchUrlInfo([
+      "https://example.com/indexed",
+      "https://example.com/missing",
+      "https://example.com/broken",
+    ])
+    .pipe(Effect.provide(buildLayer(http, "secret-key")), Effect.runPromise)
+  expect(result.failed).toBe(1)
+  expect(result.infos).toEqual([
+    {
+      targetUrl: "https://example.com/indexed",
+      discoveredAt: "2024-03-01",
+      lastCrawledAt: "2024-06-15",
+      anchorCount: 2,
+      documentSize: 2048,
+      inIndex: true,
+    },
+    {
+      targetUrl: "https://example.com/missing",
+      discoveredAt: null,
+      lastCrawledAt: null,
+      anchorCount: 0,
+      documentSize: 0,
+      inIndex: false,
+    },
+  ])
+})
+
+test("fetchUrlInfo treats InvalidUrl as a counted failure", async () => {
+  const http = fakeHttp(() => ({
+    status: 400,
+    body: { ErrorCode: 7, Message: "InvalidUrl" },
+  }))
+  const result = await BingWebmaster.use
+    .fetchUrlInfo(["https://example.com/bad"])
+    .pipe(Effect.provide(buildLayer(http, "secret-key")), Effect.runPromise)
+  expect(result).toEqual({ infos: [], failed: 1 })
 })
 
 test("fetchSiteDailyTotals unwraps d and parses rows", async () => {

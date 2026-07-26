@@ -358,6 +358,60 @@ test("capturePageBaselines + registryProgress", async () => {
   expect(progress[0]?.target.impressions).toBe(80)
 })
 
+test("saveBingUrlInfos upserts crawl status and respects freshness", async () => {
+  await run(
+    Storage.use.saveBingUrlInfos([
+      {
+        targetUrl: "https://example.com/widgets",
+        discoveredAt: "2024-03-01",
+        lastCrawledAt: "2024-06-15",
+        anchorCount: 2,
+        documentSize: 2048,
+        inIndex: true,
+      },
+    ]),
+  )
+  expect(
+    await run(
+      Storage.use.recentlyInspectedBingUrls(
+        ["https://example.com/widgets"],
+        24,
+      ),
+    ),
+  ).toEqual(["https://example.com/widgets"])
+  await run(
+    Storage.use.saveBingUrlInfos([
+      {
+        targetUrl: "https://example.com/widgets",
+        discoveredAt: null,
+        lastCrawledAt: null,
+        anchorCount: 0,
+        documentSize: 0,
+        inIndex: false,
+      },
+    ]),
+  )
+  const progress = await run(
+    Storage.use.registryTargetProgress([
+      {
+        cluster: "",
+        keyword: "widget",
+        targetUrl: "/widgets",
+        intent: "",
+        whyOpportunity: "",
+        country: "",
+        priority: "P1",
+        publishedAt: "",
+        baselineDate: "",
+        status: "",
+      },
+    ]),
+  )
+  expect(progress[0]?.bingInIndex).toBe(false)
+  expect(progress[0]?.bingDiscoveredAt).toBeNull()
+  expect(await run(Storage.use.pruneBingUrlInfos([]))).toBe(1)
+})
+
 test("finalizationCutoff is today − 3 (UTC)", async () => {
   const expected = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00.000Z")
   expected.setUTCDate(expected.getUTCDate() - 3)

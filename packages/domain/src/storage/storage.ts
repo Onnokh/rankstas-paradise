@@ -13,7 +13,7 @@ import { type SqlError } from "effect/unstable/sql"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 
 import { brandLikePatterns } from "../brand.ts"
-import { type BingQueryWindowRow, type BingSiteDailyTotal } from "../bing-webmaster/schema.ts"
+import { type BingQueryWindowRow, type BingSiteDailyTotal, type BingUrlInfo } from "../bing-webmaster/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import {
   type DailySnapshot,
@@ -60,6 +60,12 @@ export interface Interface {
     capturedDate: string,
     rows: ReadonlyArray<BingQueryWindowRow>,
   ) => Effect.Effect<void, StorageError>
+  readonly saveBingUrlInfos: (
+    infos: ReadonlyArray<BingUrlInfo>,
+  ) => Effect.Effect<void, StorageError>
+  readonly pruneBingUrlInfos: (
+    targetUrls: ReadonlyArray<string>,
+  ) => Effect.Effect<number, StorageError>
   readonly savePageIndexStatuses: (
     statuses: ReadonlyArray<PageIndexStatus>,
   ) => Effect.Effect<void, StorageError>
@@ -89,6 +95,10 @@ export interface Interface {
     maxAgeHours: number,
   ) => Effect.Effect<boolean, StorageError>
   readonly recentlyInspectedUrls: (
+    targetUrls: ReadonlyArray<string>,
+    maxAgeHours: number,
+  ) => Effect.Effect<ReadonlyArray<string>, StorageError>
+  readonly recentlyInspectedBingUrls: (
     targetUrls: ReadonlyArray<string>,
     maxAgeHours: number,
   ) => Effect.Effect<ReadonlyArray<string>, StorageError>
@@ -305,6 +315,15 @@ export const layer = Layer.effect(
         position real not null,
         collected_at text not null default current_timestamp,
         primary key (captured_date, query)
+      )`,
+      `create table if not exists bing_url_info (
+        target_url text primary key,
+        discovered_at text,
+        last_crawled_at text,
+        anchor_count integer not null,
+        document_size integer not null,
+        in_index integer not null,
+        inspected_at text not null default current_timestamp
       )`,
     ]
     yield* Effect.forEach(ddl, (statement) => sql.unsafe(statement)).pipe(
@@ -645,6 +664,14 @@ export const layer = Layer.effect(
           inspected_at: string
         }>`select target_url, status, coverage_state, inspected_at from page_index_status`
         const indexByUrl = new Map(indexRows.map((row) => [row.target_url, row]))
+        const bingRows = yield* sql<{
+          target_url: string
+          discovered_at: string | null
+          last_crawled_at: string | null
+          in_index: number
+          inspected_at: string
+        }>`select target_url, discovered_at, last_crawled_at, in_index, inspected_at from bing_url_info`
+        const bingByUrl = new Map(bingRows.map((row) => [row.target_url, row]))
         const grouped = new Map<string, RegistryProgress[]>()
         for (const row of progress)
           grouped.set(row.entry.targetUrl, [
@@ -656,6 +683,7 @@ export const layer = Layer.effect(
           const first = rows[0]!
           const inventoryOnly = rows.every((row) => !row.entry.keyword.trim())
           const performance = yield* targetPerformanceI(targetUrl, inventoryOnly)
+          const bing = bingByUrl.get(`${origin}${targetUrl}`)
           targets.push({
             entries: rows.map((row) => row.entry),
             targetUrl,
@@ -668,6 +696,10 @@ export const layer = Layer.effect(
             coverageState:
               indexByUrl.get(`${origin}${targetUrl}`)?.coverage_state || null,
             inspectedAt: indexByUrl.get(`${origin}${targetUrl}`)?.inspected_at ?? null,
+            bingInIndex: bing === undefined ? null : bing.in_index === 1,
+            bingDiscoveredAt: bing?.discovered_at ?? null,
+            bingLastCrawledAt: bing?.last_crawled_at ?? null,
+            bingInspectedAt: bing?.inspected_at ?? null,
           })
         }
         const priorityRank = (priority: string) =>
@@ -958,6 +990,41 @@ export const layer = Layer.effect(
             values (${capturedDate}, ${row.query}, ${row.clicks}, ${row.impressions}, ${row.position})`
       }))
 
+    const saveBingUrlInfosI = (infos: ReadonlyArray<BingUrlInfo>) =>
+      sql.withTransaction(
+        Effect.gen(function* () {
+          for (const info of infos)
+            yield* sql`
+              insert into bing_url_info (
+                target_url, discovered_at, last_crawled_at, anchor_count,
+                document_size, in_index
+              )
+              values (
+                ${info.targetUrl}, ${info.discoveredAt}, ${info.lastCrawledAt},
+                ${info.anchorCount}, ${info.documentSize}, ${info.inIndex ? 1 : 0}
+              )
+              on conflict(target_url) do update set
+                discovered_at = excluded.discovered_at,
+                last_crawled_at = excluded.last_crawled_at,
+                anchor_count = excluded.anchor_count,
+                document_size = excluded.document_size,
+                in_index = excluded.in_index,
+                inspected_at = current_timestamp`
+        }),
+      )
+
+    const pruneBingUrlInfosI = (targetUrls: ReadonlyArray<string>) =>
+      Effect.gen(function* () {
+        const keep = [...new Set(targetUrls)]
+        const deleted =
+          keep.length > 0
+            ? yield* sql<{ target_url: string }>`
+                delete from bing_url_info where target_url not in ${sql.in(keep)} returning target_url`
+            : yield* sql<{ target_url: string }>`
+                delete from bing_url_info returning target_url`
+        return deleted.length
+      })
+
     const bingQueryWindowLatestI = Effect.gen(function* () {
       const latest = yield* sql<{ captured_date: string | null }>`
         select max(captured_date) as captured_date from bing_query_window`
@@ -1101,6 +1168,17 @@ export const layer = Layer.effect(
         return [...new Set(targetUrls)].filter((targetUrl) => fresh.has(targetUrl))
       })
 
+    const recentlyInspectedBingUrlsI = (
+      targetUrls: ReadonlyArray<string>,
+      maxAgeHours: number,
+    ) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{ target_url: string }>`
+          select target_url from bing_url_info where inspected_at > datetime('now', ${`-${maxAgeHours} hours`})`
+        const fresh = new Set(rows.map((row) => row.target_url))
+        return [...new Set(targetUrls)].filter((targetUrl) => fresh.has(targetUrl))
+      })
+
     const snapshotDateRangeI = Effect.gen(function* () {
       const rows = yield* sql<{ first: string | null; last: string | null }>`
         select min(date) as first, max(date) as last from synced_day`
@@ -1123,6 +1201,10 @@ export const layer = Layer.effect(
         saveBingSiteDailyI(rows).pipe(mapErr("saveBingSiteDaily")),
       saveBingQueryWindow: (capturedDate, rows) =>
         saveBingQueryWindowI(capturedDate, rows).pipe(mapErr("saveBingQueryWindow")),
+      saveBingUrlInfos: (infos) =>
+        saveBingUrlInfosI(infos).pipe(mapErr("saveBingUrlInfos")),
+      pruneBingUrlInfos: (targetUrls) =>
+        pruneBingUrlInfosI(targetUrls).pipe(mapErr("pruneBingUrlInfos")),
       savePageIndexStatuses: (statuses) =>
         savePageIndexStatusesI(statuses).pipe(mapErr("savePageIndexStatuses")),
       pruneIndexStatuses: (targetUrls) =>
@@ -1145,6 +1227,10 @@ export const layer = Layer.effect(
       recentlyInspectedUrls: (targetUrls, maxAgeHours) =>
         recentlyInspectedUrlsI(targetUrls, maxAgeHours).pipe(
           mapErr("recentlyInspectedUrls"),
+        ),
+      recentlyInspectedBingUrls: (targetUrls, maxAgeHours) =>
+        recentlyInspectedBingUrlsI(targetUrls, maxAgeHours).pipe(
+          mapErr("recentlyInspectedBingUrls"),
         ),
       snapshotDateRange: () => snapshotDateRangeI.pipe(mapErr("snapshotDateRange")),
       snapshotSummary: () => snapshotSummaryI.pipe(mapErr("snapshotSummary")),

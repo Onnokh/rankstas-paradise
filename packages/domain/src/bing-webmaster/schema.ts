@@ -46,4 +46,21 @@ export class BingDecodeError extends Schema.TaggedErrorClass<BingDecodeError>()(
 
 export type BingError = BingAuthError | BingHttpError | BingDecodeError
 
+export const BingUrlInfo = Schema.Struct({
+  targetUrl: Schema.String,
+  discoveredAt: Schema.NullOr(Schema.String),
+  lastCrawledAt: Schema.NullOr(Schema.String),
+  anchorCount: Schema.Number,
+  documentSize: Schema.Number,
+  inIndex: Schema.Boolean,
+}).annotate({ identifier: "BingUrlInfo" })
+export interface BingUrlInfo extends Schema.Schema.Type<typeof BingUrlInfo> {}
+
+export const BingUrlInfoInspection = Schema.Struct({
+  infos: Schema.Array(BingUrlInfo),
+  failed: Schema.Number,
+}).annotate({ identifier: "BingUrlInfoInspection" })
+export interface BingUrlInfoInspection
+  extends Schema.Schema.Type<typeof BingUrlInfoInspection> {}
+
 export * as BingWebmasterSchema from "./schema"

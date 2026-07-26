@@ -23,8 +23,30 @@ export const detailSummaryHeight = (
   isRegistry: boolean,
   rendererWidth: number,
 ): number => isRegistry
-  ? rendererWidth >= 120 ? 9 : 13
+  ? rendererWidth >= 120 ? 10 : 14
   : rendererWidth >= 120 ? 8 : 11
+
+export const formatBingIndexLine = (
+  progress: Pick<
+    RegistryTargetProgress,
+    | "bingInIndex"
+    | "bingDiscoveredAt"
+    | "bingLastCrawledAt"
+    | "bingInspectedAt"
+  >,
+): string | null => {
+  if (progress.bingInspectedAt == null) return null
+  if (progress.bingInIndex === false) return "Bing: not indexed"
+  const parts = [
+    progress.bingLastCrawledAt
+      ? `crawled ${progress.bingLastCrawledAt}`
+      : null,
+    progress.bingDiscoveredAt
+      ? `discovered ${progress.bingDiscoveredAt}`
+      : null,
+  ].filter(Boolean)
+  return parts.length > 0 ? `Bing: ${parts.join(" · ")}` : "Bing: indexed"
+}
 
 export const MASTER_TABLE_BASE_CHROME = 12
 

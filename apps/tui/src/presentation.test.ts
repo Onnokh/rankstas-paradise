@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { BoxRenderable, TextRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 
-import { detailSummaryHeight, formatHomeCardStrip, homeCardStripHeight, masterVisibleRowLimit } from "./presentation.ts"
+import { detailSummaryHeight, formatBingIndexLine, formatHomeCardStrip, homeCardStripHeight, masterVisibleRowLimit } from "./presentation.ts"
 import type { EngineTotals } from "./types.ts"
 
 const renderRegistrySummary = async (
@@ -120,4 +120,28 @@ test("registry detail summary leaves room for the Google index line", async () =
   expect(await renderRegistrySummary(200, 104)).toContain(expected)
   expect(narrow).toContain("Google index: Discovered -")
   expect(narrow).toContain("currently not indexed")
+})
+
+test("formatBingIndexLine reports not indexed and crawl dates", () => {
+  expect(
+    formatBingIndexLine({
+      bingInIndex: false,
+      bingDiscoveredAt: null,
+      bingLastCrawledAt: null,
+      bingInspectedAt: "2026-07-26T10:00:00.000Z",
+    }),
+  ).toBe("Bing: not indexed")
+  expect(
+    formatBingIndexLine({
+      bingInIndex: true,
+      bingDiscoveredAt: "2024-03-01",
+      bingLastCrawledAt: "2024-06-15",
+      bingInspectedAt: "2026-07-26T10:00:00.000Z",
+    }),
+  ).toBe("Bing: crawled 2024-06-15 · discovered 2024-03-01")
+})
+
+test("registry detail summary height accounts for the Bing index line", () => {
+  expect(detailSummaryHeight(true, 120)).toBe(10)
+  expect(detailSummaryHeight(true, 80)).toBe(14)
 })

@@ -196,9 +196,33 @@ export const layer = Layer.effect(
                   ),
                 )
                 message += ` ${queryResult}`
+                const freshBingUrls = new Set(
+                  yield* storage.recentlyInspectedBingUrls(
+                    targetUrls,
+                    inspectionTtlHours,
+                  ),
+                )
+                const staleBingUrls = targetUrls.filter(
+                  (url) => !freshBingUrls.has(url),
+                )
+                const urlInfo =
+                  staleBingUrls.length > 0
+                    ? yield* bingWebmaster.fetchUrlInfo(staleBingUrls)
+                    : { infos: [], failed: 0 }
+                yield* storage.saveBingUrlInfos(urlInfo.infos)
+                yield* storage.pruneBingUrlInfos(targetUrls)
+                const crawlNote =
+                  urlInfo.failed > 0
+                    ? `Bing crawl status: ${urlInfo.infos.length} checks saved (${freshBingUrls.size} cached); ${urlInfo.failed} unavailable`
+                    : `Bing crawl status: ${urlInfo.infos.length} checks saved (${freshBingUrls.size} cached)`
+                message += ` ${crawlNote}`
                 return message
               }).pipe(
-                Effect.catchCause(() => Effect.succeed("Bing site totals: skipped (fetch failed).")),
+                Effect.catchCause(() =>
+                  Effect.succeed(
+                    "Bing site totals: skipped (fetch failed). Bing crawl status: skipped (fetch failed).",
+                  ),
+                ),
               )
             : Effect.succeed("Bing: off (no API key)."),
         ),

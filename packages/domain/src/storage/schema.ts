@@ -117,6 +117,10 @@ export const RegistryTargetProgress = Schema.Struct({
   indexStatus: IndexStatus,
   coverageState: Schema.NullOr(Schema.String),
   inspectedAt: Schema.NullOr(Schema.String),
+  bingInIndex: Schema.NullOr(Schema.Boolean),
+  bingDiscoveredAt: Schema.NullOr(Schema.String),
+  bingLastCrawledAt: Schema.NullOr(Schema.String),
+  bingInspectedAt: Schema.NullOr(Schema.String),
 }).annotate({ identifier: "RegistryTargetProgress" })
 export interface RegistryTargetProgress
   extends Schema.Schema.Type<typeof RegistryTargetProgress> {}
