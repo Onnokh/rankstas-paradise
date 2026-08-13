@@ -12,6 +12,8 @@ import { Reactivity } from "effect/unstable/reactivity"
 import { type SqlError } from "effect/unstable/sql"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 
+import { brandLikePatterns } from "../brand.ts"
+import { type BingQueryWindowRow, type BingSiteDailyTotal, type BingUrlInfo } from "../bing-webmaster/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import {
   type DailySnapshot,
@@ -22,6 +24,7 @@ import { type RegistryEntry } from "../registry/schema.ts"
 import { serviceUse } from "../service-use.ts"
 import {
   type BaselineCapture,
+  type BingSiteDailyDateRange,
   type HistoryDay,
   type LogEntry,
   type LogEntryInput,
@@ -51,6 +54,19 @@ export interface Interface {
     totals: DailyTotals,
     fetchedDates: ReadonlyArray<string>,
   ) => Effect.Effect<void, StorageError>
+  readonly saveBingSiteDaily: (
+    rows: ReadonlyArray<BingSiteDailyTotal>,
+  ) => Effect.Effect<void, StorageError>
+  readonly saveBingQueryWindow: (
+    capturedDate: string,
+    rows: ReadonlyArray<BingQueryWindowRow>,
+  ) => Effect.Effect<void, StorageError>
+  readonly saveBingUrlInfos: (
+    infos: ReadonlyArray<BingUrlInfo>,
+  ) => Effect.Effect<void, StorageError>
+  readonly pruneBingUrlInfos: (
+    targetUrls: ReadonlyArray<string>,
+  ) => Effect.Effect<number, StorageError>
   readonly savePageIndexStatuses: (
     statuses: ReadonlyArray<PageIndexStatus>,
   ) => Effect.Effect<void, StorageError>
@@ -83,8 +99,22 @@ export interface Interface {
     targetUrls: ReadonlyArray<string>,
     maxAgeHours: number,
   ) => Effect.Effect<ReadonlyArray<string>, StorageError>
+  readonly recentlyInspectedBingUrls: (
+    targetUrls: ReadonlyArray<string>,
+    maxAgeHours: number,
+  ) => Effect.Effect<ReadonlyArray<string>, StorageError>
   readonly snapshotDateRange: () => Effect.Effect<
     SnapshotDateRange,
+    StorageError
+  >
+  readonly missingBingSiteDailyDates: (
+    candidates: ReadonlyArray<string>,
+  ) => Effect.Effect<ReadonlyArray<string>, StorageError>
+  readonly bingSyncedWithinHours: (
+    maxAgeHours: number,
+  ) => Effect.Effect<boolean, StorageError>
+  readonly bingSiteDailyDateRange: () => Effect.Effect<
+    BingSiteDailyDateRange,
     StorageError
   >
   readonly snapshotSummary: () => Effect.Effect<SnapshotSummary, StorageError>
@@ -123,6 +153,17 @@ export interface Interface {
     start: string,
     end: string,
     includeBrand?: boolean,
+  ) => Effect.Effect<Metrics, StorageError>
+  readonly bingSiteDailyBetween: (
+    start: string,
+    end: string,
+  ) => Effect.Effect<ReadonlyArray<BingSiteDailyTotal>, StorageError>
+  readonly bingQueryWindowLatest: () => Effect.Effect<
+    { readonly capturedDate: string; readonly rows: ReadonlyArray<BingQueryWindowRow> } | null,
+    StorageError
+  >
+  readonly googleKeywordMetricsBetween: (
+    page: string, keyword: string, start: string, end: string,
   ) => Effect.Effect<Metrics, StorageError>
 }
 
@@ -180,7 +221,13 @@ export const layer = Layer.effect(
     const resolved = yield* site.current()
     const databasePath = yield* site.databasePath()
     const origin = resolved.origin
-    const brandPattern = `%${resolved.brandTerms[0]!.toLowerCase()}%`
+    const brandPatterns = brandLikePatterns(resolved.brandTerms)
+    const nonBrandQueryFilter = () =>
+      brandPatterns.length === 0
+        ? sql`1 = 1`
+        : sql.and(brandPatterns.map((pattern) => sql`lower(query) not like ${pattern}`))
+    const brandQueryFilter = (includeBrand: boolean) =>
+      includeBrand ? sql`1 = 1` : nonBrandQueryFilter()
 
     yield* Effect.sync(() =>
       mkdirSync(databasePath.slice(0, databasePath.lastIndexOf("/")), {
@@ -265,6 +312,30 @@ export const layer = Layer.effect(
         coverage_state text not null default '',
         inspected_at text not null default current_timestamp
       )`,
+      `create table if not exists bing_site_daily (
+        date text primary key,
+        clicks integer not null,
+        impressions integer not null,
+        collected_at text not null default current_timestamp
+      )`,
+      `create table if not exists bing_query_window (
+        captured_date text not null,
+        query text not null,
+        clicks integer not null,
+        impressions integer not null,
+        position real not null,
+        collected_at text not null default current_timestamp,
+        primary key (captured_date, query)
+      )`,
+      `create table if not exists bing_url_info (
+        target_url text primary key,
+        discovered_at text,
+        last_crawled_at text,
+        anchor_count integer not null,
+        document_size integer not null,
+        in_index integer not null,
+        inspected_at text not null default current_timestamp
+      )`,
     ]
     yield* Effect.forEach(ddl, (statement) => sql.unsafe(statement)).pipe(
       mapErr("initialize"),
@@ -326,7 +397,7 @@ export const layer = Layer.effect(
                    sum(clicks) * 1.0 / sum(impressions) as ctr,
                    sum(position * impressions) * 1.0 / sum(impressions) as position
             from search_snapshot
-            where date between ${start} and ${end} and lower(query) not like ${brandPattern}
+            where date between ${start} and ${end} and ${nonBrandQueryFilter()}
             group by query, page`
         const current = yield* windowRows(currentStart, latestDate)
         const previous = yield* windowRows(previousStart, previousEnd)
@@ -500,7 +571,7 @@ export const layer = Layer.effect(
                      sum(position * impressions) * 1.0 / sum(impressions) as position
               from search_snapshot
               where page = ${page} and date between ${start} and ${latestDate}
-                and lower(query) not like ${brandPattern}
+                and ${nonBrandQueryFilter()}
               group by date`
         const byDate = new Map(rows.map((row) => [row.date, row]))
         const days = Array.from({ length: 28 }, (_, index) => {
@@ -573,7 +644,7 @@ export const layer = Layer.effect(
                    case when sum(impressions) > 0 then sum(clicks) * 1.0 / sum(impressions) else 0 end as ctr,
                    case when sum(impressions) > 0 then sum(position * impressions) * 1.0 / sum(impressions) else 0 end as position
             from search_snapshot
-            where page = ${targetUrl} and date between ${windowStart} and ${latestDate} and lower(query) not like ${brandPattern}`
+            where page = ${targetUrl} and date between ${windowStart} and ${latestDate} and ${nonBrandQueryFilter()}`
           const keywordRows = yield* sql<Metrics>`
             select coalesce(sum(clicks), 0) as clicks,
                    coalesce(sum(impressions), 0) as impressions,
@@ -604,6 +675,14 @@ export const layer = Layer.effect(
           inspected_at: string
         }>`select target_url, status, coverage_state, inspected_at from page_index_status`
         const indexByUrl = new Map(indexRows.map((row) => [row.target_url, row]))
+        const bingRows = yield* sql<{
+          target_url: string
+          discovered_at: string | null
+          last_crawled_at: string | null
+          in_index: number
+          inspected_at: string
+        }>`select target_url, discovered_at, last_crawled_at, in_index, inspected_at from bing_url_info`
+        const bingByUrl = new Map(bingRows.map((row) => [row.target_url, row]))
         const grouped = new Map<string, RegistryProgress[]>()
         for (const row of progress)
           grouped.set(row.entry.targetUrl, [
@@ -615,6 +694,7 @@ export const layer = Layer.effect(
           const first = rows[0]!
           const inventoryOnly = rows.every((row) => !row.entry.keyword.trim())
           const performance = yield* targetPerformanceI(targetUrl, inventoryOnly)
+          const bing = bingByUrl.get(`${origin}${targetUrl}`)
           targets.push({
             entries: rows.map((row) => row.entry),
             targetUrl,
@@ -627,6 +707,10 @@ export const layer = Layer.effect(
             coverageState:
               indexByUrl.get(`${origin}${targetUrl}`)?.coverage_state || null,
             inspectedAt: indexByUrl.get(`${origin}${targetUrl}`)?.inspected_at ?? null,
+            bingInIndex: bing === undefined ? null : bing.in_index === 1,
+            bingDiscoveredAt: bing?.discovered_at ?? null,
+            bingLastCrawledAt: bing?.last_crawled_at ?? null,
+            bingInspectedAt: bing?.inspected_at ?? null,
           })
         }
         const priorityRank = (priority: string) =>
@@ -670,7 +754,7 @@ export const layer = Layer.effect(
                    sum(clicks) * 1.0 / sum(impressions) as ctr,
                    sum(position * impressions) * 1.0 / sum(impressions) as position
             from search_snapshot
-            where date between ${start} and ${end} and (${includeBrand ? 1 : 0} = 1 or lower(query) not like ${brandPattern})
+            where date between ${start} and ${end} and ${brandQueryFilter(includeBrand)}
             group by page`
         const totalsWindow = (start: string, end: string) =>
           sql<Grouped>`
@@ -760,7 +844,7 @@ export const layer = Layer.effect(
                    sum(position * impressions) * 1.0 / sum(impressions) as position
             from search_snapshot
             where date between ${start} and ${end}
-              and (${includeBrand ? 1 : 0} = 1 or lower(query) not like ${brandPattern})
+              and ${brandQueryFilter(includeBrand)}
               and (${page ?? ""} = '' or page = ${page ?? ""})
             group by query, page`
         const current = yield* windowRows(currentStart, latestDate)
@@ -807,7 +891,7 @@ export const layer = Layer.effect(
                  case when sum(impressions) > 0 then sum(position * impressions) * 1.0 / sum(impressions) else 0 end as position
           from search_snapshot
           where page = ${`${origin}${targetUrl}`} and date between ${start} and ${end}
-            and (${includeBrand ? 1 : 0} = 1 or lower(query) not like ${brandPattern})`
+            and ${brandQueryFilter(includeBrand)}`
         return rows[0]!
       })
 
@@ -887,6 +971,94 @@ export const layer = Layer.effect(
         }),
       )
 
+    const saveBingSiteDailyI = (rows: ReadonlyArray<BingSiteDailyTotal>) =>
+      sql.withTransaction(
+        Effect.gen(function* () {
+          for (const row of rows)
+            yield* sql`
+              insert into bing_site_daily (date, clicks, impressions)
+              values (${row.date}, ${row.clicks}, ${row.impressions})
+              on conflict(date) do update set
+                clicks = excluded.clicks,
+                impressions = excluded.impressions,
+                collected_at = current_timestamp`
+        }),
+      )
+
+    const bingSiteDailyBetweenI = (start: string, end: string) =>
+      Effect.gen(function* () {
+        return yield* sql<BingSiteDailyTotal>`
+          select date, clicks, impressions from bing_site_daily
+          where date between ${start} and ${end}
+          order by date`
+      })
+
+    const saveBingQueryWindowI = (capturedDate: string, rows: ReadonlyArray<BingQueryWindowRow>) =>
+      sql.withTransaction(Effect.gen(function* () {
+        yield* sql`delete from bing_query_window where captured_date = ${capturedDate}`
+        for (const row of rows)
+          yield* sql`insert into bing_query_window (captured_date, query, clicks, impressions, position)
+            values (${capturedDate}, ${row.query}, ${row.clicks}, ${row.impressions}, ${row.position})`
+      }))
+
+    const saveBingUrlInfosI = (infos: ReadonlyArray<BingUrlInfo>) =>
+      sql.withTransaction(
+        Effect.gen(function* () {
+          for (const info of infos)
+            yield* sql`
+              insert into bing_url_info (
+                target_url, discovered_at, last_crawled_at, anchor_count,
+                document_size, in_index
+              )
+              values (
+                ${info.targetUrl}, ${info.discoveredAt}, ${info.lastCrawledAt},
+                ${info.anchorCount}, ${info.documentSize}, ${info.inIndex ? 1 : 0}
+              )
+              on conflict(target_url) do update set
+                discovered_at = excluded.discovered_at,
+                last_crawled_at = excluded.last_crawled_at,
+                anchor_count = excluded.anchor_count,
+                document_size = excluded.document_size,
+                in_index = excluded.in_index,
+                inspected_at = current_timestamp`
+        }),
+      )
+
+    const pruneBingUrlInfosI = (targetUrls: ReadonlyArray<string>) =>
+      Effect.gen(function* () {
+        const keep = [...new Set(targetUrls)]
+        const deleted =
+          keep.length > 0
+            ? yield* sql<{ target_url: string }>`
+                delete from bing_url_info where target_url not in ${sql.in(keep)} returning target_url`
+            : yield* sql<{ target_url: string }>`
+                delete from bing_url_info returning target_url`
+        return deleted.length
+      })
+
+    const bingQueryWindowLatestI = Effect.gen(function* () {
+      const latest = yield* sql<{ captured_date: string | null }>`
+        select max(captured_date) as captured_date from bing_query_window`
+      const capturedDate = latest[0]?.captured_date
+      if (!capturedDate) return null
+      const rows = yield* sql<BingQueryWindowRow>`
+        select query, clicks, impressions, position from bing_query_window
+        where captured_date = ${capturedDate} order by query`
+      return { capturedDate, rows }
+    })
+
+    const googleKeywordMetricsBetweenI = (page: string, keyword: string, start: string, end: string) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<Metrics>`
+          select coalesce(sum(impressions), 0) as impressions,
+                 coalesce(sum(clicks), 0) as clicks,
+                 case when sum(impressions) > 0 then sum(clicks) * 1.0 / sum(impressions) else 0 end as ctr,
+                 case when sum(impressions) > 0 then sum(position * impressions) * 1.0 / sum(impressions) else 0 end as position
+          from search_snapshot
+          where page = ${page} and lower(query) = lower(${keyword}) and date between ${start} and ${end}`
+        return rows[0]!
+      })
+
     const savePageIndexStatusesI = (statuses: ReadonlyArray<PageIndexStatus>) =>
       sql.withTransaction(
         Effect.gen(function* () {
@@ -951,7 +1123,7 @@ export const layer = Layer.effect(
                      case when sum(impressions) > 0 then sum(clicks) * 1.0 / sum(impressions) else 0 end as ctr,
                      case when sum(impressions) > 0 then sum(position * impressions) * 1.0 / sum(impressions) else 0 end as position
               from search_snapshot
-              where page = ${target} and date between ${windowStart} and ${windowEnd} and lower(query) not like ${brandPattern}`
+              where page = ${target} and date between ${windowStart} and ${windowEnd} and ${nonBrandQueryFilter()}`
             const row = rows[0]!
             yield* sql`
               insert into page_baseline (target_url, baseline_date, window_start, window_end, clicks, impressions, ctr, position)
@@ -1007,10 +1179,49 @@ export const layer = Layer.effect(
         return [...new Set(targetUrls)].filter((targetUrl) => fresh.has(targetUrl))
       })
 
+    const recentlyInspectedBingUrlsI = (
+      targetUrls: ReadonlyArray<string>,
+      maxAgeHours: number,
+    ) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{ target_url: string }>`
+          select target_url from bing_url_info where inspected_at > datetime('now', ${`-${maxAgeHours} hours`})`
+        const fresh = new Set(rows.map((row) => row.target_url))
+        return [...new Set(targetUrls)].filter((targetUrl) => fresh.has(targetUrl))
+      })
+
     const snapshotDateRangeI = Effect.gen(function* () {
       const rows = yield* sql<{ first: string | null; last: string | null }>`
         select min(date) as first, max(date) as last from synced_day`
       return rows[0] ?? { first: null, last: null }
+    })
+
+    const missingBingSiteDailyDatesI = (candidates: ReadonlyArray<string>) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{ date: string }>`select date from bing_site_daily`
+        const stored = new Set(rows.map((row) => row.date))
+        return [...new Set(candidates)].filter((date) => !stored.has(date))
+      })
+
+    const bingSyncedWithinHoursI = (maxAgeHours: number) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{ fresh: number }>`
+          select exists(
+            select 1 from bing_site_daily
+            where collected_at > datetime('now', ${`-${maxAgeHours} hours`})
+          ) as fresh`
+        return rows[0]?.fresh === 1
+      })
+
+    const bingSiteDailyDateRangeI = Effect.gen(function* () {
+      const rows = yield* sql<{
+        first: string | null
+        last: string | null
+        count: number
+      }>`
+        select min(date) as first, max(date) as last, count(*) as count
+        from bing_site_daily`
+      return rows[0] ?? { first: null, last: null, count: 0 }
     })
 
     const snapshotSummaryI = Effect.gen(function* () {
@@ -1025,6 +1236,14 @@ export const layer = Layer.effect(
         saveSnapshotsI(snapshots, fetchedDates).pipe(mapErr("saveSnapshots")),
       saveDailyTotals: (totals, fetchedDates) =>
         saveDailyTotalsI(totals, fetchedDates).pipe(mapErr("saveDailyTotals")),
+      saveBingSiteDaily: (rows) =>
+        saveBingSiteDailyI(rows).pipe(mapErr("saveBingSiteDaily")),
+      saveBingQueryWindow: (capturedDate, rows) =>
+        saveBingQueryWindowI(capturedDate, rows).pipe(mapErr("saveBingQueryWindow")),
+      saveBingUrlInfos: (infos) =>
+        saveBingUrlInfosI(infos).pipe(mapErr("saveBingUrlInfos")),
+      pruneBingUrlInfos: (targetUrls) =>
+        pruneBingUrlInfosI(targetUrls).pipe(mapErr("pruneBingUrlInfos")),
       savePageIndexStatuses: (statuses) =>
         savePageIndexStatusesI(statuses).pipe(mapErr("savePageIndexStatuses")),
       pruneIndexStatuses: (targetUrls) =>
@@ -1048,7 +1267,19 @@ export const layer = Layer.effect(
         recentlyInspectedUrlsI(targetUrls, maxAgeHours).pipe(
           mapErr("recentlyInspectedUrls"),
         ),
+      recentlyInspectedBingUrls: (targetUrls, maxAgeHours) =>
+        recentlyInspectedBingUrlsI(targetUrls, maxAgeHours).pipe(
+          mapErr("recentlyInspectedBingUrls"),
+        ),
       snapshotDateRange: () => snapshotDateRangeI.pipe(mapErr("snapshotDateRange")),
+      missingBingSiteDailyDates: (candidates) =>
+        missingBingSiteDailyDatesI(candidates).pipe(
+          mapErr("missingBingSiteDailyDates"),
+        ),
+      bingSyncedWithinHours: (maxAgeHours) =>
+        bingSyncedWithinHoursI(maxAgeHours).pipe(mapErr("bingSyncedWithinHours")),
+      bingSiteDailyDateRange: () =>
+        bingSiteDailyDateRangeI.pipe(mapErr("bingSiteDailyDateRange")),
       snapshotSummary: () => snapshotSummaryI.pipe(mapErr("snapshotSummary")),
       latestSnapshotDate: () =>
         latestSnapshotDateI.pipe(mapErr("latestSnapshotDate")),
@@ -1073,6 +1304,11 @@ export const layer = Layer.effect(
         metricsBetweenI(targetUrl, start, end, includeBrand).pipe(
           mapErr("metricsBetween"),
         ),
+      bingSiteDailyBetween: (start, end) =>
+        bingSiteDailyBetweenI(start, end).pipe(mapErr("bingSiteDailyBetween")),
+      bingQueryWindowLatest: () => bingQueryWindowLatestI.pipe(mapErr("bingQueryWindowLatest")),
+      googleKeywordMetricsBetween: (page, keyword, start, end) =>
+        googleKeywordMetricsBetweenI(page, keyword, start, end).pipe(mapErr("googleKeywordMetricsBetween")),
     } satisfies Interface
   }),
 )

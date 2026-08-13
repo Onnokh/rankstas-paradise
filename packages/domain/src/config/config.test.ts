@@ -7,7 +7,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { Cause, ConfigProvider, Effect, Exit } from "effect"
+import { Cause, ConfigProvider, Effect, Exit, Redacted } from "effect"
 
 import { Config } from "./config.ts"
 import { ConfigLoadError } from "./schema.ts"
@@ -116,5 +116,20 @@ describe("Config paths", () => {
       Config.use.serviceAccountPath(),
     )
     expect(key).toBe("/run/secrets/sa.json")
+  })
+})
+
+describe("Config.bingApiKey", () => {
+  test("returns none when BING_API_KEY is absent", async () => {
+    const key = await runWith({}, Config.use.bingApiKey())
+    expect(key._tag).toBe("None")
+  })
+
+  test("returns a redacted key when BING_API_KEY is set", async () => {
+    const key = await runWith({ BING_API_KEY: "bing-secret" }, Config.use.bingApiKey())
+    expect(key._tag).toBe("Some")
+    if (key._tag === "Some") {
+      expect(Redacted.value(key.value)).toBe("bing-secret")
+    }
   })
 })

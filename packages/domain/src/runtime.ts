@@ -13,6 +13,7 @@
 // implementations land in later tickets.
 import { Layer, ManagedRuntime } from "effect"
 
+import { BingWebmaster } from "./bing-webmaster/bing-webmaster.ts"
 import { Config } from "./config/config.ts"
 import { CurrentSite } from "./sites/current-site.ts"
 import { Registry } from "./registry/registry.ts"
@@ -28,6 +29,7 @@ export const AppLayer = Layer.mergeAll(
   CurrentSite.defaultLayer,
   Sites.defaultLayer,
   SearchConsole.defaultLayer,
+  BingWebmaster.defaultLayer,
   Storage.defaultLayer,
   Registry.defaultLayer,
   Sitemap.defaultLayer,

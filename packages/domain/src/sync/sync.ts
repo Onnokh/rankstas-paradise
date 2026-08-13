@@ -5,6 +5,7 @@
 import { Context, Effect, Fiber, Layer, Semaphore } from "effect"
 
 import { Config } from "../config/config.ts"
+import { BingWebmaster } from "../bing-webmaster/bing-webmaster.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { Registry } from "../registry/registry.ts"
 import { SearchConsole } from "../search-console/search-console.ts"
@@ -82,6 +83,7 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const searchConsole = yield* SearchConsole.Service
+    const bingWebmaster = yield* BingWebmaster.Service
     const storage = yield* Storage.Service
     const registry = yield* Registry.Service
     const sitemap = yield* Sitemap.Service
@@ -172,7 +174,61 @@ export const layer = Layer.effect(
         inspection.failed > 0
           ? `${inspection.inspections.length} indexed-status checks saved (${freshUrls.size} cached); ${inspection.failed} unavailable`
           : `${inspection.inspections.length} indexed-status checks saved (${freshUrls.size} cached)`
-      return `Saved ${snapshots.length} Search Console rows across ${plan.dates.length} finalized days (${plan.missing.length} missing, ${plan.recent.length} reconciled); daily totals for ${totalDates.length} days; ${inspectionSummary}; finalized through ${finalizedThrough}, provisional to ${freshestThrough}. Sitemap: ${sitemapPages.length || "cached"} pages.`
+
+      const bingNote = yield* bingWebmaster.hasBingConnection().pipe(
+        Effect.flatMap((connected) =>
+          connected
+            ? Effect.gen(function* () {
+                const rows = yield* bingWebmaster.fetchSiteDailyTotals()
+                yield* storage.saveBingSiteDaily(rows)
+                let message = `Bing site totals: ${rows.length} days saved (${rows.reduce((total, row) => total + row.clicks, 0)} clicks).`
+                const queryResult = yield* bingWebmaster.fetchQueryWindow().pipe(
+                  Effect.flatMap((queryRows) => {
+                    const capturedDate = new Date().toISOString().slice(0, 10)
+                    return storage.saveBingQueryWindow(capturedDate, queryRows).pipe(
+                      Effect.as(
+                        `Bing query window: ${queryRows.length} queries captured on ${capturedDate}.`,
+                      ),
+                    )
+                  }),
+                  Effect.catchCause(() =>
+                    Effect.succeed("Bing query window: skipped (fetch failed)."),
+                  ),
+                )
+                message += ` ${queryResult}`
+                const freshBingUrls = new Set(
+                  yield* storage.recentlyInspectedBingUrls(
+                    targetUrls,
+                    inspectionTtlHours,
+                  ),
+                )
+                const staleBingUrls = targetUrls.filter(
+                  (url) => !freshBingUrls.has(url),
+                )
+                const urlInfo =
+                  staleBingUrls.length > 0
+                    ? yield* bingWebmaster.fetchUrlInfo(staleBingUrls)
+                    : { infos: [], failed: 0 }
+                yield* storage.saveBingUrlInfos(urlInfo.infos)
+                yield* storage.pruneBingUrlInfos(targetUrls)
+                const crawlNote =
+                  urlInfo.failed > 0
+                    ? `Bing crawl status: ${urlInfo.infos.length} checks saved (${freshBingUrls.size} cached); ${urlInfo.failed} unavailable`
+                    : `Bing crawl status: ${urlInfo.infos.length} checks saved (${freshBingUrls.size} cached)`
+                message += ` ${crawlNote}`
+                return message
+              }).pipe(
+                Effect.catchCause(() =>
+                  Effect.succeed(
+                    "Bing site totals: skipped (fetch failed). Bing crawl status: skipped (fetch failed).",
+                  ),
+                ),
+              )
+            : Effect.succeed("Bing: off (no API key)."),
+        ),
+      )
+
+      return `Saved ${snapshots.length} Search Console rows across ${plan.dates.length} finalized days (${plan.missing.length} missing, ${plan.recent.length} reconciled); daily totals for ${totalDates.length} days; ${inspectionSummary}; finalized through ${finalizedThrough}, provisional to ${freshestThrough}. Sitemap: ${sitemapPages.length || "cached"} pages. ${bingNote}`
     })
 
     const runBackfill = Effect.fn("Sync.backfillSearchConsole")(function* (
@@ -249,6 +305,7 @@ export const layer = Layer.effect(
 
 export const defaultLayer = layer.pipe(
   Layer.provide(SearchConsole.defaultLayer),
+  Layer.provide(BingWebmaster.defaultLayer),
   Layer.provide(Storage.defaultLayer),
   Layer.provide(Registry.defaultLayer),
   Layer.provide(Sitemap.defaultLayer),

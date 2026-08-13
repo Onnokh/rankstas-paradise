@@ -7,20 +7,153 @@
 // thread-local site context (`currentSiteOrigin()`). A remote-only client
 // has no such context, so the active origin is set explicitly via
 // `setActiveOrigin` whenever the active site changes (see tui.ts `inSite`).
+import { bold, dim, fg, StyledText, t } from "@opentui/core"
+
 import type {
   ActionKind,
+  EngineTotals,
+  EngineWindowTotals,
+  KeywordEngineWindow,
   LogKind,
   OpportunityKind,
   OpportunitySignal,
   RegistryTargetProgress,
+  TidyMetrics,
 } from "./types.ts"
 
 export const detailSummaryHeight = (
   isRegistry: boolean,
   rendererWidth: number,
 ): number => isRegistry
-  ? rendererWidth >= 120 ? 9 : 13
+  ? rendererWidth >= 120 ? 10 : 14
   : rendererWidth >= 120 ? 8 : 11
+
+export const formatBingIndexLine = (
+  progress: Pick<
+    RegistryTargetProgress,
+    | "bingInIndex"
+    | "bingDiscoveredAt"
+    | "bingLastCrawledAt"
+    | "bingInspectedAt"
+  >,
+): string | null => {
+  if (progress.bingInspectedAt == null) return null
+  if (progress.bingInIndex === false) return "Bing: not indexed"
+  const parts = [
+    progress.bingLastCrawledAt
+      ? `crawled ${progress.bingLastCrawledAt}`
+      : null,
+    progress.bingDiscoveredAt
+      ? `discovered ${progress.bingDiscoveredAt}`
+      : null,
+  ].filter(Boolean)
+  return parts.length > 0 ? `Bing: ${parts.join(" · ")}` : "Bing: indexed"
+}
+
+export const MASTER_TABLE_BASE_CHROME = 12
+
+export const masterVisibleRowLimit = (
+  rendererHeight: number,
+  options: { readonly hasTableHeader: boolean; readonly extraChrome?: number },
+): number =>
+  Math.max(
+    1,
+    rendererHeight
+      - MASTER_TABLE_BASE_CHROME
+      - (options.hasTableHeader ? 1 : 0)
+      - (options.extraChrome ?? 0),
+  )
+
+/**
+ * Outer height of the Home engine strip when using real bordered BoxRenderables
+ * (same chrome as master/detail: single border + padding 1).
+ * Full: 2 border + 2 padding + title + 2 metric rows = 7.
+ * Collapsed: 2 border + 2 padding + 1 summary row = 5.
+ */
+export const homeCardStripHeight = (
+  view: string,
+  rendererHeight: number,
+): number =>
+  view !== "home" ? 0 : rendererHeight >= 30 ? 7 : 5
+
+const formatCardCount = (value: number) =>
+  value >= 10_000
+    ? `${Math.round(value / 1_000)}k`
+    : value >= 1_000
+      ? `${(value / 1_000).toFixed(1)}k`
+      : value.toString()
+
+const formatCardPct = (ctr: number) => `${(ctr * 100).toFixed(1)}%`
+
+/** Compact window label so partial Bing windows still fit a narrow card. */
+const windowLabel = (window: EngineWindowTotals) =>
+  window.daysCollected < window.windowDays
+    ? `${window.windowDays}d·${window.daysCollected}d`
+    : `${window.windowDays}d`
+
+/** Flatten StyledText for tests / plain-string asserts. */
+export const styledTextPlain = (text: StyledText): string =>
+  text.chunks.map((chunk) => chunk.text).join("")
+
+/** One engine pair: bold bright numbers, dim engine names. */
+const enginePairChunks = (google: string, bing: string, numberColor: string) => [
+  bold(fg(numberColor)(google)),
+  dim(" Google · "),
+  bold(fg(numberColor)(bing)),
+  dim(" Bing"),
+]
+
+export type HomeEngineCard = {
+  readonly title: string
+  readonly body: StyledText
+}
+
+/**
+ * Per-card copy for the three bordered Home KPI boxes.
+ * Numbers lead; window labels trail dim so the metrics read as the hierarchy.
+ */
+export const homeEngineCards = (
+  totals: EngineTotals,
+  collapsed: boolean,
+): readonly [HomeEngineCard, HomeEngineCard, HomeEngineCard] => {
+  const card = (
+    title: string,
+    formatValue: (window: EngineWindowTotals) => string,
+  ): HomeEngineCard => {
+    const label28 = windowLabel(totals.bing.d28)
+    const primary = [
+      ...enginePairChunks(
+        formatValue(totals.google.d28),
+        formatValue(totals.bing.d28),
+        "#F7FAFC",
+      ),
+      dim("  "),
+      dim(label28),
+    ]
+    if (collapsed) {
+      return { title: title.toUpperCase(), body: new StyledText(primary) }
+    }
+    return {
+      title: title.toUpperCase(),
+      body: new StyledText([
+        ...primary,
+        ...t`\n`.chunks,
+        ...enginePairChunks(
+          formatValue(totals.google.d7),
+          formatValue(totals.bing.d7),
+          "#A0AEC0",
+        ),
+        dim("  "),
+        dim("7d"),
+      ]),
+    }
+  }
+  return [
+    card("Impressions", (window) => formatCardCount(window.impressions)),
+    card("Clicks", (window) => formatCardCount(window.clicks)),
+    card("CTR", (window) => formatCardPct(window.ctr)),
+  ]
+}
 
 // The active site's canonical origin, refreshed on startup and site switch.
 let activeOrigin = ""
@@ -103,6 +236,43 @@ export const actionKindLabels: Record<ActionKind, string> = {
 }
 
 export const logKindLabel = (kind: LogKind): string => kind === "note" ? "Note" : actionKindLabels[kind]
+
+export const bingInventoryKeywordNote =
+  "Bing has no page-level keyword data; figures cannot be attributed to inventory-only pages."
+
+/** Compact 7d figures: impressions/clicks/ctr% (pos). */
+const formatEngineCompact = (
+  label: string,
+  metrics: TidyMetrics,
+  positionDigits: number,
+) =>
+  `${label}: ${metrics.impressions}/${metrics.clicks}/${(metrics.ctr * 100).toFixed(1)}% (pos ${metrics.position.toFixed(positionDigits)})`
+
+/** Shared Google/Bing metrics line used by registry keywords and query detail. */
+export const engineMetricsLine = (
+  google: TidyMetrics | null,
+  bing: TidyMetrics | null,
+): string =>
+  [
+    google ? formatEngineCompact("Google", google, 1) : "Google: —",
+    bing ? formatEngineCompact("Bing", bing, 0) : "Bing: —",
+  ].join(" - ")
+
+export type KeywordEngineBlock = {
+  readonly title: string
+  readonly metrics: string
+}
+
+/** Registry keyword block: title on its own line, engines on the next. */
+export const keywordEngineBlock = (window: KeywordEngineWindow): KeywordEngineBlock => ({
+  title: window.keyword,
+  metrics: engineMetricsLine(window.google7d, window.bing7d),
+})
+
+export const keywordEngineLine = (window: KeywordEngineWindow): string => {
+  const block = keywordEngineBlock(window)
+  return `${block.title}\n${block.metrics}`
+}
 
 export const sparkline = (values: readonly number[], lowerIsBetter = false) => {
   const observed = values.filter((value) => value > 0)

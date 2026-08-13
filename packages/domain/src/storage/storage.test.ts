@@ -85,6 +85,12 @@ test("empty database reads return zeroed/null shapes", async () => {
     first: null,
     last: null,
   })
+  expect(await run(Storage.use.bingSiteDailyDateRange())).toEqual({
+    first: null,
+    last: null,
+    count: 0,
+  })
+  expect(await run(Storage.use.bingSyncedWithinHours(24))).toBe(false)
   const digest = await run(Storage.use.opportunityDigest([]))
   expect(digest.latestDate).toBeNull()
   expect(digest.signals).toEqual([])
@@ -126,6 +132,56 @@ test("saveSnapshots persists rows and reads aggregate correctly", async () => {
     "brandy shoes",
     "widget",
   ])
+})
+
+test("topQueries excludes every configured brand term, not just the first", async () => {
+  const multiBrandSite: Site = {
+    ...site,
+    brandTerms: ["brandy", "acme"],
+  }
+  const multiBrandDir = mkdtempSync(join(tmpdir(), "rp-storage-multibrand-"))
+  const multiBrandDbPath = join(multiBrandDir, "search-console.sqlite")
+  const multiBrandRuntime = ManagedRuntime.make(
+    Storage.layer.pipe(
+      Layer.provide(
+        Layer.succeed(CurrentSite.Service, {
+          current: () => Effect.succeed(multiBrandSite),
+          dataDirectory: () => Effect.succeed(multiBrandDir),
+          databasePath: () => Effect.succeed(multiBrandDbPath),
+          registryPath: () => Effect.succeed(join(multiBrandDir, "keyword-registry.csv")),
+          sitemapPath: () => Effect.succeed(join(multiBrandDir, "sitemap.json")),
+        } satisfies CurrentSite.Interface),
+      ),
+    ),
+  )
+
+  try {
+    await multiBrandRuntime.runPromise(
+      Storage.use.saveSnapshots([
+        snapshot({ query: "widget", clicks: 5, impressions: 100, position: 8 }),
+        snapshot({
+          query: "brandy shoes",
+          clicks: 2,
+          impressions: 10,
+          ctr: 0.2,
+          position: 3,
+        }),
+        snapshot({
+          query: "acme widgets",
+          clicks: 3,
+          impressions: 20,
+          ctr: 0.15,
+          position: 4,
+        }),
+      ]),
+    )
+
+    const top = await multiBrandRuntime.runPromise(Storage.use.topQueries())
+    expect(top.rows.map((row) => row.query)).toEqual(["widget"])
+  } finally {
+    await multiBrandRuntime.dispose()
+    rmSync(multiBrandDir, { recursive: true, force: true })
+  }
 })
 
 test("saveDailyTotals feeds pagesWindowOverview true totals + coverage", async () => {
@@ -306,6 +362,84 @@ test("capturePageBaselines + registryProgress", async () => {
   expect(progress[0]?.state).toBe("measuring")
   expect(progress[0]?.baseline).not.toBeNull()
   expect(progress[0]?.target.impressions).toBe(80)
+})
+
+test("saveBingSiteDaily tracks coverage, freshness, and missing dates", async () => {
+  await run(
+    Storage.use.saveBingSiteDaily([
+      { date: "2024-01-10", clicks: 1, impressions: 10 },
+      { date: "2024-01-11", clicks: 2, impressions: 20 },
+    ]),
+  )
+  expect(await run(Storage.use.bingSiteDailyDateRange())).toEqual({
+    first: "2024-01-10",
+    last: "2024-01-11",
+    count: 2,
+  })
+  expect(
+    await run(
+      Storage.use.missingBingSiteDailyDates([
+        "2024-01-10",
+        "2024-01-11",
+        "2024-01-12",
+      ]),
+    ),
+  ).toEqual(["2024-01-12"])
+  expect(await run(Storage.use.bingSyncedWithinHours(24))).toBe(true)
+})
+
+test("saveBingUrlInfos upserts crawl status and respects freshness", async () => {
+  await run(
+    Storage.use.saveBingUrlInfos([
+      {
+        targetUrl: "https://example.com/widgets",
+        discoveredAt: "2024-03-01",
+        lastCrawledAt: "2024-06-15",
+        anchorCount: 2,
+        documentSize: 2048,
+        inIndex: true,
+      },
+    ]),
+  )
+  expect(
+    await run(
+      Storage.use.recentlyInspectedBingUrls(
+        ["https://example.com/widgets"],
+        24,
+      ),
+    ),
+  ).toEqual(["https://example.com/widgets"])
+  await run(
+    Storage.use.saveBingUrlInfos([
+      {
+        targetUrl: "https://example.com/widgets",
+        discoveredAt: null,
+        lastCrawledAt: null,
+        anchorCount: 0,
+        documentSize: 0,
+        inIndex: false,
+      },
+    ]),
+  )
+  const progress = await run(
+    Storage.use.registryTargetProgress([
+      {
+        cluster: "",
+        keyword: "widget",
+        targetUrl: "/widgets",
+        intent: "",
+        whyOpportunity: "",
+        country: "",
+        priority: "P1",
+        publishedAt: "",
+        baselineDate: "",
+        status: "",
+      },
+    ]),
+  )
+  expect(progress[0]?.bingInIndex).toBe(false)
+  expect(progress[0]?.bingDiscoveredAt).toBeNull()
+  expect(await run(Storage.use.pruneBingUrlInfos([]))).toBe(1)
 })
 
 test("finalizationCutoff is today − 3 (UTC)", async () => {

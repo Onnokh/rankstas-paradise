@@ -25,6 +25,7 @@ type is `text/plain`.
 | `GET /tui/history.txt` | `site` | daily-history view feed |
 | `GET /tui/registry.txt` | `site` | registry view feed |
 | `GET /tui/log.txt` | `site` | activity-log view feed |
+| `GET /tui/queries.txt` | `site` | dual-engine queries view feed (Google 7d + Bing rolling window) |
 
 `site` is a configured site id; site-scoped feeds require it.
 

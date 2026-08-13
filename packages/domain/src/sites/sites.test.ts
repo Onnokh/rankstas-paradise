@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Cause, Effect, Exit, Layer } from "effect"
+import { Cause, Effect, Exit, Layer, Option } from "effect"
 
 import { Config } from "../config/config.ts"
 import { type SeoConfig } from "../config/schema.ts"
@@ -27,6 +27,7 @@ const fakeConfig = (
       serviceAccountPath: () =>
         Effect.succeed(`${dataDirectory}/google-service-account.json`),
       debugMode: () => Effect.succeed(opts.debugMode ?? false),
+      bingApiKey: () => Effect.succeed(Option.none()),
       ensureDataDirectory: () => Effect.void,
     }),
   )

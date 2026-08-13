@@ -1,10 +1,10 @@
-import { BoxRenderable, createCliRenderer, fg, StyledText, t, TextRenderable } from "@opentui/core"
+import { BoxRenderable, createCliRenderer, dim, fg, StyledText, t, TextRenderable } from "@opentui/core"
 
-import { detailSummaryHeight, logKindLabel, opportunityLabels, phaseFor, readableIntent, setActiveOrigin, shortAction, signalExplanation, signalMeaning, signalReason, sparkline } from "./presentation.ts"
+import { bingInventoryKeywordNote, detailSummaryHeight, engineMetricsLine, formatBingIndexLine, homeCardStripHeight, homeEngineCards, keywordEngineBlock, logKindLabel, masterVisibleRowLimit, opportunityLabels, phaseFor, readableIntent, setActiveOrigin, shortAction, signalExplanation, signalMeaning, signalReason, sparkline } from "./presentation.ts"
 import { loadSiteCatalog, loadTuiData, type TuiData } from "./tuiData.ts"
-import type { HistoryDay, LogFeedEntry, LogReadout, OpportunityKind, OpportunitySignal, RegistryEntry, RegistryTargetProgress, Site } from "./types.ts"
+import type { HistoryDay, LogFeedEntry, LogReadout, OpportunityKind, OpportunitySignal, QueriesRow, RegistryEntry, RegistryTargetProgress, Site } from "./types.ts"
 
-type View = "home" | "opportunities" | "history" | "registry" | "log"
+type View = "home" | "opportunities" | "history" | "registry" | "log" | "queries"
 type HomeCategory = OpportunityKind | "sitemap-coverage" | "recent-activity"
 
 const views: readonly { readonly view: View; readonly key: string; readonly label: string }[] = [
@@ -13,6 +13,7 @@ const views: readonly { readonly view: View; readonly key: string; readonly labe
   { view: "history", key: "2", label: "History" },
   { view: "registry", key: "3", label: "Registry" },
   { view: "log", key: "4", label: "Log" },
+  { view: "queries", key: "5", label: "Queries" },
 ]
 
 const registryFor = (query: string, registry: readonly RegistryEntry[]) =>
@@ -118,6 +119,23 @@ const historyTable = (allDays: readonly HistoryDay[], visible: readonly HistoryD
   return new StyledText(chunks)
 }
 
+const queriesRow = (row: QueriesRow, selected: boolean, wide: boolean, queryWidth: number) => {
+  const query = row.query.length > queryWidth ? `…${row.query.slice(-(queryWidth - 1))}` : row.query.padEnd(queryWidth)
+  const page = row.page ? fitPathTail(row.page, wide ? 18 : 10) : "—".padEnd(wide ? 18 : 10)
+  const gImpr = row.google ? formatMetric(row.google.impressions).padStart(5) : "—".padStart(5)
+  const bImpr = row.bing ? formatMetric(row.bing.impressions).padStart(4) : "—".padStart(4)
+  if (wide) return `${selected ? "▶" : " "} ${query} ${page} ${gImpr} ${bImpr} ${(row.google?.clicks ?? "—").toString().padStart(4)} ${(row.bing?.clicks ?? "—").toString().padStart(3)}`
+  return `${selected ? "▶" : " "} ${query.slice(0, queryWidth)} ${gImpr} ${bImpr}`
+}
+
+const queriesTable = (rows: readonly QueriesRow[], visible: readonly QueriesRow[], selected: number, start: number, wide: boolean, queryWidth: number) => {
+  const header = wide
+    ? `  ${"QUERY".padEnd(queryWidth)} ${"PAGE".padEnd(18)} G IMPR B IMPR G CLK BCLK`
+    : `  ${"QUERY".padEnd(queryWidth)} GIMPR BIMPR`
+  const lines = [header, ...visible.map((row, index) => queriesRow(row, start + index === selected, wide, queryWidth))]
+  return lines.join("\n")
+}
+
 const formatMetric = (value: number) => value >= 10_000
   ? `${Math.round(value / 1_000)}k`
   : value >= 1_000
@@ -128,7 +146,9 @@ const navigationHint = (view: View) => view === "home"
   ? "Mouse drag copies section   ↑↓ select category   ←→ navigate sections   s switch site   Enter inspect signals   r reload   q quit"
   : view === "history"
     ? "Mouse drag copies section   ↑↓ select day   ←→ navigate sections   s switch site   r reload   q quit"
-    : `Mouse drag copies section   ↑↓ select ${view === "registry" ? "target" : view === "log" ? "entry" : "opportunity"}   ←→ navigate sections   s switch site   Enter open page   r reload   q quit`
+    : view === "queries"
+      ? "Mouse drag copies section   ↑↓ select query   ←→ navigate sections   s switch site   Enter open Google page   r reload   q quit"
+      : `Mouse drag copies section   ↑↓ select ${view === "registry" ? "target" : view === "log" ? "entry" : "opportunity"}   ←→ navigate sections   s switch site   Enter open page   r reload   q quit`
 
 const historyChart = (days: readonly HistoryDay[], selected: number, width = 23) => {
   const height = 8
@@ -184,6 +204,26 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
   const app = new BoxRenderable(renderer, { width: "100%", height: "100%", flexDirection: "column", padding: 1, gap: 1 })
   const header = new TextRenderable(renderer, { height: 1, flexShrink: 0, overflow: "hidden", content: "", fg: "#F7FAFC", attributes: 1 })
   const nav = new TextRenderable(renderer, { height: 1, flexShrink: 0, overflow: "hidden", content: "", fg: "#CBD5E0" })
+  // Home KPI strip — real bordered boxes like master/detail (not unicode frames in text).
+  const cardStrip = new BoxRenderable(renderer, { height: 0, flexShrink: 0, flexDirection: "row", gap: 1, overflow: "hidden" })
+  const makeEngineCard = () => {
+    const box = new BoxRenderable(renderer, {
+      flexGrow: 1,
+      minWidth: 0,
+      overflow: "hidden",
+      borderStyle: "single",
+      borderColor: "#4A5568",
+      padding: 1,
+      flexDirection: "column",
+    })
+    const title = new TextRenderable(renderer, { height: 1, flexShrink: 0, content: "", fg: "#F6AD55", attributes: 1 })
+    const body = new TextRenderable(renderer, { flexGrow: 1, minHeight: 0, overflow: "hidden", content: "", fg: "#E2E8F0" })
+    box.add(title)
+    box.add(body)
+    return { box, title, body }
+  }
+  const engineCards = [makeEngineCard(), makeEngineCard(), makeEngineCard()] as const
+  for (const card of engineCards) cardStrip.add(card.box)
   const split = new BoxRenderable(renderer, { flexDirection: "row", flexGrow: 1, gap: 1 })
   const master = new BoxRenderable(renderer, { width: "47%", flexShrink: 0, borderStyle: "single", borderColor: "#4A5568", padding: 1, flexDirection: "column" })
   const detail = new BoxRenderable(renderer, { flexGrow: 1, minWidth: 0, overflow: "hidden", borderStyle: "single", borderColor: "#4A5568", padding: 1, flexDirection: "column" })
@@ -220,15 +260,18 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
   split.add(detail)
   app.add(header)
   app.add(nav)
+  app.add(cardStrip)
   app.add(split)
   app.add(footer)
   renderer.root.add(app)
 
-  const rows = () => view === "home" ? homeCategories : view === "opportunities" ? data.digest.signals : view === "history" ? data.history : view === "log" ? data.logEntries : data.registryTargets
+  const rows = () => view === "home" ? homeCategories : view === "opportunities" ? data.digest.signals : view === "history" ? data.history : view === "log" ? data.logEntries : view === "queries" ? data.queries.queries : data.registryTargets
   const selectedRow = () => rows()[selected]
   const visibleRows = <T>(items: readonly T[]) => {
-    const hasTableHeader = view === "registry" || view === "history" || view === "log" || (view === "opportunities" && renderer.width >= 120)
-    const limit = Math.max(1, renderer.height - 12 - (hasTableHeader ? 1 : 0))
+    const hasTableHeader = view === "registry" || view === "history" || view === "log" || view === "queries" || (view === "opportunities" && renderer.width >= 120)
+    const stripHeight = homeCardStripHeight(view, renderer.height)
+    const extraChrome = stripHeight > 0 ? stripHeight + 1 : 0
+    const limit = masterVisibleRowLimit(renderer.height, { hasTableHeader, extraChrome })
     const start = Math.min(Math.max(0, selected - Math.floor(limit / 2)), Math.max(0, items.length - limit))
     return { start, items: items.slice(start, start + limit) }
   }
@@ -269,9 +312,15 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
         ? `${origin}${(item as RegistryTargetProgress | undefined)?.targetUrl ?? ""}`
         : view === "log"
           ? (item as LogFeedEntry | undefined) ? `${origin}${(item as LogFeedEntry).path}` : undefined
-          : undefined
+          : view === "queries"
+            ? (item as QueriesRow | undefined)?.page ? `${origin}${(item as QueriesRow).page}` : undefined
+            : undefined
     if (!url) {
-      status = view === "history" ? "History rows have no page destination. Use ←/→ to change workspace." : "Nothing selected."
+      status = view === "history"
+        ? "History rows have no page destination. Use ←/→ to change workspace."
+        : view === "queries"
+          ? "This query has no Google ranking page in the current window."
+          : "Nothing selected."
       return
     }
     Bun.spawn(["open", url])
@@ -288,12 +337,28 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
     detailGuideBody.content = ""
     const showBottomPanel = (view === "registry" && data.registryTargets.length > 0) || view === "history"
     detailBottom.height = showBottomPanel
-      ? view === "history" ? (renderer.height >= 32 ? 14 : 8) : (renderer.height >= 32 ? 8 : 5)
+      ? view === "history" ? (renderer.height >= 32 ? 14 : 8) : (renderer.height >= 32 ? 14 : 10)
       : 0
     detailBottom.border = showBottomPanel ? ["top"] : false
     const site = sites[siteIndex]!
     header.content = `Ranksta’s Paradise  ·  ${site.origin}  ·  ${summary.rows} Search Console rows across ${summary.dates} finalized days  ·  LIVE`
     nav.content = views.map((item, index) => `${index === activeView ? "[" : " "}${item.key} ${item.label}${index === activeView ? "]" : " "}`).join("  ")
+    const stripHeight = homeCardStripHeight(view, renderer.height)
+    cardStrip.height = stripHeight
+    if (stripHeight > 0) {
+      const cards = homeEngineCards(data.engineTotals, renderer.height < 30)
+      for (const [index, card] of engineCards.entries()) {
+        card.box.border = true
+        card.title.content = cards[index]!.title
+        card.body.content = cards[index]!.body
+      }
+    } else {
+      for (const card of engineCards) {
+        card.box.border = false
+        card.title.content = ""
+        card.body.content = ""
+      }
+    }
     if (view === "home") {
       selected = Math.max(0, Math.min(selected, homeCategories.length - 1))
       const grouped = new Map(opportunityKinds.map((kind) => [kind, data.digest.signals.filter((signal) => signal.kind === kind)]))
@@ -388,6 +453,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
     const items = rows()
     const registryTargetWidth = Math.max("TARGET URL".length, ...data.registryTargets.map((target) => target.targetUrl.length))
     const logTargetWidth = Math.min(renderer.width >= 120 ? 28 : 16, Math.max("TARGET".length, ...data.logEntries.map((entry) => entry.path.length)))
+    const queryWidth = Math.min(renderer.width >= 120 ? 28 : 18, Math.max("QUERY".length, ...data.queries.queries.map((row) => row.query.length)))
     selected = Math.max(0, Math.min(selected, Math.max(0, items.length - 1)))
     const window = visibleRows(items as readonly unknown[])
     masterTitle.content = view === "opportunities"
@@ -396,9 +462,19 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
         ? `DAILY SEARCH VISIBILITY · ${window.start + 1}–${Math.min(items.length, window.start + window.items.length)}/${items.length}`
         : view === "log"
           ? `ACTIVITY LOG · ${window.start + 1}–${Math.min(items.length, window.start + window.items.length)}/${items.length}`
-          : `REGISTRY · 28D  ${window.start + 1}–${Math.min(items.length, window.start + window.items.length)}/${items.length}`
+          : view === "queries"
+            ? `QUERIES · 7D  ${window.start + 1}–${Math.min(items.length, window.start + window.items.length)}/${items.length}`
+            : `REGISTRY · 28D  ${window.start + 1}–${Math.min(items.length, window.start + window.items.length)}/${items.length}`
     masterBody.content = items.length === 0
-      ? view === "opportunities" ? "No opportunities meet the current thresholds." : view === "history" ? "No finalized search activity is available." : view === "log" ? "No actions or notes logged yet. Record one with the log CLI." : "The keyword registry has no target pages."
+      ? view === "opportunities"
+        ? "No opportunities meet the current thresholds."
+        : view === "history"
+          ? "No finalized search activity is available."
+          : view === "log"
+            ? "No actions or notes logged yet. Record one with the log CLI."
+            : view === "queries"
+              ? "No observed queries meet the current filters."
+              : "The keyword registry has no target pages."
       : view === "opportunities"
         ? [
             ...(renderer.width >= 120 ? ["  TYPE                QUERY                            IMPRESSIONS"] : []),
@@ -408,7 +484,9 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
           ? historyTable(items as readonly HistoryDay[], window.items as readonly HistoryDay[], selected, window.start, renderer.width >= 120)
           : view === "log"
             ? logTable(items as readonly LogFeedEntry[], window.items as readonly LogFeedEntry[], selected, window.start, renderer.width >= 120, logTargetWidth)
-            : registryTable(window.items as readonly RegistryTargetProgress[], selected, window.start, renderer.width >= 120, registryTargetWidth)
+            : view === "queries"
+              ? queriesTable(items as readonly QueriesRow[], window.items as readonly QueriesRow[], selected, window.start, renderer.width >= 120, queryWidth)
+              : registryTable(window.items as readonly RegistryTargetProgress[], selected, window.start, renderer.width >= 120, registryTargetWidth)
     const item = selectedRow()
     if (!item) {
       detailSummaryTitle.content = "NO SELECTION"
@@ -494,6 +572,19 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
         "",
         ...(readout ? ["BEFORE / AFTER", readout] : []),
       ].join("\n")
+    } else if (view === "queries") {
+      const row = item as QueriesRow
+      const report = data.queries
+      detailSummaryTitle.content = row.query
+      detailSummaryBody.content = t`${dim(engineMetricsLine(row.google, row.bing))}
+Mapped target: ${row.mappedTarget ?? "Unmapped"}
+Google page: ${row.page ?? "—"}
+Window: Google ${report.window.google.start ?? "—"} → ${report.window.google.end ?? "—"} · Bing capture ${report.window.bing.capturedDate ?? "—"}`
+      detailTitle.content = ""
+      detailBody.content = [
+        report.note ?? "Google figures are aggregated to a matched 7-day window. Bing figures come from the newest rolling capture only.",
+        row.page ? "Press Enter to open the Google ranking page." : "No Google ranking page is available for this query in the current window.",
+      ].join("\n")
     } else {
       const progress = item as RegistryTargetProgress
       const entry = progress.entries[0]!
@@ -534,6 +625,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
       const impressionEndpoints = endpoint(impressionValues, (value) => Math.round(value).toString())
       const positionEndpoints = endpoint(positionValues, (value) => value.toFixed(1))
       detailSummaryTitle.content = progress.targetUrl
+      const bingIndexLine = formatBingIndexLine(progress)
       detailSummaryBody.content = [
         `Page: ${progress.targetUrl}`,
         `Current 28 days: ${performance.total.impressions} impressions · ${performance.total.clicks} clicks · ${(performance.total.ctr * 100).toFixed(1)}% CTR · position ${performance.total.position.toFixed(1)}`,
@@ -545,6 +637,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
         `Search intent: ${readableIntent(entry.intent)}`,
         `Registry: ${entry.priority} · ${entry.country} · ${keywordEntries.length} keywords`,
         `Google index: ${indexDetail}`,
+        ...(bingIndexLine ? [bingIndexLine] : []),
       ].join("\n")
       detailTitle.content = inventoryOnly ? "PAGE PERFORMANCE · ALL QUERIES" : "NON-BRAND PERFORMANCE"
       const performanceDetails = [
@@ -569,9 +662,27 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
       ].join("\n")
       detailBody.content = t`${measurementStatus}\n\n${fg("#F7FAFC")("WHY THIS IS AN OPPORTUNITY")}\n${entry.whyOpportunity || "No opportunity rationale has been recorded for this page."}\n\n${performanceDetails}\n\n${fg("#F7FAFC")(activityDetails)}`
       detailBottomTitle.content = `KEYWORDS · ${keywordEntries.length}`
-      detailBottomBody.content = keywordEntries.length > 0
-        ? keywordEntries.map((mapped, index) => `${index + 1}. ${mapped.keyword}`).join("\n")
-        : "No keyword target assigned; this page is tracked as sitemap inventory."
+      const windowsForTarget = data.keywordWindows.filter((window) => window.targetUrl === progress.targetUrl)
+      if (inventoryOnly) {
+        detailBottomBody.content = `No keyword target assigned; this page is tracked as sitemap inventory.\n\n${bingInventoryKeywordNote}`
+      } else if (keywordEntries.length === 0) {
+        detailBottomBody.content = "No keyword target assigned; this page is tracked as sitemap inventory."
+      } else {
+        const chunks = []
+        for (const [index, mapped] of keywordEntries.entries()) {
+          if (index > 0) chunks.push(...t`\n`.chunks)
+          const window = windowsForTarget.find(
+            (candidate) => candidate.keyword.toLowerCase() === mapped.keyword.toLowerCase(),
+          )
+          if (window) {
+            const block = keywordEngineBlock(window)
+            chunks.push(...t`${fg("#F7FAFC")(block.title)}\n${dim(block.metrics)}`.chunks)
+          } else {
+            chunks.push(...t`${fg("#F7FAFC")(mapped.keyword)}`.chunks)
+          }
+        }
+        detailBottomBody.content = new StyledText(chunks)
+      }
     }
     const legend = view === "registry"
       ? "   ·   Dim rows: Google reports this page is not indexed."
@@ -653,6 +764,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
       else if (key.name === "2") setView("history")
       else if (key.name === "3") setView("registry")
       else if (key.name === "4") setView("log")
+      else if (key.name === "5") setView("queries")
       else if (key.name === "s") {
         siteIndex = (siteIndex + 1) % sites.length
         void loadData().then((next) => { data = next; selected = 0; status = `Switched to ${activeSite().name}.`; render() })

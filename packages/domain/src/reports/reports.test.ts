@@ -9,8 +9,9 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { Effect, Layer, ManagedRuntime } from "effect"
+import { Effect, Layer, ManagedRuntime, Option, Redacted } from "effect"
 
+import { Config } from "../config/config.ts"
 import { Registry } from "../registry/registry.ts"
 import { type RegistryEntry } from "../registry/schema.ts"
 import {
@@ -294,48 +295,59 @@ let runtime: ManagedRuntime.ManagedRuntime<
   | Storage.Service
   | Registry.Service
   | Sitemap.Service
-  | CurrentSite.Service,
+  | CurrentSite.Service
+  | Config.Service,
   StorageError
 >
 
-beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), "rp-reports-"))
-  const dbPath = join(dir, "search-console.sqlite")
-
-  const currentSiteLayer = Layer.succeed(CurrentSite.Service, {
+const currentSiteLayer = (root: string) =>
+  Layer.succeed(CurrentSite.Service, {
     current: () => Effect.succeed(site),
-    dataDirectory: () => Effect.succeed(dir),
-    databasePath: () => Effect.succeed(dbPath),
-    registryPath: () => Effect.succeed(join(dir, "keyword-registry.csv")),
-    sitemapPath: () => Effect.succeed(join(dir, "sitemap.json")),
+    dataDirectory: () => Effect.succeed(root),
+    databasePath: () => Effect.succeed(join(root, "search-console.sqlite")),
+    registryPath: () => Effect.succeed(join(root, "keyword-registry.csv")),
+    sitemapPath: () => Effect.succeed(join(root, "sitemap.json")),
   } satisfies CurrentSite.Interface)
 
-  const registryLayer = Layer.succeed(Registry.Service, {
-    loadRegistry: () => Effect.succeed(fixtureRegistry),
-    appendRegistryEntry: () => Effect.void,
-    updateRegistryRows: () => Effect.succeed(0),
-    markMissingBaselines: () => Effect.succeed(0),
-  } satisfies Registry.Interface)
+const registryLayer = Layer.succeed(Registry.Service, {
+  loadRegistry: () => Effect.succeed(fixtureRegistry),
+  appendRegistryEntry: () => Effect.void,
+  updateRegistryRows: () => Effect.succeed(0),
+  markMissingBaselines: () => Effect.succeed(0),
+} satisfies Registry.Interface)
 
-  const sitemapLayer = Layer.succeed(Sitemap.Service, {
-    refreshSitemapPages: () => Effect.succeed(fixtureSitemap),
-    loadCachedSitemapPages: () => Effect.succeed(fixtureSitemap),
-    unmappedSitemapPages: (pages, registry) =>
-      Effect.succeed(
-        pages.filter(
-          (page) => !registry.some((row) => row.targetUrl === page.path),
-        ),
+const sitemapLayer = Layer.succeed(Sitemap.Service, {
+  refreshSitemapPages: () => Effect.succeed(fixtureSitemap),
+  loadCachedSitemapPages: () => Effect.succeed(fixtureSitemap),
+  unmappedSitemapPages: (pages, registry) =>
+    Effect.succeed(
+      pages.filter(
+        (page) => !registry.some((row) => row.targetUrl === page.path),
       ),
-  } satisfies Sitemap.Interface)
+    ),
+} satisfies Sitemap.Interface)
 
-  const storageLayer = Storage.layer.pipe(Layer.provide(currentSiteLayer))
-  const base = Layer.mergeAll(
-    storageLayer,
+const reportsRuntime = (
+  root: string,
+  bingApiKey: Option.Option<Redacted.Redacted<string>>,
+) => {
+  const siteLayer = currentSiteLayer(root)
+  const configLayer = Layer.mock(Config.Service)({
+    bingApiKey: () => Effect.succeed(bingApiKey),
+  })
+  const deps = Layer.mergeAll(
+    Storage.layer.pipe(Layer.provide(siteLayer)),
     registryLayer,
     sitemapLayer,
-    currentSiteLayer,
+    siteLayer,
+    configLayer,
   )
-  runtime = ManagedRuntime.make(Reports.layer.pipe(Layer.provideMerge(base)))
+  return ManagedRuntime.make(Reports.layer.pipe(Layer.provideMerge(deps)))
+}
+
+beforeAll(async () => {
+  dir = mkdtempSync(join(tmpdir(), "rp-reports-"))
+  runtime = reportsRuntime(dir, Option.none())
 
   // Seed the store with the debug dataset and one action to exercise logFeed.
   await runtime.runPromise(
@@ -357,6 +369,27 @@ beforeAll(async () => {
         kind: "content-update",
         note: "Expanded the comparison table.",
       })
+      yield* storage.saveBingSiteDaily([
+        { date: "2026-07-10", clicks: 4, impressions: 70 },
+        { date: "2026-07-11", clicks: 1, impressions: 18 },
+      ])
+      yield* storage.saveBingQueryWindow("2026-07-12", [
+        { query: "pocket alternative", clicks: 3, impressions: 12, position: 5 },
+        { query: "chrome read later extension", clicks: 0, impressions: 4, position: 9 },
+      ])
+      yield* storage.saveBingQueryWindow("2026-07-10", [
+        { query: "pocket alternative", clicks: 99, impressions: 999, position: 1 },
+      ])
+      yield* storage.saveBingUrlInfos([
+        {
+          targetUrl: `${ORIGIN}/pocket-alternative`,
+          discoveredAt: "2024-03-01",
+          lastCrawledAt: "2024-06-15",
+          anchorCount: 2,
+          documentSize: 2048,
+          inIndex: true,
+        },
+      ])
     }),
   )
 }, 60_000)
@@ -383,7 +416,45 @@ test("statusReport counts registry targets/keywords and sitemap pages", async ()
   expect(report.data.syncedDays).toBe(56)
   expect(report.data.firstDate).toBe("2026-05-18")
   expect(report.data.lastDate).toBe("2026-07-12")
+  expect(report.bing).toBeNull()
 })
+
+test("statusReport surfaces Bing gaps when an API key is configured", async () => {
+  const today = new Date().toISOString().slice(0, 10)
+  const expectedEnd = dateDaysBefore(today, 2)
+  const expectedStart = dateDaysBefore(expectedEnd, 7)
+  const expectedDates = datesBetween(expectedStart, expectedEnd)
+
+  const keyedRuntime = reportsRuntime(dir, Option.some(Redacted.make("bing-secret")))
+  const report = await keyedRuntime.runPromise(Reports.use.statusReport())
+  expect(report.bing).toEqual({
+    firstDate: "2026-07-10",
+    lastDate: "2026-07-11",
+    collectedDays: 2,
+    missingDates: expectedDates.filter(
+      (date) => date !== "2026-07-10" && date !== "2026-07-11",
+    ),
+    syncedWithinHours: true,
+  })
+  await keyedRuntime.dispose()
+})
+
+const dateDaysBefore = (date: string, days: number): string => {
+  const value = new Date(`${date}T00:00:00.000Z`)
+  value.setUTCDate(value.getUTCDate() - days)
+  return value.toISOString().slice(0, 10)
+}
+
+const datesBetween = (start: string, end: string): ReadonlyArray<string> => {
+  const dates: Array<string> = []
+  const date = new Date(`${start}T00:00:00.000Z`)
+  const last = new Date(`${end}T00:00:00.000Z`)
+  while (date <= last) {
+    dates.push(date.toISOString().slice(0, 10))
+    date.setUTCDate(date.getUTCDate() + 1)
+  }
+  return dates
+}
 
 test("pagesReport sorts a known page by impressions desc", async () => {
   const report = await run(Reports.use.pagesReport())
@@ -417,6 +488,10 @@ test("pageReport returns path, verdict, and top queries for a mapped page", asyn
   )
   expect(pocket).toBeDefined()
   expect(pocket?.brand).toBe(false)
+  expect(report.bingInIndex).toBe(true)
+  expect(report.bingDiscoveredAt).toBe("2024-03-01")
+  expect(report.bingLastCrawledAt).toBe("2024-06-15")
+  expect(report.bingInspectedAt).not.toBeNull()
 })
 
 test("pageReport rejects a non-slash path", async () => {
@@ -426,14 +501,13 @@ test("pageReport rejects a non-slash path", async () => {
   expect(exit._tag).toBe("Failure")
 })
 
-test("queriesReport excludes brand queries by default", async () => {
+test("queriesReport excludes brand queries by default for both engines", async () => {
   const report = await run(Reports.use.queriesReport())
+  expect(report.window.days).toBe(7)
   expect(report.queries.length).toBeGreaterThan(0)
-  // "sleevy chrome extension" is a brand query and must be filtered out.
   expect(
     report.queries.some((query) => query.query === "sleevy chrome extension"),
   ).toBe(false)
-  // No returned query is flagged as brand.
   expect(report.queries.every((query) => query.brand === false)).toBe(true)
 })
 
@@ -441,6 +515,57 @@ test("queriesReport includes brand queries when requested", async () => {
   const report = await run(Reports.use.queriesReport({ includeBrand: true }))
   expect(
     report.queries.some((query) => query.query === "sleevy chrome extension"),
+  ).toBe(true)
+})
+
+test("queriesReport outer-joins google-only and bing-only queries", async () => {
+  await runtime.runPromise(
+    Storage.use.saveBingQueryWindow("2026-07-12", [
+      { query: "pocket alternative", clicks: 3, impressions: 12, position: 5 },
+      { query: "chrome read later extension", clicks: 0, impressions: 4, position: 9 },
+      { query: "bing only query", clicks: 2, impressions: 8, position: 11 },
+    ]),
+  )
+  const report = await run(Reports.use.queriesReport())
+  const bingOnly = report.queries.find((row) => row.query === "bing only query")
+  expect(bingOnly?.google).toBeNull()
+  expect(bingOnly?.bing?.clicks).toBe(2)
+  const googleOnly = report.queries.find((row) => row.query === "raycast save links")
+  expect(googleOnly?.google?.impressions).toBeGreaterThan(0)
+  expect(googleOnly?.bing).toBeNull()
+  await runtime.runPromise(
+    Storage.use.saveBingQueryWindow("2026-07-12", [
+      { query: "pocket alternative", clicks: 3, impressions: 12, position: 5 },
+      { query: "chrome read later extension", clicks: 0, impressions: 4, position: 9 },
+    ]),
+  )
+})
+
+test("queriesReport reads the newest Bing capture only", async () => {
+  const report = await run(Reports.use.queriesReport())
+  const pocket = report.queries.find((row) => row.query === "pocket alternative")
+  expect(pocket?.bing?.clicks).toBe(3)
+  expect(pocket?.bing?.impressions).toBe(12)
+  expect(report.window.bing.capturedDate).toBe("2026-07-12")
+})
+
+test("queriesReport collapses Google to query level across pages", async () => {
+  const report = await run(Reports.use.queriesReport())
+  const readLater = report.queries.filter((row) => row.query === "read later app")
+  expect(readLater).toHaveLength(1)
+  expect(readLater[0]?.google?.impressions).toBeGreaterThan(31)
+})
+
+test("queriesReport page option scopes Google and omits Bing with a note", async () => {
+  const report = await run(
+    Reports.use.queriesReport({ page: "/chrome-extension" }),
+  )
+  expect(report.unsupported?.bing).toEqual(["page"])
+  expect(report.note).toContain("Bing cannot report page-scoped")
+  expect(report.queries.every((row) => row.bing === null)).toBe(true)
+  expect(report.queries.every((row) => row.page === "/chrome-extension")).toBe(true)
+  expect(
+    report.queries.some((row) => row.query === "chrome read later extension"),
   ).toBe(true)
 })
 
@@ -537,4 +662,32 @@ test("dashboardSnapshot returns RAW internal shapes", async () => {
   // Per-target series are the raw 28-day RegistryPerformance (metrics not tidied).
   const perf = snapshot.performances[0]?.performance
   expect(perf?.days.length).toBe(28)
+})
+
+test("engineTotals aggregates google and bing over 28d and 7d windows", async () => {
+  const snapshot = await run(Reports.use.dashboardSnapshot())
+  const totals = snapshot.engineTotals
+
+  expect(totals.google.d28.windowDays).toBe(28)
+  expect(totals.google.d28.impressions).toBeGreaterThan(0)
+  expect(totals.google.d28.daysCollected).toBe(28)
+  expect(totals.bing.d28.clicks).toBe(5)
+  expect(totals.bing.d28.impressions).toBe(88)
+  expect(totals.bing.d28.daysCollected).toBe(2)
+  expect(totals.bing.d28.ctr).toBeCloseTo(5 / 88, 4)
+  expect(totals.bing.d7.clicks).toBe(5)
+})
+
+
+test("keywordWindows join exact registry keywords on the newest Bing capture only", async () => {
+  const snapshot = await run(Reports.use.dashboardSnapshot())
+  const pocket = snapshot.keywordWindows.find((window) => window.targetUrl === "/pocket-alternative" && window.keyword === "pocket alternative")
+  expect(pocket?.bing7d).toEqual({ impressions: 12, clicks: 3, ctr: 0.25, position: 5 })
+  expect(pocket?.google7d.impressions).toBeGreaterThan(0)
+  const list = await run(Reports.use.registryList())
+  const pocketKeyword = list.targets.find((target) => target.targetUrl === "/pocket-alternative")?.keywords.find((keyword) => keyword.keyword === "pocket alternative")
+  expect(pocketKeyword?.bing7d?.clicks).toBe(3)
+  const latest = await runtime.runPromise(Storage.use.bingQueryWindowLatest())
+  expect(latest?.capturedDate).toBe("2026-07-12")
+  expect(latest?.rows).toHaveLength(2)
 })

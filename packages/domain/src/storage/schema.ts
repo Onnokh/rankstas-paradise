@@ -117,6 +117,10 @@ export const RegistryTargetProgress = Schema.Struct({
   indexStatus: IndexStatus,
   coverageState: Schema.NullOr(Schema.String),
   inspectedAt: Schema.NullOr(Schema.String),
+  bingInIndex: Schema.NullOr(Schema.Boolean),
+  bingDiscoveredAt: Schema.NullOr(Schema.String),
+  bingLastCrawledAt: Schema.NullOr(Schema.String),
+  bingInspectedAt: Schema.NullOr(Schema.String),
 }).annotate({ identifier: "RegistryTargetProgress" })
 export interface RegistryTargetProgress
   extends Schema.Schema.Type<typeof RegistryTargetProgress> {}
@@ -250,6 +254,14 @@ export const SnapshotDateRange = Schema.Struct({
 }).annotate({ identifier: "SnapshotDateRange" })
 export interface SnapshotDateRange
   extends Schema.Schema.Type<typeof SnapshotDateRange> {}
+
+export const BingSiteDailyDateRange = Schema.Struct({
+  first: Schema.NullOr(Schema.String),
+  last: Schema.NullOr(Schema.String),
+  count: Schema.Number,
+}).annotate({ identifier: "BingSiteDailyDateRange" })
+export interface BingSiteDailyDateRange
+  extends Schema.Schema.Type<typeof BingSiteDailyDateRange> {}
 
 export const BaselineCapture = Schema.Struct({
   targets: Schema.Number,

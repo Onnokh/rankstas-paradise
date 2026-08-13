@@ -60,6 +60,12 @@ The all-queries metrics with brand queries filtered out. Keyword targets are jud
 **True totals**:
 Clicks and impressions from Google's query-*less* daily totals — the honest headline numbers, including the long-tail traffic Google withholds from per-query rows.
 
+**Engine**:
+Which search provider a metric came from: `google` or `bing`. Home cards and future per-engine readouts label both; verdicts, phases, opportunities, and true totals stay Google-only.
+
+**Bing totals**:
+Clicks and impressions from Bing Webmaster's site-level daily series. Bing counts chat and image surfaces that Google's web-type data excludes, so impression ratios between engines are not directly comparable — click counts are the more honest basis for comparison.
+
 **Window**:
 A rolling N-day period (default 28). Reports compare the current window against the previous one.
 

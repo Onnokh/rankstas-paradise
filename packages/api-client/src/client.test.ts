@@ -104,6 +104,7 @@ const statusBody = {
   registry: { targets: 3, keywords: 5, clusters: 2 },
   sitemap: { pages: 20, unmapped: ["/x"] },
   actions: 4,
+  bing: null,
 }
 
 const registryAddBody = {
@@ -164,21 +165,29 @@ test("catalog: sites decodes the { sites } envelope", async () => {
   expect(http.calls[0]!.url.pathname).toBe("/api/sites")
 })
 
-test("queries: options map to the wire query params", async () => {
+test("queries: options map to the wire query params and decode dual-engine 7d", async () => {
   const http = fakeHttp(() => ({
     status: 200,
     body: {
       window: {
-        currentStart: null,
-        currentEnd: null,
-        previousStart: null,
-        previousEnd: null,
+        days: 7,
+        google: { start: "2026-07-06", end: "2026-07-12" },
+        bing: { capturedDate: "2026-07-12" },
       },
-      queries: [],
+      queries: [
+        {
+          query: "pocket alternative",
+          brand: false,
+          mappedTarget: "/pocket-alternative",
+          page: "/pocket-alternative",
+          google: { impressions: 100, clicks: 5, ctr: 0.05, position: 10.1 },
+          bing: { impressions: 12, clicks: 3, ctr: 0.25, position: 5 },
+        },
+      ],
     },
   }))
 
-  await ApiClient.use
+  const report = await ApiClient.use
     .queries(
       {
         page: "/p",
@@ -190,6 +199,9 @@ test("queries: options map to the wire query params", async () => {
       siteId,
     )
     .pipe(Effect.provide(buildLayer(http.layer)), Effect.runPromise)
+
+  expect(report.window.days).toBe(7)
+  expect(report.queries[0]?.bing?.clicks).toBe(3)
 
   const params = http.calls[0]!.url.searchParams
   expect(params.get("page")).toBe("/p")

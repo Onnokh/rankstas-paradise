@@ -17,6 +17,7 @@ import { Layer, ManagedRuntime } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 
 import { Config } from "@rp/domain/config/config"
+import { BingWebmaster } from "@rp/domain/bing-webmaster/bing-webmaster"
 import { CurrentSite } from "@rp/domain/sites/current-site"
 import { Registry } from "@rp/domain/registry/registry"
 import { Reports } from "@rp/domain/reports/reports"
@@ -38,6 +39,7 @@ const siteLayer = (site: Site) =>
     Layer.provideMerge(Sync.layer),
     Layer.provideMerge(Sites.layer),
     Layer.provideMerge(SearchConsole.layer),
+    Layer.provideMerge(BingWebmaster.layer),
     Layer.provideMerge(Storage.layer),
     Layer.provideMerge(Registry.layer),
     Layer.provideMerge(Sitemap.layer),
@@ -52,6 +54,7 @@ export type SiteRuntime = ManagedRuntime.ManagedRuntime<
   | Sync.Service
   | Sites.Service
   | SearchConsole.Service
+  | BingWebmaster.Service
   | Storage.Service
   | Registry.Service
   | Sitemap.Service

@@ -147,6 +147,38 @@ export const LogAddInput = Schema.Struct({
 }).annotate({ identifier: "LogAddInput" })
 export interface LogAddInput extends Schema.Schema.Type<typeof LogAddInput> {}
 
+export const EngineWindowTotals = Schema.Struct({
+  impressions: Schema.Number,
+  clicks: Schema.Number,
+  ctr: Schema.Number,
+  daysCollected: Schema.Number,
+  windowDays: Schema.Number,
+}).annotate({ identifier: "EngineWindowTotals" })
+export interface EngineWindowTotals
+  extends Schema.Schema.Type<typeof EngineWindowTotals> {}
+
+export const EnginePairTotals = Schema.Struct({
+  d28: EngineWindowTotals,
+  d7: EngineWindowTotals,
+}).annotate({ identifier: "EnginePairTotals" })
+export interface EnginePairTotals
+  extends Schema.Schema.Type<typeof EnginePairTotals> {}
+
+export const EngineTotals = Schema.Struct({
+  google: EnginePairTotals,
+  bing: EnginePairTotals,
+}).annotate({ identifier: "EngineTotals" })
+export interface EngineTotals extends Schema.Schema.Type<typeof EngineTotals> {}
+
+export const KeywordEngineWindow = Schema.Struct({
+  keyword: Schema.String,
+  targetUrl: Schema.String,
+  google7d: TidyMetrics,
+  bing7d: Schema.NullOr(TidyMetrics),
+}).annotate({ identifier: "KeywordEngineWindow" })
+export interface KeywordEngineWindow
+  extends Schema.Schema.Type<typeof KeywordEngineWindow> {}
+
 export const DashboardSnapshot = Schema.Struct({
   summary: Schema.Struct({ rows: Schema.Number, dates: Schema.Number }),
   registry: Schema.Array(RegistryEntry),
@@ -163,6 +195,8 @@ export const DashboardSnapshot = Schema.Struct({
       performance: RegistryPerformance,
     }),
   ),
+  engineTotals: EngineTotals,
+  keywordWindows: Schema.Array(KeywordEngineWindow),
 }).annotate({ identifier: "DashboardSnapshot" })
 export interface DashboardSnapshot
   extends Schema.Schema.Type<typeof DashboardSnapshot> {}
@@ -188,6 +222,15 @@ export const StatusReport = Schema.Struct({
     unmapped: Schema.Array(Schema.String),
   }),
   actions: Schema.Number,
+  bing: Schema.NullOr(
+    Schema.Struct({
+      firstDate: Schema.NullOr(Schema.String),
+      lastDate: Schema.NullOr(Schema.String),
+      collectedDays: Schema.Number,
+      missingDates: Schema.Array(Schema.String),
+      syncedWithinHours: Schema.Boolean,
+    }),
+  ),
 }).annotate({ identifier: "StatusReport" })
 export interface StatusReport extends Schema.Schema.Type<typeof StatusReport> {}
 
@@ -242,6 +285,10 @@ export const PageReport = Schema.Struct({
   indexed: IndexStatus,
   coverageState: Schema.NullOr(Schema.String),
   inspectedAt: Schema.NullOr(Schema.String),
+  bingInIndex: Schema.NullOr(Schema.Boolean),
+  bingDiscoveredAt: Schema.NullOr(Schema.String),
+  bingLastCrawledAt: Schema.NullOr(Schema.String),
+  bingInspectedAt: Schema.NullOr(Schema.String),
   measuredFrom: Schema.NullOr(Schema.String),
   plan: Schema.Array(EntrySummary),
   verdict: Verdict.fields.verdict,
@@ -281,19 +328,29 @@ export interface PageReport extends Schema.Schema.Type<typeof PageReport> {}
 
 export const QueriesReport = Schema.Struct({
   window: Schema.Struct({
-    currentStart: Schema.NullOr(Schema.String),
-    currentEnd: Schema.NullOr(Schema.String),
-    previousStart: Schema.NullOr(Schema.String),
-    previousEnd: Schema.NullOr(Schema.String),
+    days: Schema.Literal(7),
+    google: Schema.Struct({
+      start: Schema.NullOr(Schema.String),
+      end: Schema.NullOr(Schema.String),
+    }),
+    bing: Schema.Struct({
+      capturedDate: Schema.NullOr(Schema.String),
+    }),
   }),
+  note: Schema.optional(Schema.String),
+  unsupported: Schema.optional(
+    Schema.Struct({
+      bing: Schema.Array(Schema.Literal("page")),
+    }),
+  ),
   queries: Schema.Array(
     Schema.Struct({
       query: Schema.String,
-      page: Schema.String,
       brand: Schema.Boolean,
       mappedTarget: Schema.NullOr(Schema.String),
-      current: TidyMetrics,
-      previous: Schema.NullOr(TidyMetrics),
+      page: Schema.NullOr(Schema.String),
+      google: Schema.NullOr(TidyMetrics),
+      bing: Schema.NullOr(TidyMetrics),
     }),
   ),
 }).annotate({ identifier: "QueriesReport" })
@@ -328,6 +385,10 @@ export const RegistryListReport = Schema.Struct({
       indexed: IndexStatus,
       coverageState: Schema.NullOr(Schema.String),
       inspectedAt: Schema.NullOr(Schema.String),
+      bingInIndex: Schema.NullOr(Schema.Boolean),
+      bingDiscoveredAt: Schema.NullOr(Schema.String),
+      bingLastCrawledAt: Schema.NullOr(Schema.String),
+      bingInspectedAt: Schema.NullOr(Schema.String),
       priority: Schema.NullOr(Schema.String),
       intent: Schema.String,
       publishedAt: Schema.NullOr(Schema.String),
@@ -343,6 +404,8 @@ export const RegistryListReport = Schema.Struct({
           cluster: Schema.String,
           intent: Schema.String,
           country: Schema.String,
+          google7d: TidyMetrics,
+          bing7d: Schema.NullOr(TidyMetrics),
         }),
       ),
     }),
@@ -392,6 +455,7 @@ export const HistoryReport = Schema.Struct({
       position: Schema.Number,
     }),
   ),
+  engineTotals: EngineTotals,
 }).annotate({ identifier: "HistoryReport" })
 export interface HistoryReport
   extends Schema.Schema.Type<typeof HistoryReport> {}

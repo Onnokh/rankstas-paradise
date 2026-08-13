@@ -5,8 +5,10 @@
 // Pure presentation helpers and shared copy live at the bottom as plain
 // exported functions/constants (no service, no site) so both frontends format
 // identically.
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Option } from "effect"
 
+import { isBrandQuery } from "../brand.ts"
+import { Config } from "../config/config.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { type RegistryEntry, type RegistryPatch } from "../registry/schema.ts"
 import { type RegistryError } from "../registry/schema.ts"
@@ -28,7 +30,10 @@ import {
 import {
   type DashboardSnapshot,
   type EntrySummary,
+  type EngineTotals,
+  type EngineWindowTotals,
   type HistoryReport,
+  type KeywordEngineWindow,
   type LogAddInput,
   type LogAddResult,
   type LogFeedEntry,
@@ -107,6 +112,7 @@ export const layer = Layer.effect(
     const storage = yield* Storage.Service
     const registry = yield* Registry.Service
     const sitemap = yield* Sitemap.Service
+    const config = yield* Config.Service
     const site = yield* CurrentSite.Service
     const resolved = yield* site.current()
     const origin = resolved.origin
@@ -124,6 +130,116 @@ export const layer = Layer.effect(
           RegistryError: (cause) =>
             Effect.fail(new ReportsError({ message: cause.message, cause })),
         }),
+      )
+
+    const aggregateEngineWindow = (
+      rows: ReadonlyArray<{
+        readonly date: string
+        readonly clicks: number
+        readonly impressions: number
+      }>,
+      start: string,
+      end: string,
+      windowDays: number,
+    ): EngineWindowTotals => {
+      const inWindow = rows.filter(
+        (row) => row.date >= start && row.date <= end,
+      )
+      const impressions = inWindow.reduce(
+        (total, row) => total + row.impressions,
+        0,
+      )
+      const clicks = inWindow.reduce((total, row) => total + row.clicks, 0)
+      return {
+        impressions,
+        clicks,
+        ctr: impressions > 0 ? clicks / impressions : 0,
+        daysCollected: inWindow.length,
+        windowDays,
+      }
+    }
+
+    const engineTotals = (): Effect.Effect<EngineTotals, StorageError> =>
+      Effect.gen(function* () {
+        const googleDays = yield* storage.historyWithPending(485)
+        const latestDate =
+          googleDays.at(-1)?.date ?? (yield* storage.finalizationCutoff())
+        const start28 = dateDaysBefore(latestDate, 27)
+        const start7 = dateDaysBefore(latestDate, 6)
+        const bingRows = yield* storage.bingSiteDailyBetween(start28, latestDate)
+        return {
+          google: {
+            d28: aggregateEngineWindow(googleDays, start28, latestDate, 28),
+            d7: aggregateEngineWindow(googleDays, start7, latestDate, 7),
+          },
+          bing: {
+            d28: aggregateEngineWindow(bingRows, start28, latestDate, 28),
+            d7: aggregateEngineWindow(bingRows, start7, latestDate, 7),
+          },
+        }
+      })
+
+    const metricsFromBingRow = (row: {
+      readonly clicks: number
+      readonly impressions: number
+      readonly position: number
+    }): Metrics => ({
+      impressions: row.impressions,
+      clicks: row.clicks,
+      ctr: row.impressions > 0 ? row.clicks / row.impressions : 0,
+      position: row.position,
+    })
+
+    const keywordWindowsFor = (
+      entries: ReadonlyArray<RegistryEntry>,
+    ): Effect.Effect<ReadonlyArray<KeywordEngineWindow>, StorageError> =>
+      Effect.gen(function* () {
+        const latestDate = yield* storage.latestSnapshotDate()
+        const bingCapture = yield* storage.bingQueryWindowLatest()
+        const bingByQuery = new Map(
+          bingCapture?.rows.map((row) => [row.query.toLowerCase(), row]) ?? [],
+        )
+        const keywordEntries = entries.filter((entry) => entry.keyword.trim())
+        if (!latestDate) {
+          return keywordEntries.map((entry) => ({
+            keyword: entry.keyword,
+            targetUrl: entry.targetUrl,
+            google7d: tidy(zeroMetrics),
+            bing7d: null,
+          }))
+        }
+        const start7 = dateDaysBefore(latestDate, 6)
+        return yield* Effect.forEach(keywordEntries, (entry) =>
+          Effect.gen(function* () {
+            const google7d = yield* storage.googleKeywordMetricsBetween(
+              `${origin}${entry.targetUrl}`,
+              entry.keyword,
+              start7,
+              latestDate,
+            )
+            const bingRow = bingCapture
+              ? bingByQuery.get(entry.keyword.toLowerCase())
+              : undefined
+            return {
+              keyword: entry.keyword,
+              targetUrl: entry.targetUrl,
+              google7d: tidy(google7d),
+              bing7d: bingCapture
+                ? tidy(bingRow ? metricsFromBingRow(bingRow) : zeroMetrics)
+                : null,
+            }
+          }),
+        )
+      })
+
+    const keywordWindowForEntry = (
+      windows: ReadonlyArray<KeywordEngineWindow>,
+      entry: RegistryEntry,
+    ) =>
+      windows.find(
+        (window) =>
+          window.targetUrl === entry.targetUrl &&
+          window.keyword.toLowerCase() === entry.keyword.toLowerCase(),
       )
 
     // A log entry's before/after readout (see LogReadout). Windows are symmetric
@@ -207,6 +323,27 @@ export const layer = Layer.effect(
             )
             const actions = yield* storage.listLog()
             const keywords = entries.filter((entry) => entry.keyword.trim())
+            const bingKey = yield* config.bingApiKey()
+            const bing = Option.isNone(bingKey)
+              ? null
+              : yield* Effect.gen(function* () {
+                  const today = new Date().toISOString().slice(0, 10)
+                  const expectedEnd = dateDaysBefore(today, 2)
+                  const expectedStart = dateDaysBefore(expectedEnd, 7)
+                  const expectedDates = datesBetween(expectedStart, expectedEnd)
+                  const range = yield* storage.bingSiteDailyDateRange()
+                  const missingDates =
+                    yield* storage.missingBingSiteDailyDates(expectedDates)
+                  const syncedWithinHours =
+                    yield* storage.bingSyncedWithinHours(24)
+                  return {
+                    firstDate: range.first,
+                    lastDate: range.last,
+                    collectedDays: range.count,
+                    missingDates,
+                    syncedWithinHours,
+                  }
+                })
             return {
               data: {
                 firstDate: range.first,
@@ -226,6 +363,7 @@ export const layer = Layer.effect(
                 unmapped: unmapped.map((page) => page.path),
               },
               actions: actions.length,
+              bing,
             }
           }),
         ),
@@ -374,6 +512,10 @@ export const layer = Layer.effect(
               indexed: progress?.indexStatus ?? "unknown",
               coverageState: progress?.coverageState ?? null,
               inspectedAt: progress?.inspectedAt ?? null,
+              bingInIndex: progress?.bingInIndex ?? null,
+              bingDiscoveredAt: progress?.bingDiscoveredAt ?? null,
+              bingLastCrawledAt: progress?.bingLastCrawledAt ?? null,
+              bingInspectedAt: progress?.bingInspectedAt ?? null,
               measuredFrom: progress?.measuredFrom ?? null,
               plan: pageEntries.map(entrySummary),
               ...verdict,
@@ -415,14 +557,12 @@ export const layer = Layer.effect(
       queriesReport: (options = {}) =>
         wrap(
           Effect.gen(function* () {
+            const windowDays = 7
+            const pageScoped = options.page != null && options.page !== ""
+            const includeBrand = options.includeBrand === true
+            const minImpressions = options.minImpressions ?? 0
+            const limit = options.limit ?? 50
             const entries = yield* registry.loadRegistry()
-            const result = yield* storage.topQueries({
-              page: options.page ? `${origin}${options.page}` : undefined,
-              windowDays: options.windowDays ?? 28,
-              minImpressions: options.minImpressions ?? 0,
-              includeBrand: options.includeBrand === true,
-              limit: options.limit ?? 50,
-            })
             const keywordTargets = new Map(
               entries
                 .filter((entry) => entry.keyword.trim())
@@ -431,22 +571,104 @@ export const layer = Layer.effect(
                   entry.targetUrl,
                 ]),
             )
+            const googleResult = yield* storage.topQueries({
+              page: pageScoped ? `${origin}${options.page}` : undefined,
+              windowDays,
+              minImpressions: 0,
+              includeBrand,
+              limit: 10_000,
+            })
+            type GoogleRow = {
+              readonly query: string
+              readonly page: string
+              readonly metrics: Metrics
+            }
+            const googleByQuery = new Map<string, GoogleRow>()
+            for (const row of googleResult.rows) {
+              const key = row.query.toLowerCase()
+              const existing = googleByQuery.get(key)
+              if (!existing) {
+                googleByQuery.set(key, {
+                  query: row.query,
+                  page: row.page,
+                  metrics: row.current,
+                })
+                continue
+              }
+              if (pageScoped) continue
+              const page =
+                row.current.impressions > existing.metrics.impressions
+                  ? row.page
+                  : existing.page
+              googleByQuery.set(key, {
+                query: existing.query,
+                page,
+                metrics: mergeMetrics(existing.metrics, row.current),
+              })
+            }
+            const bingCapture = pageScoped
+              ? null
+              : yield* storage.bingQueryWindowLatest()
+            const bingByQuery = new Map<
+              string,
+              { readonly query: string; readonly metrics: Metrics }
+            >()
+            if (bingCapture) {
+              for (const row of bingCapture.rows) {
+                if (!includeBrand && isBrandQuery(row.query, brandTerms)) continue
+                bingByQuery.set(row.query.toLowerCase(), {
+                  query: row.query,
+                  metrics: metricsFromBingRow(row),
+                })
+              }
+            }
+            const allKeys = new Set([
+              ...googleByQuery.keys(),
+              ...bingByQuery.keys(),
+            ])
+            const impressionScore = (google: Metrics | null, bing: Metrics | null) =>
+              Math.max(google?.impressions ?? 0, bing?.impressions ?? 0)
+            const queries = [...allKeys]
+              .map((key) => {
+                const google = googleByQuery.get(key)
+                const bing = bingByQuery.get(key)
+                const query = google?.query ?? bing!.query
+                return {
+                  query,
+                  brand: isBrandQuery(query, brandTerms),
+                  mappedTarget: keywordTargets.get(key) ?? null,
+                  page: google ? pathOf(google.page, origin) : null,
+                  google: google ? tidy(google.metrics) : null,
+                  bing: pageScoped ? null : bing ? tidy(bing.metrics) : null,
+                }
+              })
+              .filter(
+                (row) => impressionScore(row.google, row.bing) >= minImpressions,
+              )
+              .sort(
+                (left, right) =>
+                  impressionScore(right.google, right.bing) -
+                  impressionScore(left.google, left.bing),
+              )
+              .slice(0, limit)
             return {
               window: {
-                currentStart: result.currentStart,
-                currentEnd: result.latestDate,
-                previousStart: result.previousStart,
-                previousEnd: result.previousEnd,
+                days: 7 as const,
+                google: {
+                  start: googleResult.currentStart,
+                  end: googleResult.latestDate,
+                },
+                bing: {
+                  capturedDate: bingCapture?.capturedDate ?? null,
+                },
               },
-              queries: result.rows.map((row) => ({
-                query: row.query,
-                page: pathOf(row.page, origin),
-                brand: isBrandQuery(row.query, brandTerms),
-                mappedTarget:
-                  keywordTargets.get(row.query.toLowerCase()) ?? null,
-                current: tidy(row.current),
-                previous: row.previous ? tidy(row.previous) : null,
-              })),
+              ...(pageScoped
+                ? {
+                    note: "Bing cannot report page-scoped query traffic; Bing metrics are omitted.",
+                    unsupported: { bing: ["page"] as const },
+                  }
+                : {}),
+              queries,
             }
           }),
         ),
@@ -504,6 +726,7 @@ export const layer = Layer.effect(
           Effect.gen(function* () {
             const entries = yield* registry.loadRegistry()
             const targets = yield* storage.registryTargetProgress(entries)
+            const keywordWindows = yield* keywordWindowsFor(entries)
             return {
               targets: targets.map((progress) => {
                 const first = progress.entries[0]!
@@ -514,6 +737,10 @@ export const layer = Layer.effect(
                   indexed: progress.indexStatus,
                   coverageState: progress.coverageState,
                   inspectedAt: progress.inspectedAt,
+                  bingInIndex: progress.bingInIndex,
+                  bingDiscoveredAt: progress.bingDiscoveredAt,
+                  bingLastCrawledAt: progress.bingLastCrawledAt,
+                  bingInspectedAt: progress.bingInspectedAt,
                   priority: first.priority || null,
                   intent: first.intent,
                   publishedAt: first.publishedAt || null,
@@ -525,12 +752,17 @@ export const layer = Layer.effect(
                   baseline: progress.baseline ? tidy(progress.baseline) : null,
                   keywords: progress.entries
                     .filter((entry) => entry.keyword.trim())
-                    .map((entry) => ({
-                      keyword: entry.keyword,
-                      cluster: entry.cluster,
-                      intent: entry.intent,
-                      country: entry.country,
-                    })),
+                    .map((entry) => {
+                      const window = keywordWindowForEntry(keywordWindows, entry)
+                      return {
+                        keyword: entry.keyword,
+                        cluster: entry.cluster,
+                        intent: entry.intent,
+                        country: entry.country,
+                        google7d: window?.google7d ?? tidy(zeroMetrics),
+                        bing7d: window?.bing7d ?? null,
+                      }
+                    }),
                 }
               }),
             }
@@ -665,12 +897,14 @@ export const layer = Layer.effect(
         wrap(
           Effect.gen(function* () {
             const days = yield* storage.historyWithPending(limit)
+            const totals = yield* engineTotals()
             return {
               days: days.map((day) => ({
                 date: day.date,
                 provisional: day.provisional ?? false,
                 ...tidy(day),
               })),
+              engineTotals: totals,
             }
           }),
         ),
@@ -709,6 +943,8 @@ export const layer = Layer.effect(
                     })),
                   ),
             )
+            const totals = yield* engineTotals()
+            const keywordWindows = yield* keywordWindowsFor(entries)
             return {
               summary,
               registry: entries,
@@ -720,6 +956,8 @@ export const layer = Layer.effect(
               history,
               recentActions,
               performances,
+              engineTotals: totals,
+              keywordWindows,
             }
           }),
         ),
@@ -731,6 +969,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Storage.defaultLayer),
   Layer.provide(Registry.defaultLayer),
   Layer.provide(Sitemap.defaultLayer),
+  Layer.provide(Config.defaultLayer),
   Layer.provide(CurrentSite.defaultLayer),
 )
 
@@ -745,6 +984,17 @@ const dateDaysBefore = (date: string, days: number): string => {
   return value.toISOString().slice(0, 10)
 }
 
+const datesBetween = (start: string, end: string): ReadonlyArray<string> => {
+  const dates: Array<string> = []
+  const date = new Date(`${start}T00:00:00.000Z`)
+  const last = new Date(`${end}T00:00:00.000Z`)
+  while (date <= last) {
+    dates.push(date.toISOString().slice(0, 10))
+    date.setUTCDate(date.getUTCDate() + 1)
+  }
+  return dates
+}
+
 // Round a metric's ctr/position for display.
 export const tidy = (metrics: Metrics): TidyMetrics => ({
   impressions: metrics.impressions,
@@ -752,6 +1002,19 @@ export const tidy = (metrics: Metrics): TidyMetrics => ({
   ctr: Number(metrics.ctr.toFixed(4)),
   position: Number(metrics.position.toFixed(1)),
 })
+
+const mergeMetrics = (left: Metrics, right: Metrics): Metrics => {
+  const impressions = left.impressions + right.impressions
+  const clicks = left.clicks + right.clicks
+  const weightedPosition =
+    left.position * left.impressions + right.position * right.impressions
+  return {
+    impressions,
+    clicks,
+    ctr: impressions > 0 ? clicks / impressions : 0,
+    position: impressions > 0 ? weightedPosition / impressions : 0,
+  }
+}
 
 export const tidyWindow = (window: {
   readonly current: Metrics
@@ -766,6 +1029,22 @@ export const tidyWindow = (window: {
 // Reduce a full-URL page to a site-relative path when it is on the active site.
 export const pathOf = (page: string, origin: string): string =>
   page.startsWith(origin) ? new URL(page).pathname : page
+
+export const bingInventoryKeywordNote =
+  "Bing has no page-level keyword data; figures cannot be attributed to inventory-only pages."
+
+const formatEngineCompact = (
+  label: string,
+  metrics: TidyMetrics,
+  positionDigits: number,
+) =>
+  `${label}: ${metrics.impressions}/${metrics.clicks}/${(metrics.ctr * 100).toFixed(1)}% (pos ${metrics.position.toFixed(positionDigits)})`
+
+export const keywordEngineLine = (window: KeywordEngineWindow): string =>
+  `${window.keyword}\n${[
+    formatEngineCompact("Google", window.google7d, 1),
+    window.bing7d ? formatEngineCompact("Bing", window.bing7d, 0) : "Bing: —",
+  ].join(" - ")}`
 
 // A target's lifecycle phase for display (PAGE/LIVE/NONE/PRE/NEW).
 export const phaseFor = (progress: RegistryTargetProgress): string => {
@@ -896,13 +1175,6 @@ export const verdictFor = (
     ],
   }
 }
-
-// Whether a query contains any of the active site's brand terms.
-export const isBrandQuery = (
-  query: string,
-  brandTerms: ReadonlyArray<string>,
-): boolean =>
-  brandTerms.some((term) => query.toLowerCase().includes(term.toLowerCase()))
 
 // A unicode sparkline for a series; `lowerIsBetter` inverts (e.g. position).
 export const sparkline = (

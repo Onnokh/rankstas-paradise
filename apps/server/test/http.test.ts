@@ -183,4 +183,15 @@ describe("text feeds", () => {
     })
     expect(response.headers.get("content-type")).toContain("text/plain")
   })
+
+  test("GET /tui/queries.txt → non-empty text/plain feed", async () => {
+    const { status, body } = await requestText(server, `/tui/queries.txt${site}`)
+    expect(status).toBe(200)
+    expect(body.length).toBeGreaterThan(0)
+    const response = await fetch(`${server.baseUrl}/tui/queries.txt${site}`, {
+      headers: { authorization: `Bearer ${server.token}` },
+    })
+    expect(response.headers.get("content-type")).toContain("text/plain")
+    expect(body).toContain("QUERY\tPAGE\tG IMPR")
+  })
 })

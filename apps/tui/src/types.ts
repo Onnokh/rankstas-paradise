@@ -6,7 +6,7 @@
 // The `DashboardSnapshot` is the whole dashboard model in one read; every list
 // the renderer draws is an element of one of its arrays, so each type below is
 // just an index into that snapshot (plus `Site` from the catalog response).
-import type { DashboardSnapshot, SitesResponse } from "@rp/api-client/schema"
+import type { DashboardSnapshot, QueriesReport, SitesResponse } from "@rp/api-client/schema"
 
 export type { DashboardSnapshot }
 
@@ -28,3 +28,9 @@ export type ActionKind = Exclude<LogKind, "note">
 export type Metrics = OpportunitySignal["current"]
 export type RegistryPerformance =
   DashboardSnapshot["performances"][number]["performance"]
+export type EngineTotals = DashboardSnapshot["engineTotals"]
+export type EngineWindowTotals = EngineTotals["google"]["d28"]
+export type KeywordEngineWindow = DashboardSnapshot["keywordWindows"][number]
+export type TidyMetrics = KeywordEngineWindow["google7d"]
+export type { QueriesReport }
+export type QueriesRow = QueriesReport["queries"][number]

@@ -334,6 +334,7 @@ export const makeApiGroup = (ctx: ServerContext) => {
       .handle("tuiOpportunities", ({ query }) => Effect.promise(() => tuiFeed(query.site, "opportunities")))
       .handle("tuiHistory", ({ query }) => Effect.promise(() => tuiFeed(query.site, "history")))
       .handle("tuiRegistry", ({ query }) => Effect.promise(() => tuiFeed(query.site, "registry")))
-      .handle("tuiLog", ({ query }) => Effect.promise(() => tuiFeed(query.site, "log"))),
+      .handle("tuiLog", ({ query }) => Effect.promise(() => tuiFeed(query.site, "log")))
+      .handle("tuiQueries", ({ query }) => Effect.promise(() => tuiFeed(query.site, "queries"))),
   )
 }

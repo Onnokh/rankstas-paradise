@@ -19,6 +19,7 @@ import { runApi } from "./runtime.ts"
 import type {
   DashboardSnapshot,
   Metrics,
+  QueriesReport,
   RegistryPerformance,
   Site,
 } from "./types.ts"
@@ -30,6 +31,7 @@ import type {
 // the series is already keyed by target, so the flag is accepted but unused.
 export type TuiData = Omit<DashboardSnapshot, "performances"> & {
   readonly performance: (targetUrl: string, inventoryOnly: boolean) => RegistryPerformance
+  readonly queries: QueriesReport
 }
 
 const zero: Metrics = { impressions: 0, clicks: 0, ctr: 0, position: 0 }
@@ -37,15 +39,24 @@ const emptyPerformance: RegistryPerformance = { days: [], total: zero, last7: ze
 
 // Turn the wire snapshot into the render shape: the only transform is
 // `performances` (array) → `performance` (map lookup).
-export const toTuiData = (snapshot: DashboardSnapshot): TuiData => {
+export const toTuiData = (
+  snapshot: DashboardSnapshot,
+  queries: QueriesReport,
+): TuiData => {
   const { performances, ...rest } = snapshot
   const byUrl = new Map(performances.map((entry) => [entry.targetUrl, entry.performance]))
-  return { ...rest, performance: (targetUrl) => byUrl.get(targetUrl) ?? emptyPerformance }
+  return { ...rest, queries, performance: (targetUrl) => byUrl.get(targetUrl) ?? emptyPerformance }
 }
 
 // The whole dashboard model for one site, fetched over the bearer'd API.
 export const loadTuiData = (site: Site): Promise<TuiData> =>
-  runApi(ApiClient.use.dashboard(site.id)).then(toTuiData)
+  runApi(
+    Effect.gen(function* () {
+      const snapshot = yield* ApiClient.use.dashboard(site.id)
+      const queries = yield* ApiClient.use.queries({ windowDays: 7 }, site.id)
+      return toTuiData(snapshot, queries)
+    }),
+  )
 
 // The site catalog behind the same seam — the server's configured sites, so the
 // site switcher is populated without any local config.
