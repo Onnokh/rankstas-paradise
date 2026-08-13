@@ -36,7 +36,7 @@ The site catalog is configured in `config.json` under `sites`. Each site gets is
 
 - `POST /api/jobs/sync?site=<id>` → `202` with the job record, or `409` if a job is already running. One job at a time — syncs use delete-then-insert transactions that must not interleave.
 - `POST /api/jobs/backfill?site=<id>` — body: `{ months? }` (default 16).
-- `GET /api/jobs` — job history for this server process (in-memory).
+- `GET /api/jobs?site=<id>` — job history for this server process (in-memory). `site` is optional here, unlike the other site-scoped routes: omitting it falls back to the first configured site.
 
 ## Native app format
 

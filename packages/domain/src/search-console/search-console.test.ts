@@ -383,6 +383,53 @@ test("the minted service-account token is cached across calls", async () => {
   expect(grantCalls).toBe(1)
 })
 
+// Regression: daily totals were requested with dataState "final", so Google
+// returned zero rows for every day past the finalization cutoff. The provisional
+// tail never reached site_daily and the history view silently stopped three days
+// back, with `provisional` never once true. Totals must ask for "all"; the query
+// breakdowns must stay "final" because the registry and opportunity maths are
+// built on numbers Google has stopped revising.
+test("daily totals request fresh data; query breakdowns stay finalized", async () => {
+  await writeServiceAccountKey()
+
+  const dataStates: Array<{ dimensions: ReadonlyArray<string>; dataState: string }> = []
+  const http = Layer.succeed(
+    HttpClient.HttpClient,
+    HttpClient.make((request, url) => {
+      if (url.href.includes("oauth2.googleapis.com/token"))
+        return Effect.succeed(
+          jsonResponse(request, 200, {
+            access_token: "sa-access",
+            expires_in: 3600,
+          }),
+        )
+      const encoded = (request.body as { body: Uint8Array }).body
+      const body = JSON.parse(new TextDecoder().decode(encoded))
+      dataStates.push({ dimensions: body.dimensions, dataState: body.dataState })
+      return Effect.succeed(jsonResponse(request, 200, { rows: [] }))
+    }),
+  )
+
+  const layer = buildLayer(http)
+  await Effect.gen(function* () {
+    yield* SearchConsole.use.fetchDailyTotals(["2024-01-01"])
+    yield* SearchConsole.use.fetchSearchConsoleSnapshots(["2024-01-01"])
+  }).pipe(Effect.provide(layer), Effect.runPromise)
+
+  // Site-wide totals (no dimensions) and the per-page totals both need the
+  // still-being-revised trailing days.
+  const totals = dataStates.filter(
+    (call) => call.dimensions.length === 0 || call.dimensions[0] === "page",
+  )
+  expect(totals.length).toBeGreaterThan(0)
+  for (const call of totals) expect(call.dataState).toBe("all")
+
+  // The query breakdown must not chase provisional numbers.
+  const breakdown = dataStates.filter((call) => call.dimensions.includes("query"))
+  expect(breakdown.length).toBeGreaterThan(0)
+  for (const call of breakdown) expect(call.dataState).toBe("final")
+})
+
 test("a malformed service-account key fails as an auth error", async () => {
   // Missing private_key — there is no second credential to fall back to, so this
   // must surface rather than turn into a confusing downstream failure.

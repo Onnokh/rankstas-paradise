@@ -124,7 +124,11 @@ export const apiGroup = HttpApiGroup.make("api")
     }),
   )
   .add(
+    // `site` is optional here, unlike the other site-scoped reads: the desktop
+    // app polls /api/jobs bare, so an omitted site keeps falling back to the
+    // first configured site.
     HttpApiEndpoint.get("jobs", "/api/jobs", {
+      query: { site: S },
       success: JobsResponse,
     }),
   )

@@ -103,6 +103,24 @@ describe("JSON routes", () => {
     expect(sites.some((entry) => entry.id === FIXTURE_SITE_ID)).toBe(true)
   })
 
+  // /api/jobs is the one site-scoped read whose ?site= is optional, so both
+  // shapes have to keep working: bare (the desktop app polls it that way) and
+  // explicit (the only way to inspect a non-default site's sync history).
+  test("GET /api/jobs → jobs array, with and without ?site=", async () => {
+    const bare = await requestJson(server, "/api/jobs")
+    expect(bare.status).toBe(200)
+    expect(Array.isArray((bare.body as { jobs: unknown }).jobs)).toBe(true)
+
+    const scoped = await requestJson(server, `/api/jobs${site}`)
+    expect(scoped.status).toBe(200)
+    expect(Array.isArray((scoped.body as { jobs: unknown }).jobs)).toBe(true)
+  })
+
+  test("GET /api/jobs with an unknown ?site= → 400", async () => {
+    const { status } = await requestJson(server, "/api/jobs?site=nope")
+    expect(status).toBe(400)
+  })
+
   test("GET /api/status → debug envelope with generatedAt + expected keys", async () => {
     const { status, body } = await requestJson(server, `/api/status${site}`)
     expect(status).toBe(200)
