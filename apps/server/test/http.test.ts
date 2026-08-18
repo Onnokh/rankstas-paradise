@@ -135,6 +135,13 @@ describe("JSON routes", () => {
     expect(typeof envelope.data).toBe("object")
     expect(typeof envelope.registry).toBe("object")
     expect(typeof envelope.sitemap).toBe("object")
+    // data.lastSyncedAt is the instant Search Console data last arrived (the
+    // sync just seeded above), reported as its own ISO 8601 instant — a client
+    // must not read freshness off generatedAt, which is serialization time.
+    const data = envelope.data as Record<string, unknown>
+    expect(data.lastSyncedAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
+    )
   })
 })
 

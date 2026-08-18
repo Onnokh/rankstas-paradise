@@ -16,6 +16,12 @@
 | `GET /api/log?path=` | `log list` |
 | `GET /api/history?limit=N` | — (TUI history view) |
 
+`GET /api/status` reports `data.lastSyncedAt`: when Search Console data last
+arrived for the site (the newest `synced_day.fetched_at`) as an ISO 8601 instant,
+or `null` for a site that has never been synced. Read freshness from that field —
+`generatedAt` is only when the response was serialized, so a client that treats
+it as a sync time shows "just now" over data that is days old.
+
 All site-scoped endpoints accept `?site=<id>`. The default is the first configured site. For example:
 
 ```text
