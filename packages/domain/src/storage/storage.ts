@@ -64,6 +64,10 @@ export interface Interface {
     entries: ReadonlyArray<RegistryEntry>,
     baselineDate: string,
   ) => Effect.Effect<BaselineCapture, StorageError>
+  // Stamp that a sync run completed for this site. Every completed run stamps,
+  // including one that fetched nothing — that run is exactly the one no other
+  // table records, because `synced_day` only gains a row when a day is fetched.
+  readonly recordSyncCheck: () => Effect.Effect<void, StorageError>
 
   // --- freshness / coverage queries ---
   readonly missingDailyTotalDates: (
@@ -92,6 +96,10 @@ export interface Interface {
   // The newest `synced_day.fetched_at` as an ISO 8601 instant: when Search
   // Console data last arrived for this site. Null when nothing is synced yet.
   readonly latestSyncedAt: () => Effect.Effect<string | null, StorageError>
+  // The `sync_run.checked_at` stamp as an ISO 8601 instant: when a sync run for
+  // this site last completed. Null until one has. Moves on every completed run,
+  // where latestSyncedAt moves only on a run that fetched a day.
+  readonly latestCheckedAt: () => Effect.Effect<string | null, StorageError>
   // The last date whose numbers are trusted as final (today − 3, UTC). Pure.
   readonly finalizationCutoff: () => Effect.Effect<string>
 
@@ -267,6 +275,16 @@ export const layer = Layer.effect(
         verdict text not null,
         coverage_state text not null default '',
         inspected_at text not null default current_timestamp
+      )`,
+      // One row, pinned to id 1: this is a single per-site scalar, not a series,
+      // and a run that fetched nothing has no day to hang its instant off — so
+      // unlike latestSyncedAt it cannot be derived from `synced_day`. It lives in
+      // the ledger rather than in a process variable because the hosted server
+      // restarts on every deploy, and an in-memory stamp would come back reading
+      // "never checked" over a site that has been checked all along.
+      `create table if not exists sync_run (
+        id integer primary key check (id = 1),
+        checked_at text not null default current_timestamp
       )`,
     ]
     yield* Effect.forEach(ddl, (statement) => sql.unsafe(statement)).pipe(
@@ -890,6 +908,10 @@ export const layer = Layer.effect(
         }),
       )
 
+    const recordSyncCheckI = sql`
+      insert into sync_run (id, checked_at) values (1, current_timestamp)
+      on conflict(id) do update set checked_at = current_timestamp`
+
     const savePageIndexStatusesI = (statuses: ReadonlyArray<PageIndexStatus>) =>
       sql.withTransaction(
         Effect.gen(function* () {
@@ -1026,6 +1048,16 @@ export const layer = Layer.effect(
       return rows[0]?.fetched_at ?? null
     })
 
+    // `checked_at` is written by the same SQLite current_timestamp that stamps
+    // `synced_day.fetched_at`, so the two instants a status report carries are
+    // read off one clock and are directly comparable.
+    const latestCheckedAtI = Effect.gen(function* () {
+      const rows = yield* sql<{ checked_at: string | null }>`
+        select strftime('%Y-%m-%dT%H:%M:%SZ', checked_at) as checked_at
+        from sync_run where id = 1`
+      return rows[0]?.checked_at ?? null
+    })
+
     const snapshotSummaryI = Effect.gen(function* () {
       const rows = yield* sql<{ rows: number; dates: number }>`
         select (select count(*) from search_snapshot) as rows,
@@ -1047,6 +1079,8 @@ export const layer = Layer.effect(
         capturePageBaselinesI(entries, baselineDate).pipe(
           mapErr("capturePageBaselines"),
         ),
+      recordSyncCheck: () =>
+        recordSyncCheckI.pipe(Effect.asVoid, mapErr("recordSyncCheck")),
       missingDailyTotalDates: (dates) =>
         missingDailyTotalDatesI(dates).pipe(mapErr("missingDailyTotalDates")),
       missingSnapshotDates: (dates) =>
@@ -1066,6 +1100,7 @@ export const layer = Layer.effect(
       latestSnapshotDate: () =>
         latestSnapshotDateI.pipe(mapErr("latestSnapshotDate")),
       latestSyncedAt: () => latestSyncedAtI.pipe(mapErr("latestSyncedAt")),
+      latestCheckedAt: () => latestCheckedAtI.pipe(mapErr("latestCheckedAt")),
       finalizationCutoff: () => Effect.sync(finalizationCutoffValue),
       historyWithPending: (limit) =>
         historyWithPendingI(limit).pipe(mapErr("historyWithPending")),

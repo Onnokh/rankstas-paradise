@@ -101,8 +101,16 @@ export const buildMcpServer = (run: RunTool): McpServer => {
   server.registerTool(
     "status",
     {
+      // The tool has no output schema of its own — it returns the shared
+      // StatusReport DTO, the same document GET /api/status serves. The two
+      // freshness instants are named here because an agent reads only this
+      // description before deciding whether the data it is about to reason over
+      // is current, and reading either one alone leads it to the wrong verdict.
       description:
-        "Data range, row counts, and registry/sitemap coverage for the site.",
+        "Data range, row counts, and registry/sitemap coverage for the site. " +
+        "data.lastSyncedAt is when the site's data last CHANGED; " +
+        "data.lastCheckedAt is when Ranksta last ASKED Google. A lastCheckedAt " +
+        "newer than lastSyncedAt means the sync ran and Google had nothing new.",
       inputSchema: { site },
     },
     async ({ site }) => {

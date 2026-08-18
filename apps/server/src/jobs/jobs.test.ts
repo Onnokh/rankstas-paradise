@@ -6,6 +6,7 @@ import {
   Effect,
   Exit,
   Layer,
+  Logger,
   Ref,
 } from "effect"
 import { TestClock } from "effect/testing"
@@ -50,6 +51,20 @@ const jobsLayer = (counter: Ref.Ref<number>) =>
     Layer.provide(fakeSites),
   )
 
+// A logger that keeps every line instead of printing it, so a test can read what
+// the server would have written to its container log. Logger.layer replaces the
+// default logger for the effect it is provided to.
+interface CapturedLog {
+  readonly level: string
+  readonly message: string
+}
+const capturingLogger = (lines: Array<CapturedLog>) =>
+  Logger.layer([
+    Logger.make<unknown, void>(({ logLevel, message }) => {
+      lines.push({ level: String(logLevel), message: String(message) })
+    }),
+  ])
+
 // Let detached background fibers make progress until no job is still running.
 // forkDetach fibers run on the runtime's global scope, so we hand them turns
 // with yieldNow rather than awaiting a handle.
@@ -63,13 +78,18 @@ const settle = Effect.gen(function* () {
   }
 })
 
+// Every run captures its log rather than printing it: a test that deliberately
+// fails a job now produces a real error line, and that line belongs in the
+// assertion, not in the suite's output. Pass `lines` to read it back.
 const run = <A, E>(
   effect: Effect.Effect<A, E, Jobs.Service | TestClock.TestClock>,
   counter: Ref.Ref<number>,
+  lines: Array<CapturedLog> = [],
 ): Promise<Exit.Exit<A, E>> =>
   effect.pipe(
     Effect.provide(jobsLayer(counter)),
     Effect.provide(TestClock.layer()),
+    Effect.provide(capturingLogger(lines)),
     Effect.scoped,
     Effect.runPromiseExit,
   )
@@ -154,6 +174,29 @@ describe("Jobs single-job lock (Semaphore)", () => {
       counter,
     )
     expect(Exit.isSuccess(exit)).toBe(true)
+  })
+
+  test("a failing job is logged at error level with its site and reason", async () => {
+    const counter = await Effect.runPromise(Ref.make(0))
+    const lines: Array<CapturedLog> = []
+    const exit = await run(
+      Effect.gen(function* () {
+        yield* Jobs.use.startJob("sync", siteId, Effect.fail("boom" as const))
+        yield* settle
+      }),
+      counter,
+      lines,
+    )
+    expect(Exit.isSuccess(exit)).toBe(true)
+
+    // The registry is per-process and in-memory, so this line is the only trace
+    // of the failure that survives a deploy or reaches an operator who is not
+    // polling /api/jobs. It has to carry both which site broke and why.
+    const errors = lines.filter((line) => line.level === "Error")
+    expect(errors).toHaveLength(1)
+    expect(errors[0]!.message).toContain("sync")
+    expect(errors[0]!.message).toContain(siteId)
+    expect(errors[0]!.message).toContain("boom")
   })
 })
 

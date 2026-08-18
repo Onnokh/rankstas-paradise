@@ -35,6 +35,7 @@ const fakeStatus: StatusReport = {
     snapshotRows: 100,
     dailyTotalsDays: 28,
     lastSyncedAt: "2026-01-29T06:00:00Z",
+    lastCheckedAt: "2026-01-29T12:00:00Z",
     note: "n/a",
   },
   registry: { targets: 2, keywords: 3, clusters: 1 },
