@@ -1,15 +1,16 @@
 // Sync service tests: a mocked SearchConsole (records the dates each fetch is
 // asked for and returns canned rows), a real Storage over a temp-file SQLite
 // database, and fixture Registry/Sitemap/Config/CurrentSite layers. Covers the
-// three behaviours that matter: a first sync writes, an immediate re-sync is a
-// snapshot no-op, and a stale reconciliation window is re-fetched as a unit.
+// behaviours that matter: a first sync writes, an immediate re-sync is a
+// snapshot no-op, a stale reconciliation window is re-fetched as a unit, and the
+// three ways lastCheckedAt and lastSyncedAt move (or refuse to) together.
 import { afterEach, beforeEach, expect, test } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { Database } from "bun:sqlite"
-import { Effect, Layer, ManagedRuntime } from "effect"
+import { Effect, Exit, Layer, ManagedRuntime } from "effect"
 
 import { Config } from "../config/config.ts"
 import {
@@ -17,6 +18,7 @@ import {
   type DailyTotals,
   type PageIndexInspection,
 } from "../search-console/schema.ts"
+import { SearchConsoleHttpError } from "../search-console/schema.ts"
 import { SearchConsole } from "../search-console/search-console.ts"
 import { Registry } from "../registry/registry.ts"
 import { CurrentSite } from "../sites/current-site.ts"
@@ -115,6 +117,17 @@ const searchConsoleMock = (recorder: Recorder) =>
       }),
   })
 
+// A SearchConsole whose very first fetch fails, so a whole sync run fails.
+const failingSearchConsole = Layer.mock(SearchConsole.Service)({
+  fetchSearchConsoleSnapshots: () =>
+    Effect.fail(
+      new SearchConsoleHttpError({
+        message: "Google refused the request.",
+        status: 503,
+      }),
+    ),
+})
+
 const registryMock = Layer.mock(Registry.Service)({
   loadRegistry: () => Effect.succeed([registryEntry]),
 })
@@ -138,10 +151,15 @@ const currentSiteLayer = (dir: string, dbPath: string) =>
 
 // --- harness ----------------------------------------------------------------
 
-const makeRuntime = (dir: string, dbPath: string, recorder: Recorder) => {
+const makeRuntime = (
+  dir: string,
+  dbPath: string,
+  recorder: Recorder,
+  searchConsole: Layer.Layer<SearchConsole.Service> = searchConsoleMock(recorder),
+) => {
   const currentSite = currentSiteLayer(dir, dbPath)
   const deps = Layer.mergeAll(
-    searchConsoleMock(recorder),
+    searchConsole,
     Storage.layer.pipe(Layer.provide(currentSite)),
     registryMock,
     sitemapMock,
@@ -218,4 +236,68 @@ test("a stale reconciliation window is re-fetched as a unit", async () => {
   // Exactly the newest-5-days window, fetched as one call.
   expect(recorder.snapshotFetches).toHaveLength(2)
   expect([...recorder.snapshotFetches[1]!].sort()).toEqual([...reconWindow].sort())
+})
+
+// --- lastCheckedAt: "it ran" recorded apart from "the data changed" ----------
+
+// Backdate an instant to a fixed, obviously-old value so a test can tell "moved"
+// from "did not move" without racing SQLite's one-second timestamp resolution.
+const backdated = "2024-01-01 00:00:00"
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/
+const backdate = (target: "sync_run" | "both") => {
+  const db = new Database(dbPath)
+  if (target === "both")
+    db.run("update synced_day set fetched_at = '" + backdated + "'")
+  db.run("update sync_run set checked_at = '" + backdated + "'")
+  db.close()
+}
+
+test("a sync that fetches nothing still advances lastCheckedAt", async () => {
+  await run(Sync.use.syncSearchConsole())
+  // Age only the check stamp. Every synced day stays fresh, so this second run
+  // finds nothing missing and nothing stale — the exact case that used to leave
+  // no trace anywhere, and so read from outside as a feature that never ran.
+  backdate("sync_run")
+
+  await run(Sync.use.syncSearchConsole())
+
+  expect(recorder.snapshotFetches).toHaveLength(1)
+  const checkedAt = await run(Storage.use.latestCheckedAt())
+  expect(checkedAt).toMatch(ISO_INSTANT)
+  expect(checkedAt).not.toBe("2024-01-01T00:00:00Z")
+  // The data did not change, so lastSyncedAt must not claim it did: it still
+  // reports the first run's write, untouched by this one.
+  expect(await run(Storage.use.latestSyncedAt())).toMatch(ISO_INSTANT)
+})
+
+test("a sync that fetches something advances both instants", async () => {
+  await run(Sync.use.syncSearchConsole())
+  // Age both. The reconciliation window is now stale, so this run does fetch.
+  backdate("both")
+
+  await run(Sync.use.syncSearchConsole())
+
+  expect(recorder.snapshotFetches).toHaveLength(2)
+  const syncedAt = await run(Storage.use.latestSyncedAt())
+  const checkedAt = await run(Storage.use.latestCheckedAt())
+  expect(syncedAt).toMatch(ISO_INSTANT)
+  expect(checkedAt).toMatch(ISO_INSTANT)
+  expect(syncedAt).not.toBe("2024-01-01T00:00:00Z")
+  expect(checkedAt).not.toBe("2024-01-01T00:00:00Z")
+})
+
+test("a failed sync advances neither instant", async () => {
+  const failing = makeRuntime(dir, dbPath, recorder, failingSearchConsole)
+  try {
+    const exit = await failing.runPromiseExit(Sync.use.syncSearchConsole())
+    expect(Exit.isFailure(exit)).toBe(true)
+
+    // Nothing was fetched and nothing was stamped, so a client reading status
+    // sees both fields null. "Never checked" is the honest answer; the reason
+    // the run failed goes to the error log, not into the ledger.
+    expect(await failing.runPromise(Storage.use.latestSyncedAt())).toBeNull()
+    expect(await failing.runPromise(Storage.use.latestCheckedAt())).toBeNull()
+  } finally {
+    await failing.dispose()
+  }
 })
