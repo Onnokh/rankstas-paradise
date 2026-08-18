@@ -201,6 +201,7 @@ export const layer = Layer.effect(
             const summary = yield* storage.snapshotSummary()
             const range = yield* storage.snapshotDateRange()
             const lastSyncedAt = yield* storage.latestSyncedAt()
+            const lastCheckedAt = yield* storage.latestCheckedAt()
             const overview = yield* storage.pagesWindowOverview()
             const unmapped = yield* sitemap.unmappedSitemapPages(
               sitemapPages,
@@ -216,6 +217,7 @@ export const layer = Layer.effect(
                 snapshotRows: summary.rows,
                 dailyTotalsDays: overview.totalsCoverage.siteDays,
                 lastSyncedAt,
+                lastCheckedAt,
                 note: "Snapshot rows exclude anonymized long-tail queries; daily totals are the true numbers.",
               },
               registry: {

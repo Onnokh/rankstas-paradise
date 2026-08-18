@@ -180,6 +180,15 @@ export const StatusReport = Schema.Struct({
     // an ISO 8601 instant; null until the site is synced once. Not the same as
     // the envelope's generatedAt, which is when this response was serialized.
     lastSyncedAt: Schema.NullOr(Schema.String),
+    // When Ranksta last ASKED Google for this site — the instant a sync run last
+    // completed — as an ISO 8601 instant; null until one has. Kept separate from
+    // lastSyncedAt because the two answer different questions and collapsing them
+    // loses the distinction that matters: lastSyncedAt is when the DATA CHANGED,
+    // and it cannot move on a run that correctly found nothing new. A
+    // lastCheckedAt just now over a lastSyncedAt from yesterday is a healthy
+    // site; a lastCheckedAt that will not move is a sync that is failing or
+    // never being asked for, and the reason for a failure is on the error log.
+    lastCheckedAt: Schema.NullOr(Schema.String),
     note: Schema.String,
   }),
   registry: Schema.Struct({

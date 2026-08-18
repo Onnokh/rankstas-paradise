@@ -171,6 +171,12 @@ export const makeApiGroup = (ctx: ServerContext) => {
       Effect.gen(function* () {
         yield* Storage.use.saveSnapshots(debugSnapshots, debugDates)
         yield* Storage.use.saveDailyTotals(debugDailyTotals, debugDates)
+        // This seed IS debug mode's sync run — it is what POST /api/jobs/sync
+        // does here — so it stamps the check like the real one. Without it a
+        // client pointed at a debug server would read "never checked" forever
+        // over data it can plainly see, and debug mode exists to render every
+        // report faithfully, not to render one field wrong.
+        yield* Storage.use.recordSyncCheck()
         return `Saved ${debugSnapshots.length} fake rows to the isolated debug database.`
       }),
     )

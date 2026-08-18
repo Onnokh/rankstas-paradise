@@ -388,6 +388,11 @@ test("statusReport counts registry targets/keywords and sitemap pages", async ()
   expect(report.data.lastSyncedAt).toMatch(
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
   )
+  // This fixture writes straight to Storage and never runs a sync, so the two
+  // fields disagree here on purpose: data has arrived, but Ranksta never asked
+  // Google for it. That is the "never checked" state a client must be able to
+  // tell apart from a checked site with nothing new.
+  expect(report.data.lastCheckedAt).toBeNull()
 })
 
 test("pagesReport sorts a known page by impressions desc", async () => {

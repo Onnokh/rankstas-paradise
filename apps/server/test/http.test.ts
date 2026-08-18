@@ -142,6 +142,12 @@ describe("JSON routes", () => {
     expect(data.lastSyncedAt).toMatch(
       /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
     )
+    // data.lastCheckedAt is the instant the sync RUN completed. The seeding sync
+    // above both fetched and ran, so both fields are set here; the pair is what
+    // lets a client separate "ran, nothing new" from "never ran".
+    expect(data.lastCheckedAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
+    )
   })
 })
 
