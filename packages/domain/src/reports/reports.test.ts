@@ -383,6 +383,11 @@ test("statusReport counts registry targets/keywords and sitemap pages", async ()
   expect(report.data.syncedDays).toBe(56)
   expect(report.data.firstDate).toBe("2026-05-18")
   expect(report.data.lastDate).toBe("2026-07-12")
+  // lastSyncedAt is when the data arrived — the newest synced_day.fetched_at,
+  // written as this fixture was seeded — not when the report was shaped.
+  expect(report.data.lastSyncedAt).toMatch(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
+  )
 })
 
 test("pagesReport sorts a known page by impressions desc", async () => {

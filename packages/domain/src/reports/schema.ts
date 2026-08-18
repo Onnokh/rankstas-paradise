@@ -176,6 +176,10 @@ export const StatusReport = Schema.Struct({
     syncedDays: Schema.Number,
     snapshotRows: Schema.Number,
     dailyTotalsDays: Schema.Number,
+    // When Search Console data last arrived for this site (the newest sync), as
+    // an ISO 8601 instant; null until the site is synced once. Not the same as
+    // the envelope's generatedAt, which is when this response was serialized.
+    lastSyncedAt: Schema.NullOr(Schema.String),
     note: Schema.String,
   }),
   registry: Schema.Struct({

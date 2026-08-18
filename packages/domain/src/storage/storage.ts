@@ -89,6 +89,9 @@ export interface Interface {
   >
   readonly snapshotSummary: () => Effect.Effect<SnapshotSummary, StorageError>
   readonly latestSnapshotDate: () => Effect.Effect<string | null, StorageError>
+  // The newest `synced_day.fetched_at` as an ISO 8601 instant: when Search
+  // Console data last arrived for this site. Null when nothing is synced yet.
+  readonly latestSyncedAt: () => Effect.Effect<string | null, StorageError>
   // The last date whose numbers are trusted as final (today − 3, UTC). Pure.
   readonly finalizationCutoff: () => Effect.Effect<string>
 
@@ -1013,6 +1016,16 @@ export const layer = Layer.effect(
       return rows[0] ?? { first: null, last: null }
     })
 
+    // `fetched_at` is written by SQLite's current_timestamp, so it is UTC in
+    // 'YYYY-MM-DD HH:MM:SS' form — lexicographically ordered, hence max().
+    // strftime restates it as an ISO 8601 instant for the wire.
+    const latestSyncedAtI = Effect.gen(function* () {
+      const rows = yield* sql<{ fetched_at: string | null }>`
+        select strftime('%Y-%m-%dT%H:%M:%SZ', max(fetched_at)) as fetched_at
+        from synced_day`
+      return rows[0]?.fetched_at ?? null
+    })
+
     const snapshotSummaryI = Effect.gen(function* () {
       const rows = yield* sql<{ rows: number; dates: number }>`
         select (select count(*) from search_snapshot) as rows,
@@ -1052,6 +1065,7 @@ export const layer = Layer.effect(
       snapshotSummary: () => snapshotSummaryI.pipe(mapErr("snapshotSummary")),
       latestSnapshotDate: () =>
         latestSnapshotDateI.pipe(mapErr("latestSnapshotDate")),
+      latestSyncedAt: () => latestSyncedAtI.pipe(mapErr("latestSyncedAt")),
       finalizationCutoff: () => Effect.sync(finalizationCutoffValue),
       historyWithPending: (limit) =>
         historyWithPendingI(limit).pipe(mapErr("historyWithPending")),

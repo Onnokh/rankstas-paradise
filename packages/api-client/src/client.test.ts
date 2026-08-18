@@ -99,6 +99,7 @@ const statusBody = {
     syncedDays: 10,
     snapshotRows: 100,
     dailyTotalsDays: 10,
+    lastSyncedAt: "2024-01-11T04:00:00Z",
     note: "ok",
   },
   registry: { targets: 3, keywords: 5, clusters: 2 },
@@ -142,6 +143,7 @@ test("read: status decodes and drops the envelope fields, with a bearer token", 
     .pipe(Effect.provide(buildLayer(http.layer)), Effect.runPromise)
 
   expect(report.data.syncedDays).toBe(10)
+  expect(report.data.lastSyncedAt).toBe("2024-01-11T04:00:00Z")
   expect(report.registry.targets).toBe(3)
   // The envelope keys are not present on the decoded value.
   expect((report as Record<string, unknown>).generatedAt).toBeUndefined()
