@@ -1,0 +1,29 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist/types",
+    "rootDir": "src",
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "bun",
+      "node"
+    ],
+    "jsx": "react-jsx"
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx"
+  ],
+  "references": [
+    {
+      "path": "../../packages/api-client"
+    },
+    {
+      "path": "../tui"
+    }
+  ]
+}

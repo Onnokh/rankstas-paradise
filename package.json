@@ -6,7 +6,8 @@
   "scripts": {
     "check": "tsc --build",
     "seo": "bun run apps/tui/src/main.ts",
-    "server": "bun run apps/server/src/main.ts"
+    "server": "bun run apps/server/src/main.ts",
+    "desktop": "bun run --cwd apps/desktop start"
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.0-beta.99",
@@ -19,5 +20,6 @@
   "devDependencies": {
     "@types/bun": "latest",
     "typescript": "latest"
-  }
+  },
+  "trustedDependencies": ["electron"]
 }
