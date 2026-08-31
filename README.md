@@ -14,10 +14,10 @@ packages/domain      — the SEO core as Effect services (server-only)
 packages/api-client  — typed HTTP client + client config for the UIs
 apps/server          — the HTTP + MCP service; entry apps/server/src/main.ts
 apps/tui             — remote-only opentui dashboard + agent CLI (talks HTTP)
-apps/desktop         — placeholder for the native client (not in the build graph)
+apps/desktop         — Electron desktop client (same dashboard read as the TUI)
 ```
 
-Only `apps/server` depends on `packages/domain`; `apps/tui` (and the future desktop app) depend only on `packages/api-client` and never touch SQLite or Google directly. Deploy the service on Coolify — see [docs/deploy.md](docs/deploy.md).
+Only `apps/server` depends on `packages/domain`; `apps/tui` and `apps/desktop` depend only on `packages/api-client` and never touch SQLite or Google directly. Deploy the service on Coolify — see [docs/deploy.md](docs/deploy.md).
 
 Multiple sites are supported; each has an `id` in `config.json` and its own data under `sites/<id>/`.
 
@@ -66,6 +66,18 @@ It is a keyboard-first master-detail dashboard: use `↑`/`↓` to select a row,
 The TUI paints immediately from the server's cached snapshot; startup and `r` force a server-side sync job and poll it to completion, then repaint with the synced data. The sync itself (server-side) keeps a ledger of finalized dates, fetches every missing day through Google’s latest finalized date, and reconciles the five newest finalized days as a complete unit, so changed or removed rows are reflected; dates returning zero rows are recorded too. If Google is temporarily unavailable, reads keep serving cached data.
 
 Drag across text inside either pane to select it. Releasing the mouse copies that section directly to the macOS clipboard, without including the other pane's full lines.
+
+## The dashboard (desktop app)
+
+`apps/desktop` is an Electron window over the **same** `/api/dashboard` read and the **same** client config as the TUI, so both show identical numbers for a site. Build the bundles and open it:
+
+```sh
+bun run desktop
+```
+
+The sidebar leads with **Overview** and then lists every site with its five views nested under it, so one click reaches any view of any site. **Overview** is the only screen not scoped to a site: every site on its own row with aligned columns — clicks, impressions, CTR and average position, each against *that site's own* previous period, plus its Ahrefs Domain Rating — then one daily chart per site side by side, then the largest signals on any site. It shows no portfolio total on purpose: these sites differ by three orders of magnitude, so one summed headline would be the largest site under a different name, and a collapse on a small site could hide inside a big one's growth. **Home** leads with a site's last 30 days — clicks, impressions, CTR and average position, each against the 30 days before it in a count and a percentage, over a Recharts area chart of daily impressions and clicks — then the signal cards, the selected kind's detection rule, and the reporting window. **Opportunities**, **History**, **Registry** and **Log** are list-and-detail screens over the same four collections the TUI shows. The TUI's keys carry over (`0`–`4` to switch view, `←`/`→` to cycle, `↑`/`↓` to select, `s` to switch site, `r` to sync, `a` to return to the Overview).
+
+The renderer is React with [TanStack Query](https://tanstack.com/query) over the preload bridge: one query per read, keyed by site, so the sidebar can show every site's counts at once and switching to a cached site paints instantly. A sync is a mutation that invalidates the keys it changed. The title bar shows how fresh the numbers are: the last date Google has finalized for the site, and when Ranksta last asked Google (`lastCheckedAt`), with the last actual data change in the tooltip. A range picker (3D / 7D / 30D / 3M / 6M) sets the span of the daily totals on the Overview, Home and History; the opportunity, registry and log collections stay on the server's fixed 28-day window, so it does not appear there. The comparison needs two periods, so it reads `/api/history` alongside the dashboard; everything else comes from the one snapshot. Its wording (opportunity labels, detection rules, recommended actions) is imported from `apps/tui/src/presentation.ts` rather than restated, so the two front-ends cannot drift. See [apps/desktop/README.md](apps/desktop/README.md).
 
 ## Agent CLI
 

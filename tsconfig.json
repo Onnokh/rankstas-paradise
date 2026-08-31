@@ -4,6 +4,7 @@
     { "path": "packages/domain" },
     { "path": "packages/api-client" },
     { "path": "apps/server" },
-    { "path": "apps/tui" }
+    { "path": "apps/tui" },
+    { "path": "apps/desktop" }
   ]
 }

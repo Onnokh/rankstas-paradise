@@ -6,6 +6,7 @@ import { Context, Effect, Fiber, Layer, Semaphore } from "effect"
 
 import { Config } from "../config/config.ts"
 import { CurrentSite } from "../sites/current-site.ts"
+import { DomainRating } from "../domain-rating/domain-rating.ts"
 import { Registry } from "../registry/registry.ts"
 import { SearchConsole } from "../search-console/search-console.ts"
 import { type SitemapPage } from "../sitemap/schema.ts"
@@ -85,6 +86,7 @@ export const layer = Layer.effect(
     const storage = yield* Storage.Service
     const registry = yield* Registry.Service
     const sitemap = yield* Sitemap.Service
+    const domainRating = yield* DomainRating.Service
     const config = yield* Config.Service
     const currentSite = yield* CurrentSite.Service
 
@@ -118,6 +120,14 @@ export const layer = Layer.effect(
               Effect.succeed<ReadonlyArray<SitemapPage>>([]),
             ),
           ),
+      )
+
+      // Domain Rating rides along on the same terms: a third party that is slow,
+      // rate-limited or unconfigured must not fail a Search Console sync, so the
+      // reading is forked and its failure swallowed. The previous cached value
+      // stays on the volume when a refresh does not land.
+      const domainRatingFiber = yield* Effect.forkChild(
+        domainRating.refresh().pipe(Effect.catchCause(() => Effect.succeed(null))),
       )
 
       const finalizedThrough = yield* storage.finalizationCutoff()
@@ -168,6 +178,7 @@ export const layer = Layer.effect(
       yield* storage.pruneIndexStatuses(targetUrls)
 
       const sitemapPages = yield* Fiber.join(sitemapFiber)
+      const rating = yield* Fiber.join(domainRatingFiber)
 
       // Record that this run happened, last, so only a run that got all the way
       // here claims to have asked Google. A run that found every day present and
@@ -177,13 +188,16 @@ export const layer = Layer.effect(
       // ran or one that failed. Backfill deliberately does not stamp it — this
       // instant answers "when was the daily refresh last attempted", and a
       // one-off historical fetch would make it read fresher than the truth.
+      //
+      // The forked reads are joined above it, so the stamp still means the whole
+      // run finished — a rating that never landed is swallowed, not skipped.
       yield* storage.recordSyncCheck()
 
       const inspectionSummary =
         inspection.failed > 0
           ? `${inspection.inspections.length} indexed-status checks saved (${freshUrls.size} cached); ${inspection.failed} unavailable`
           : `${inspection.inspections.length} indexed-status checks saved (${freshUrls.size} cached)`
-      return `Saved ${snapshots.length} Search Console rows across ${plan.dates.length} finalized days (${plan.missing.length} missing, ${plan.recent.length} reconciled); daily totals for ${totalDates.length} days; ${inspectionSummary}; finalized through ${finalizedThrough}, provisional to ${freshestThrough}. Sitemap: ${sitemapPages.length || "cached"} pages.`
+      return `Saved ${snapshots.length} Search Console rows across ${plan.dates.length} finalized days (${plan.missing.length} missing, ${plan.recent.length} reconciled); daily totals for ${totalDates.length} days; ${inspectionSummary}; finalized through ${finalizedThrough}, provisional to ${freshestThrough}. Sitemap: ${sitemapPages.length || "cached"} pages.${rating ? ` Domain Rating: ${rating.rating}.` : ""}`
     })
 
     const runBackfill = Effect.fn("Sync.backfillSearchConsole")(function* (
@@ -263,6 +277,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Storage.defaultLayer),
   Layer.provide(Registry.defaultLayer),
   Layer.provide(Sitemap.defaultLayer),
+  Layer.provide(DomainRating.defaultLayer),
   Layer.provide(Config.defaultLayer),
   Layer.provide(CurrentSite.defaultLayer),
 )
