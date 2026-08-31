@@ -243,7 +243,7 @@ export const SitesOverview = ({ sites, rangeDays, onOpen }: SitesOverviewProps) 
       <div className="site-table">
         <div className="site-row site-row-head">
           <span>Site</span>
-          <span title="Ahrefs Domain Rating: backlink strength, 0–100 logarithmic">DR</span>
+          <span title="Domain Rating by Ahrefs — backlink strength on a 0–100 logarithmic scale. ahrefs.com/legal/domain-rating-license">DR</span>
           <span>Clicks</span>
           <span>Impressions</span>
           <span>CTR</span>
@@ -255,29 +255,6 @@ export const SitesOverview = ({ sites, rangeDays, onOpen }: SitesOverviewProps) 
           <SiteRowView key={row.site.id} row={row} onOpen={onOpen} />
         ))}
       </div>
-      {/* Ahrefs' licence requires the score to be credited wherever it is shown,
-          so this line is part of the feature, not decoration. */}
-      <p className="attribution">
-        DR is{" "}
-        <button
-          className="link-inline"
-          type="button"
-          onClick={() => void window.rp.openExternal("https://ahrefs.com/")}
-        >
-          Domain Rating by Ahrefs
-        </button>
-        , a 0–100 logarithmic measure of backlink strength, under its{" "}
-        <button
-          className="link-inline"
-          type="button"
-          onClick={() =>
-            void window.rp.openExternal("https://ahrefs.com/legal/domain-rating-license")
-          }
-        >
-          licence
-        </button>
-        .
-      </p>
       <SectionHeading>Daily impressions and clicks</SectionHeading>
       <p className="section-note">
         One chart per site, each on its own scale — the shapes compare, the heights do not

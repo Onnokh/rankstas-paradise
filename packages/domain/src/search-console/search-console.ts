@@ -379,12 +379,20 @@ export const layer = Layer.effect(
         return yield* decodeOk(schema, response)
       })
 
+    // `dataState` picks which side of Google's finalization boundary we see.
+    // "final" returns finalized days only — a day newer than the cutoff comes
+    // back with zero rows, whatever its real traffic. "all" adds the still-being
+    // -revised trailing days. Query breakdowns stay "final" (they feed the
+    // registry and opportunity maths, which must not chase numbers Google is
+    // still moving); the site-wide daily totals ask for "all" so the provisional
+    // tail actually arrives and the UI can dim it.
     const queryRequest = (
       property: string,
       accessToken: string,
       date: string,
       dimensions: ReadonlyArray<string>,
       startRow: number,
+      dataState: "final" | "all",
     ) =>
       HttpClientRequest.post(queryEndpoint(property)).pipe(
         HttpClientRequest.bearerToken(accessToken),
@@ -395,7 +403,7 @@ export const layer = Layer.effect(
           type: "web",
           rowLimit,
           startRow,
-          dataState: "final",
+          dataState,
         }),
       )
 
@@ -404,6 +412,7 @@ export const layer = Layer.effect(
       property: string,
       date: string,
       dimensions: ReadonlyArray<string>,
+      dataState: "final" | "all" = "final",
     ): Effect.Effect<
       ReadonlyArray<Schema.Schema.Type<typeof SearchRow>>,
       SearchConsoleError
@@ -412,7 +421,7 @@ export const layer = Layer.effect(
         const rows: Array<Schema.Schema.Type<typeof SearchRow>> = []
         for (let startRow = 0; ; startRow += rowLimit) {
           const result = yield* authedJson(SearchAnalyticsResponse, (token) =>
-            queryRequest(property, token, date, dimensions, startRow),
+            queryRequest(property, token, date, dimensions, startRow, dataState),
           )
           const pageRows = result.rows ?? []
           rows.push(...pageRows)
@@ -464,7 +473,7 @@ export const layer = Layer.effect(
           const siteTotals: Array<SiteDailyTotal> = []
           const pages: Array<PageDailyTotal> = []
           for (const date of dates) {
-            const siteRows = yield* queryAllRows(site.property, date, [])
+            const siteRows = yield* queryAllRows(site.property, date, [], "all")
             const siteRow = siteRows[0]
             if (siteRow)
               siteTotals.push({
@@ -474,7 +483,12 @@ export const layer = Layer.effect(
                 ctr: siteRow.ctr,
                 position: siteRow.position,
               })
-            const pageRows = yield* queryAllRows(site.property, date, ["page"])
+            const pageRows = yield* queryAllRows(
+              site.property,
+              date,
+              ["page"],
+              "all",
+            )
             for (const row of pageRows) {
               pages.push({
                 date,

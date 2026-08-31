@@ -179,6 +179,20 @@ export const layer = Layer.effect(
 
       const sitemapPages = yield* Fiber.join(sitemapFiber)
       const rating = yield* Fiber.join(domainRatingFiber)
+
+      // Record that this run happened, last, so only a run that got all the way
+      // here claims to have asked Google. A run that found every day present and
+      // fresh writes no `synced_day` row, so without this stamp it leaves no
+      // trace at all: latestSyncedAt still reports the write six hours ago, and a
+      // caller cannot tell a healthy "nothing new" run from a sync that never
+      // ran or one that failed. Backfill deliberately does not stamp it — this
+      // instant answers "when was the daily refresh last attempted", and a
+      // one-off historical fetch would make it read fresher than the truth.
+      //
+      // The forked reads are joined above it, so the stamp still means the whole
+      // run finished — a rating that never landed is swallowed, not skipped.
+      yield* storage.recordSyncCheck()
+
       const inspectionSummary =
         inspection.failed > 0
           ? `${inspection.inspections.length} indexed-status checks saved (${freshUrls.size} cached); ${inspection.failed} unavailable`

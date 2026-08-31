@@ -1317,21 +1317,3 @@ select:focus {
 .site-name:hover .site-favicon {
   opacity: 1;
 }
-
-/* Ahrefs requires the Domain Rating score to be credited wherever it appears,
-   so this line ships with the column rather than being optional chrome. */
-.attribution {
-  color: var(--faint);
-  font-size: 11px;
-  margin: -2px 0 4px;
-}
-
-.link-inline {
-  background: none;
-  border: none;
-  color: var(--accent-text);
-  cursor: default;
-  font: inherit;
-  padding: 0;
-  text-decoration: underline;
-}

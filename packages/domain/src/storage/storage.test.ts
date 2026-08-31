@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { Database } from "bun:sqlite"
 import { Effect, Exit, Layer, ManagedRuntime } from "effect"
 
 import { CurrentSite } from "../sites/current-site.ts"
@@ -32,11 +33,12 @@ const currentSiteLayer = (dir: string, dbPath: string) =>
   } satisfies CurrentSite.Interface)
 
 let dir: string
+let dbPath: string
 let runtime: ManagedRuntime.ManagedRuntime<Storage.Service, StorageError>
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "rp-storage-"))
-  const dbPath = join(dir, "search-console.sqlite")
+  dbPath = join(dir, "search-console.sqlite")
   runtime = ManagedRuntime.make(
     Storage.layer.pipe(Layer.provide(currentSiteLayer(dir, dbPath))),
   )
@@ -80,6 +82,8 @@ function mkSnapshot(over: {
 test("empty database reads return zeroed/null shapes", async () => {
   expect(await run(Storage.use.snapshotSummary())).toEqual({ rows: 0, dates: 0 })
   expect(await run(Storage.use.latestSnapshotDate())).toBeNull()
+  expect(await run(Storage.use.latestSyncedAt())).toBeNull()
+  expect(await run(Storage.use.latestCheckedAt())).toBeNull()
   expect(await run(Storage.use.historyWithPending())).toEqual([])
   expect(await run(Storage.use.snapshotDateRange())).toEqual({
     first: null,
@@ -126,6 +130,52 @@ test("saveSnapshots persists rows and reads aggregate correctly", async () => {
     "brandy shoes",
     "widget",
   ])
+})
+
+test("latestSyncedAt reports the newest synced day's fetched_at", async () => {
+  await run(
+    Storage.use.saveSnapshots([
+      snapshot({ date: "2024-01-10" }),
+      snapshot({ date: "2024-01-11" }),
+    ]),
+  )
+
+  // Both days were just fetched. Restate the two instants hours apart so the
+  // newest one is unambiguous; SQLite writes fetched_at as UTC
+  // 'YYYY-MM-DD HH:MM:SS', which latestSyncedAt returns as an ISO 8601 instant.
+  const db = new Database(dbPath)
+  db.run(
+    "update synced_day set fetched_at = '2024-01-11 06:00:00' where date = '2024-01-10'",
+  )
+  db.run(
+    "update synced_day set fetched_at = '2024-01-11 09:30:15' where date = '2024-01-11'",
+  )
+  db.close()
+
+  expect(await run(Storage.use.latestSyncedAt())).toBe("2024-01-11T09:30:15Z")
+})
+
+test("recordSyncCheck stamps one row and later checks overwrite it", async () => {
+  await run(Storage.use.recordSyncCheck())
+  expect(await run(Storage.use.latestCheckedAt())).toMatch(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
+  )
+
+  // Backdate the stamp, then check again. sync_run holds one row, so the second
+  // check overwrites the first rather than accumulating a series — and a stamp
+  // written by an earlier process survives into this one, which is the whole
+  // reason it is in the ledger and not in memory.
+  const db = new Database(dbPath)
+  db.run("update sync_run set checked_at = '2024-01-01 00:00:00'")
+  db.close()
+  expect(await run(Storage.use.latestCheckedAt())).toBe("2024-01-01T00:00:00Z")
+
+  await run(Storage.use.recordSyncCheck())
+  const restamped = await run(Storage.use.latestCheckedAt())
+  expect(restamped).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/)
+  expect(restamped).not.toBe("2024-01-01T00:00:00Z")
+  const rows = new Database(dbPath).query("select count(*) as n from sync_run")
+  expect((rows.get() as { n: number }).n).toBe(1)
 })
 
 test("saveDailyTotals feeds pagesWindowOverview true totals + coverage", async () => {

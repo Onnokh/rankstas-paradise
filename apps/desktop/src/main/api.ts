@@ -81,18 +81,10 @@ export const history = (site: string, limit: number): Promise<HistoryReport> =>
 // CHANGED; `lastCheckedAt` is when Ranksta last ASKED Google — a newer
 // lastCheckedAt means the sync ran and Google had nothing new.
 //
-// Both are optional here because this checkout's frozen `StatusReport` predates
-// them (they arrived on main in "Report lastCheckedAt beside lastSyncedAt in
-// status"). The deployed server sends them; an older one would not, and the
-// title bar simply omits the line.
-export type StatusWithFreshness = StatusReport & {
-  readonly data: StatusReport["data"] & {
-    readonly lastSyncedAt?: string
-    readonly lastCheckedAt?: string
-  }
-}
-
-export const status = (site: string): Promise<StatusWithFreshness> =>
+// Both are part of `StatusReport` now, so the shape is taken straight from the
+// frozen DTO. They are nullable rather than absent: a site that has never synced
+// has no instant to report, and the title bar omits the fragment.
+export const status = (site: string): Promise<StatusReport> =>
   request("GET", "/api/status", { query: { site } })
 
 const jobs = (): Promise<JobsResponse> => request("GET", "/api/jobs")

@@ -11,9 +11,7 @@
 // that is the shape Query expects for `isError`.
 import { queryOptions } from "@tanstack/react-query"
 
-import type { DashboardSnapshot } from "@rp/api-client/schema"
-
-import type { StatusWithFreshness } from "../main/api.ts"
+import type { DashboardSnapshot, StatusReport } from "@rp/api-client/schema"
 
 import { TREND_WINDOW } from "./format.ts"
 import type { Site, TrendDay } from "./types.ts"
@@ -80,7 +78,7 @@ export const historyQuery = (siteId: string | undefined, days: number = TREND_WI
 export const statusQuery = (siteId: string | undefined) =>
   queryOptions({
     queryKey: keys.status(siteId ?? ""),
-    queryFn: () => unwrap<StatusWithFreshness>(window.rp.status(siteId!)),
+    queryFn: () => unwrap<StatusReport>(window.rp.status(siteId!)),
     enabled: Boolean(siteId),
     staleTime: 60_000,
   })

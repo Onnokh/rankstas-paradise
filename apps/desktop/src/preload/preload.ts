@@ -3,9 +3,12 @@
 // renderer can read the dashboard but cannot reach any other channel or Node API.
 import { contextBridge, ipcRenderer } from "electron"
 
-import type { DashboardSnapshot, HistoryReport, SitesResponse } from "@rp/api-client/schema"
-
-import type { StatusWithFreshness } from "../main/api.ts"
+import type {
+  DashboardSnapshot,
+  HistoryReport,
+  SitesResponse,
+  StatusReport,
+} from "@rp/api-client/schema"
 
 import type { IpcResult } from "../main/main.ts"
 
@@ -15,7 +18,7 @@ export interface RpBridge {
   readonly sites: () => Promise<IpcResult<readonly Site[]>>
   readonly dashboard: (siteId: string) => Promise<IpcResult<DashboardSnapshot>>
   readonly history: (siteId: string, limit: number) => Promise<IpcResult<HistoryReport>>
-  readonly status: (siteId: string) => Promise<IpcResult<StatusWithFreshness>>
+  readonly status: (siteId: string) => Promise<IpcResult<StatusReport>>
   readonly sync: (siteId: string, siteName: string) => Promise<IpcResult<string>>
   readonly favicon: (origin: string) => Promise<string | null>
   readonly configPath: () => Promise<string>

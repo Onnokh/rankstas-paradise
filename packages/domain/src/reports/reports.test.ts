@@ -390,6 +390,16 @@ test("statusReport counts registry targets/keywords and sitemap pages", async ()
   expect(report.data.syncedDays).toBe(56)
   expect(report.data.firstDate).toBe("2026-05-18")
   expect(report.data.lastDate).toBe("2026-07-12")
+  // lastSyncedAt is when the data arrived — the newest synced_day.fetched_at,
+  // written as this fixture was seeded — not when the report was shaped.
+  expect(report.data.lastSyncedAt).toMatch(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
+  )
+  // This fixture writes straight to Storage and never runs a sync, so the two
+  // fields disagree here on purpose: data has arrived, but Ranksta never asked
+  // Google for it. That is the "never checked" state a client must be able to
+  // tell apart from a checked site with nothing new.
+  expect(report.data.lastCheckedAt).toBeNull()
 })
 
 test("pagesReport sorts a known page by impressions desc", async () => {
