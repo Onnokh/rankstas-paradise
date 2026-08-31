@@ -8,6 +8,7 @@
 import { Context, Effect, Layer } from "effect"
 
 import { CurrentSite } from "../sites/current-site.ts"
+import { DomainRating } from "../domain-rating/domain-rating.ts"
 import { type RegistryEntry, type RegistryPatch } from "../registry/schema.ts"
 import { type RegistryError } from "../registry/schema.ts"
 import { Registry } from "../registry/registry.ts"
@@ -107,6 +108,7 @@ export const layer = Layer.effect(
     const storage = yield* Storage.Service
     const registry = yield* Registry.Service
     const sitemap = yield* Sitemap.Service
+    const domainRatingService = yield* DomainRating.Service
     const site = yield* CurrentSite.Service
     const resolved = yield* site.current()
     const origin = resolved.origin
@@ -691,6 +693,8 @@ export const layer = Layer.effect(
             )
             const digest = yield* storage.opportunityDigest(entries)
             const history = yield* storage.historyWithPending()
+            // Read from the volume, never from Ahrefs: Sync owns the refresh.
+            const domainRating = yield* domainRatingService.cached()
             const recentActions = rawLog
               .filter((entry) => entry.kind !== "note")
               .slice(0, 3)
@@ -720,6 +724,7 @@ export const layer = Layer.effect(
               history,
               recentActions,
               performances,
+              domainRating,
             }
           }),
         ),
@@ -728,6 +733,7 @@ export const layer = Layer.effect(
 )
 
 export const defaultLayer = layer.pipe(
+  Layer.provide(DomainRating.defaultLayer),
   Layer.provide(Storage.defaultLayer),
   Layer.provide(Registry.defaultLayer),
   Layer.provide(Sitemap.defaultLayer),

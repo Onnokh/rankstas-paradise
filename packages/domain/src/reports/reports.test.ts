@@ -23,6 +23,7 @@ import {
 import { Sitemap } from "../sitemap/sitemap.ts"
 import { type SitemapPage } from "../sitemap/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
+import { DomainRating } from "../domain-rating/domain-rating.ts"
 import { type Site } from "../sites/schema.ts"
 import { type StorageError } from "../storage/schema.ts"
 import { Storage } from "../storage/storage.ts"
@@ -329,10 +330,16 @@ beforeAll(async () => {
   } satisfies Sitemap.Interface)
 
   const storageLayer = Storage.layer.pipe(Layer.provide(currentSiteLayer))
+  // The dashboard reads a stored rating and never fetches one; a site without a
+  // reading is the ordinary case, so the stub yields null.
+  const domainRatingLayer = Layer.mock(DomainRating.Service)({
+    cached: () => Effect.succeed(null),
+  })
   const base = Layer.mergeAll(
     storageLayer,
     registryLayer,
     sitemapLayer,
+    domainRatingLayer,
     currentSiteLayer,
   )
   runtime = ManagedRuntime.make(Reports.layer.pipe(Layer.provideMerge(base)))

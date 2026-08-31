@@ -322,6 +322,11 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
         `Current 28 days: ${data.digest.currentStart ?? "—"} → ${data.digest.latestDate ?? "—"}`,
         `Previous 28 days: ${data.digest.previousStart ?? "—"} → ${data.digest.previousEnd ?? "—"}`,
         `Sources: ${summary.rows} raw rows · ${data.sitemapPageCount} sitemap pages · ${data.registry.filter((entry) => entry.keyword.trim()).length} keywords`,
+        // Ahrefs' licence requires the score to be credited wherever it is
+        // shown, so the attribution is part of the line rather than optional.
+        data.domainRating
+          ? `Domain Rating by Ahrefs: ${data.domainRating.rating.toFixed(1)} / 100 · read ${data.domainRating.fetchedAt.slice(0, 10)}`
+          : "Domain Rating by Ahrefs: no reading yet",
       ].join("\n")
       if (selectedKind === "sitemap-coverage") {
         detailTitle.content = `Sitemap coverage · ${sitemapGaps.length} unmapped pages`

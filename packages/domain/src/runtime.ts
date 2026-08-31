@@ -15,6 +15,7 @@ import { Layer, ManagedRuntime } from "effect"
 
 import { Config } from "./config/config.ts"
 import { CurrentSite } from "./sites/current-site.ts"
+import { DomainRating } from "./domain-rating/domain-rating.ts"
 import { Registry } from "./registry/registry.ts"
 import { Reports } from "./reports/reports.ts"
 import { SearchConsole } from "./search-console/search-console.ts"
@@ -31,6 +32,7 @@ export const AppLayer = Layer.mergeAll(
   Storage.defaultLayer,
   Registry.defaultLayer,
   Sitemap.defaultLayer,
+  DomainRating.defaultLayer,
   Sync.defaultLayer,
   Reports.defaultLayer,
 )

@@ -18,6 +18,7 @@ import { FetchHttpClient } from "effect/unstable/http"
 
 import { Config } from "@rp/domain/config/config"
 import { CurrentSite } from "@rp/domain/sites/current-site"
+import { DomainRating } from "@rp/domain/domain-rating/domain-rating"
 import { Registry } from "@rp/domain/registry/registry"
 import { Reports } from "@rp/domain/reports/reports"
 import { SearchConsole } from "@rp/domain/search-console/search-console"
@@ -41,6 +42,7 @@ const siteLayer = (site: Site) =>
     Layer.provideMerge(Storage.layer),
     Layer.provideMerge(Registry.layer),
     Layer.provideMerge(Sitemap.layer),
+    Layer.provideMerge(DomainRating.layer),
     Layer.provideMerge(CurrentSite.layerForSite(site)),
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(Config.defaultLayer),

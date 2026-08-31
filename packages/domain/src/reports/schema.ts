@@ -3,6 +3,8 @@
 // and are the contract downstream frontends and the HTTP server code against.
 import { Schema } from "effect"
 
+import { DomainRating } from "../domain-rating/schema.ts"
+
 import {
   HistoryDay,
   IndexStatus,
@@ -163,6 +165,16 @@ export const DashboardSnapshot = Schema.Struct({
       performance: RegistryPerformance,
     }),
   ),
+  // Ahrefs' backlink-strength score, or null when the deployment has no Ahrefs
+  // key or the site has not been synced since one was added. It rides on the
+  // snapshot rather than its own read so both front-ends get it for free, and it
+  // is served from the volume — a dashboard never waits on Ahrefs.
+  //
+  // The KEY is optional, not just the value. The clients decode against this
+  // schema but run against whatever server is deployed, so a required key would
+  // make every TUI read fail until the server was updated in lockstep. An older
+  // server simply omits it and the front-ends show no rating.
+  domainRating: Schema.optional(Schema.NullOr(DomainRating)),
 }).annotate({ identifier: "DashboardSnapshot" })
 export interface DashboardSnapshot
   extends Schema.Schema.Type<typeof DashboardSnapshot> {}

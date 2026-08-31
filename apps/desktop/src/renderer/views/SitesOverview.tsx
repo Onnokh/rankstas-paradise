@@ -33,7 +33,7 @@ import {
   windowTotals,
 } from "../format.ts"
 import { dashboardQuery, historyQuery } from "../queries.ts"
-import type { OpportunitySignal, Site, TrendDay, View } from "../types.ts"
+import type { DashboardSnapshot, OpportunitySignal, Site, TrendDay, View } from "../types.ts"
 import { provisionalAnchor } from "./shared.ts"
 
 export interface SitesOverviewProps {
@@ -49,6 +49,7 @@ interface SiteRow {
   readonly current: readonly TrendDay[]
   readonly previous: readonly TrendDay[]
   readonly signals: readonly OpportunitySignal[]
+  readonly domainRating: DashboardSnapshot["domainRating"]
   readonly latestDate: string | null
   readonly isLoading: boolean
 }
@@ -97,6 +98,16 @@ const SiteRowView = ({
         <span className="site-row-loading">Loading…</span>
       ) : (
         <>
+          {/* A site attribute rather than a period metric, so it carries no
+              comparison — Ahrefs reports today's score, not a history. */}
+          <div className="site-metric">
+            <span className="site-metric-value">
+              {row.domainRating ? row.domainRating.rating.toFixed(1) : "—"}
+            </span>
+            <span className="site-metric-delta tone-muted">
+              {row.domainRating ? shortDate(row.domainRating.fetchedAt.slice(0, 10)) : "no reading"}
+            </span>
+          </div>
           <Metric
             value={count(now.clicks)}
             delta={hasComparison ? trendLabel(clicks) : "—"}
@@ -199,6 +210,7 @@ export const SitesOverview = ({ sites, rangeDays, onOpen }: SitesOverviewProps) 
       current: split?.current ?? ((snapshot?.history ?? []) as readonly TrendDay[]),
       previous: split?.previous ?? [],
       signals: snapshot?.digest.signals ?? [],
+      domainRating: snapshot?.domainRating ?? null,
       latestDate: snapshot?.digest.latestDate ?? null,
       isLoading: !snapshot && !days,
     }
@@ -231,6 +243,7 @@ export const SitesOverview = ({ sites, rangeDays, onOpen }: SitesOverviewProps) 
       <div className="site-table">
         <div className="site-row site-row-head">
           <span>Site</span>
+          <span title="Ahrefs Domain Rating: backlink strength, 0–100 logarithmic">DR</span>
           <span>Clicks</span>
           <span>Impressions</span>
           <span>CTR</span>
@@ -242,6 +255,29 @@ export const SitesOverview = ({ sites, rangeDays, onOpen }: SitesOverviewProps) 
           <SiteRowView key={row.site.id} row={row} onOpen={onOpen} />
         ))}
       </div>
+      {/* Ahrefs' licence requires the score to be credited wherever it is shown,
+          so this line is part of the feature, not decoration. */}
+      <p className="attribution">
+        DR is{" "}
+        <button
+          className="link-inline"
+          type="button"
+          onClick={() => void window.rp.openExternal("https://ahrefs.com/")}
+        >
+          Domain Rating by Ahrefs
+        </button>
+        , a 0–100 logarithmic measure of backlink strength, under its{" "}
+        <button
+          className="link-inline"
+          type="button"
+          onClick={() =>
+            void window.rp.openExternal("https://ahrefs.com/legal/domain-rating-license")
+          }
+        >
+          licence
+        </button>
+        .
+      </p>
       <SectionHeading>Daily impressions and clicks</SectionHeading>
       <p className="section-note">
         One chart per site, each on its own scale — the shapes compare, the heights do not

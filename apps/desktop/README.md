@@ -56,7 +56,8 @@ for all of them.
 
 - **Overview** — the only screen not scoped to a site, and the one the app opens
   on. Every site on its own row, columns aligned: clicks, impressions, CTR and
-  average position, each against **that site's own** previous period. Then one
+  average position, each against **that site's own** previous period, plus its
+  Ahrefs **DR** (Domain Rating). Then one
   daily impressions-and-clicks chart per site, side by side. Below those, the
   largest signals on any site, ranked by impressions; clicking one opens that
   site's Opportunities view on that exact row.

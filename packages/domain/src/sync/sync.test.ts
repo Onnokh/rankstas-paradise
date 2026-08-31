@@ -20,6 +20,7 @@ import {
 import { SearchConsole } from "../search-console/search-console.ts"
 import { Registry } from "../registry/registry.ts"
 import { CurrentSite } from "../sites/current-site.ts"
+import { DomainRating } from "../domain-rating/domain-rating.ts"
 import { type Site } from "../sites/schema.ts"
 import { Sitemap } from "../sitemap/sitemap.ts"
 import { Storage } from "../storage/storage.ts"
@@ -123,6 +124,13 @@ const sitemapMock = Layer.mock(Sitemap.Service)({
   refreshSitemapPages: () => Effect.succeed([]),
 })
 
+// Domain Rating is a third-party read the sync forks and swallows, so a stub
+// that yields nothing is enough: these tests assert the Search Console work,
+// and a rating must never be able to change its outcome.
+const domainRatingMock = Layer.mock(DomainRating.Service)({
+  refresh: () => Effect.succeed(null),
+})
+
 const configMock = Layer.mock(Config.Service)({
   debugMode: () => Effect.succeed(false),
 })
@@ -145,6 +153,7 @@ const makeRuntime = (dir: string, dbPath: string, recorder: Recorder) => {
     Storage.layer.pipe(Layer.provide(currentSite)),
     registryMock,
     sitemapMock,
+    domainRatingMock,
     configMock,
     currentSite,
   )

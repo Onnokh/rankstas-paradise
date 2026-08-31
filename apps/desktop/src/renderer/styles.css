@@ -1190,7 +1190,7 @@ select:focus {
   cursor: default;
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(0, 1.5fr) 108px 118px 84px 84px 128px 108px;
+  grid-template-columns: minmax(0, 1.4fr) 64px 104px 116px 78px 82px 120px 104px;
   padding: 12px 16px;
   text-align: left;
   width: 100%;
@@ -1316,4 +1316,22 @@ select:focus {
 .site-group.is-active .site-favicon,
 .site-name:hover .site-favicon {
   opacity: 1;
+}
+
+/* Ahrefs requires the Domain Rating score to be credited wherever it appears,
+   so this line ships with the column rather than being optional chrome. */
+.attribution {
+  color: var(--faint);
+  font-size: 11px;
+  margin: -2px 0 4px;
+}
+
+.link-inline {
+  background: none;
+  border: none;
+  color: var(--accent-text);
+  cursor: default;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
 }
