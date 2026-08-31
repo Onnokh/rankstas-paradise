@@ -11,6 +11,7 @@ import { join } from "node:path"
 
 import { dashboard, history, sites, status, syncSite } from "./api.ts"
 import { clientConfigPath } from "./config.ts"
+import { favicon } from "./favicon.ts"
 
 // The application's own name, which is not the same thing as the window title.
 // `productName` in package.json covers a packaged build; this covers `electron .`,
@@ -69,6 +70,10 @@ ipcMain.handle("rp:status", (_event, siteId: string) => attempt(() => status(sit
 ipcMain.handle("rp:sync", (_event, siteId: string, siteName: string) =>
   attempt(() => syncSite(siteId, siteName)),
 )
+// A site's own icon, read by the main process because the renderer's CSP allows
+// no remote origins. Returns null rather than failing: a missing icon is
+// cosmetic and the sidebar falls back to its dot.
+ipcMain.handle("rp:favicon", (_event, origin: string) => favicon(origin))
 ipcMain.handle("rp:config-path", () => clientConfigPath)
 // Opening a tracked page belongs in the OS browser, matching the TUI's Enter
 // key. Only http(s) is forwarded, so a malformed URL in the data cannot be used

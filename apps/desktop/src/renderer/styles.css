@@ -1299,3 +1299,21 @@ select:focus {
   min-width: 0;
   padding: 14px;
 }
+
+/* The site's own favicon, in the slot the dot occupies. Same 6px-dot footprint
+   grown to a legible 14px, so swapping one for the other moves no text. */
+.site-favicon {
+  border-radius: 3px;
+  flex-shrink: 0;
+  height: 14px;
+  object-fit: contain;
+  /* The dot marked the live site by turning accent-coloured; a favicon cannot,
+     so the inactive ones recede instead. */
+  opacity: 0.55;
+  width: 14px;
+}
+
+.site-group.is-active .site-favicon,
+.site-name:hover .site-favicon {
+  opacity: 1;
+}

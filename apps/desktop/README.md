@@ -127,6 +127,7 @@ that addresses a row or a per-site view enters the active site first.
 | File | Role |
 | --- | --- |
 | `src/main/config.ts` | Resolves `{ apiUrl, token }` — a Node port of `@rp/api-client/client-config`, which reads through `Bun.file`. |
+| `src/main/favicon.ts` | Fetches each site's own favicon and returns it as a `data:` URL. The one place the app talks to a tracked site rather than to the server. |
 | `src/main/api.ts` | `fetch` calls to `/api/sites`, `/api/dashboard`, `/api/history`, `/api/jobs*`, including the 409-coalescing sync the TUI does. |
 | `src/main/main.ts` | The window and the IPC handlers. The only process with network access. |
 | `src/preload/preload.ts` | The calls exposed to the renderer. No `ipcRenderer`, no Node. |
@@ -194,6 +195,17 @@ makes it animate from scratch instead.
 Registry rows keep hand-drawn sparklines (`components/Sparkline.tsx`): a list
 mounts one per row, and a Recharts tree each would cost far more than the line is
 worth.
+
+Site favicons follow the same rule as everything else. The CSP is
+`default-src 'none'` with no remote origins, so an `<img>` pointing at
+`https://sleevy.app/favicon.ico` would simply be blocked — and widening the
+policy to allow the tracked sites would hand every string the server sends a way
+to reach the network. The main process fetches the icon instead and returns a
+`data:` URL, which `img-src` already permits. It reads the page's own
+`<link rel="icon">` before falling back to `/favicon.ico`, because many hosts
+answer that path with a 200 HTML error page; the response is rejected unless its
+content type is an image. A site with no readable icon keeps the plain dot, and
+the result — including a failure — is cached for the session.
 
 The renderer is sandboxed (`contextIsolation`, no `nodeIntegration`) and its CSP
 allows no remote origins, so every byte it draws arrives over the preload bridge.

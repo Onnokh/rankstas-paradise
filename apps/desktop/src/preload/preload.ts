@@ -17,6 +17,7 @@ export interface RpBridge {
   readonly history: (siteId: string, limit: number) => Promise<IpcResult<HistoryReport>>
   readonly status: (siteId: string) => Promise<IpcResult<StatusWithFreshness>>
   readonly sync: (siteId: string, siteName: string) => Promise<IpcResult<string>>
+  readonly favicon: (origin: string) => Promise<string | null>
   readonly configPath: () => Promise<string>
   readonly openExternal: (url: string) => Promise<boolean>
 }
@@ -27,6 +28,7 @@ const bridge: RpBridge = {
   history: (siteId, limit) => ipcRenderer.invoke("rp:history", siteId, limit),
   status: (siteId) => ipcRenderer.invoke("rp:status", siteId),
   sync: (siteId, siteName) => ipcRenderer.invoke("rp:sync", siteId, siteName),
+  favicon: (origin) => ipcRenderer.invoke("rp:favicon", origin),
   configPath: () => ipcRenderer.invoke("rp:config-path"),
   openExternal: (url) => ipcRenderer.invoke("rp:open-external", url),
 }

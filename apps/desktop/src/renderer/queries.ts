@@ -37,6 +37,7 @@ export const keys = {
   historiesFor: (siteId: string) => ["history", siteId] as const,
   history: (siteId: string, days: number) => ["history", siteId, days] as const,
   status: (siteId: string) => ["status", siteId] as const,
+  favicon: (origin: string) => ["favicon", origin] as const,
 }
 
 // The site catalog changes only when the server's config does, so it never goes
@@ -82,4 +83,16 @@ export const statusQuery = (siteId: string | undefined) =>
     queryFn: () => unwrap<StatusWithFreshness>(window.rp.status(siteId!)),
     enabled: Boolean(siteId),
     staleTime: 60_000,
+  })
+
+// A site's own icon, as a `data:` URL the main process fetched for us. It cannot
+// change while the window is open, and the query never rejects — a site with no
+// readable icon resolves to null and the sidebar shows its dot instead.
+export const faviconQuery = (origin: string | undefined) =>
+  queryOptions({
+    queryKey: keys.favicon(origin ?? ""),
+    queryFn: () => window.rp.favicon(origin!),
+    enabled: Boolean(origin),
+    staleTime: Infinity,
+    retry: false,
   })

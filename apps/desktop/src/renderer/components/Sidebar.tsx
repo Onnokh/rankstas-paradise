@@ -5,12 +5,12 @@
 // site, all cached under their own keys. That is also what makes switching feel
 // instant: by the time a site is clicked its snapshot is usually already
 // resolved, so the pane paints from cache instead of blanking.
-import { useQueries } from "@tanstack/react-query"
+import { useQueries, useQuery } from "@tanstack/react-query"
 
 import type { DashboardSnapshot } from "@rp/api-client/schema"
 
 import { count } from "../format.ts"
-import { dashboardQuery } from "../queries.ts"
+import { dashboardQuery, faviconQuery } from "../queries.ts"
 import { type Site, type View, views } from "../types.ts"
 import { Icon, type IconName } from "./Icon.tsx"
 
@@ -42,6 +42,16 @@ export interface SidebarProps {
   readonly onSync: () => void
   readonly isSyncing: boolean
   readonly status: string
+}
+
+// The site's own favicon, standing in for the generic dot. It arrives as a
+// `data:` URL over the bridge (see main/favicon.ts), so a site that has no
+// readable icon — or whose lookup has not landed yet — keeps the dot rather
+// than leaving a gap that would shift the row.
+const SiteMark = ({ origin }: { origin: string }) => {
+  const icon = useQuery(faviconQuery(origin))
+  if (!icon.data) return <span className="site-dot" />
+  return <img className="site-favicon" src={icon.data} alt="" aria-hidden="true" />
 }
 
 export const Sidebar = ({
@@ -87,7 +97,7 @@ export const Sidebar = ({
                 title={site.origin}
                 onClick={() => onOpen(site.id, view)}
               >
-                <span className="site-dot" />
+                <SiteMark origin={site.origin} />
                 <span>{site.name}</span>
               </button>
               <div className="site-views">
