@@ -466,7 +466,10 @@ export const layer = Layer.effect(
               score: currentMetrics.impressions,
             })
           }
-          if (pages.length < 2) continue
+          // Same impression floor as the other kinds: a query split across
+          // pages at a handful of impressions is long-tail noise, not a
+          // cannibalization problem worth a signal.
+          if (pages.length < 2 || currentMetrics.impressions < 20) continue
           signals.push({
             kind: "cannibalization",
             label: query,
