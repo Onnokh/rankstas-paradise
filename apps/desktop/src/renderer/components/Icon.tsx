@@ -11,6 +11,7 @@ const paths = {
   chevron: ["m8 10 4 4 4-4"],
   alert: ["M12 4 2.6 20h18.8z", "M12 10v4", "M12 17.2v.1"],
   layers: ["m12 3 9 5-9 5-9-5z", "m3 13 9 5 9-5", "m3 17.5 9 5 9-5"],
+  refresh: ["M20 11a8 8 0 1 0-.6 4", "M20 4v7h-7"],
 } as const
 
 export type IconName = keyof typeof paths

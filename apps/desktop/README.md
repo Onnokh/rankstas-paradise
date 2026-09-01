@@ -36,6 +36,33 @@ On macOS the menu-bar title comes from the running `.app` bundle, so a `bun run
 desktop` session still shows "Electron" there. Only a packaged build carries the
 real name into the menu bar, and this app has no packaging step yet.
 
+## Its icon
+
+`assets/icon.png` is the app icon, copied into `dist/` by the build and loaded
+from there like every other asset. It is set twice, because the two platforms
+disagree: `BrowserWindow({ icon })` is what Windows and Linux read, while macOS
+ignores it and takes the icon from the running bundle — so `app.dock.setIcon()`
+covers the dev run, which would otherwise show Electron's own icon.
+
+Three things were done to the supplied artwork, and the first two are the ones
+that matter:
+
+- **It sits on Apple's icon grid.** A macOS app icon is not meant to fill its
+  canvas: on 1024x1024 the rounded square is 824x824 centred, leaving a 100px
+  transparent margin. Artwork drawn edge to edge renders about a quarter larger
+  than every neighbouring icon in the dock, which is exactly how this one first
+  looked.
+- **Its corners are transparent.** The source had no alpha channel, so the
+  rounded corners were opaque black, and macOS does not mask app icons the way
+  iOS does — the dock would have shown a black square around the red squircle.
+  The corners are flood-filled from each edge, which removes only the black
+  *outside* the artwork and leaves the ninja's black body untouched.
+- It is quantised to 128 colours. The source carried 722 KB of anti-aliasing
+  noise for what is flat art; this is 49 KB at 0.24% deviation.
+
+A packaged build would take its icon from an `.icns` in the bundle rather than
+from either of these calls. There is no packaging step yet, so none is committed.
+
 ## Configuration
 
 The app reads the **same client config as the TUI**, in the same order:
@@ -48,11 +75,32 @@ an empty dashboard.
 
 ## The screens
 
-The sidebar is a source list: **Overview** at the top, then every configured
-site with its own five views under it, so one click reaches any view of any
-site. The counts beside a view are the size of the collection it opens; they
-appear per site as that site's snapshot lands, which the startup sweep fills in
-for all of them.
+The sidebar is a source list: the wordmark, **Overview**, then every configured
+site with its views nested under it. A site's own name IS its Home — clicking it
+opens that site's overview — so Home is not repeated as a child row, and the page
+it opens is titled with the site's name rather than "Overview", which already
+names the cross-site screen.
+
+Every site stays open. There are a handful of them, and collapsing would hide
+exactly the counts the list exists to show. The counts beside a view are the size
+of the collection it opens; they appear per site as that site's snapshot lands,
+which the startup sweep fills in for all of them.
+
+A sync's outcome appears as a pill floating above **Sync**, positioned out of
+flow. In flow it changed the footer's height whenever a sync started or ended,
+and the whole sidebar jumped with it. It clamps to three lines and carries the
+full text in its `title`.
+
+The message is a receipt, not a state. It clears itself after five seconds,
+because otherwise the sidebar sat there reading "Refreshing Shadertown on the
+server…" from a sweep that had finished at launch — a line that looks live and is
+not. A failure sticks and turns red, since the pill is the only place the reason
+is shown.
+
+**Sync** at the foot says what it will do. On the cross-site overview no single
+site is in view, so it walks every site — sequentially, because the server holds
+one sync lock and parallel requests would only 409 against each other. Inside a
+site it syncs that site alone.
 
 - **Overview** — the only screen not scoped to a site, and the one the app opens
   on. Every site on its own row, columns aligned: clicks, impressions, CTR and
@@ -136,6 +184,22 @@ deltas and nothing else.
 Keys carry over from the TUI: `0`–`4` switch view, `←`/`→` cycle, `↑`/`↓` select,
 `s` switches site, `r` syncs. `a` returns to the Overview; from there, any key
 that addresses a row or a per-site view enters the active site first.
+
+### Jobs are per site, and so are the reads of them
+
+Each site's runtime holds its own job registry and its own single-job lock. A
+`GET /api/jobs` without `?site=` returns the **first** site's registry, so a job
+belonging to any other site is invisible in it.
+
+That is worth knowing because a 409 from `POST /api/jobs/sync` is normal: opening
+the window reads every site's dashboard, each read warms that site, and the warm
+starts a sync that the explicit sync then collides with. The client is meant to
+coalesce onto the running job — but an unscoped job read cannot see it, and the
+sync reports a refusal instead. Every job read here passes the site.
+
+The 409 is safe to coalesce on: the lock is released only after the job is
+marked settled in the same registry, so if the lock is held, a running job for
+that site is always there to be found.
 
 ## Layout
 

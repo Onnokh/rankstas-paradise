@@ -178,6 +178,44 @@ test("recordSyncCheck stamps one row and later checks overwrite it", async () =>
   expect((rows.get() as { n: number }).n).toBe(1)
 })
 
+test("a day Google returns nothing for is stored as zero, not left missing", async () => {
+  // The whole point: an empty day must not come back as "missing" on the next
+  // sync, or a quiet site re-asks about the same days forever.
+  await run(
+    Storage.use.saveDailyTotals({ site: [], pages: [] }, ["2024-02-01", "2024-02-02"]),
+  )
+
+  expect(
+    await run(Storage.use.missingDailyTotalDates(["2024-02-01", "2024-02-02"])),
+  ).toEqual([])
+
+  const history = await run(Storage.use.historyWithPending())
+  const day = history.find((candidate) => candidate.date === "2024-02-01")
+  expect(day?.impressions).toBe(0)
+  expect(day?.clicks).toBe(0)
+})
+
+test("an empty response never overwrites a reading already stored", async () => {
+  await run(
+    Storage.use.saveDailyTotals(
+      {
+        site: [
+          { date: "2024-03-01", clicks: 4, impressions: 90, ctr: 0.044, position: 6 },
+        ],
+        pages: [],
+      },
+      ["2024-03-01"],
+    ),
+  )
+  // A transient empty answer for the same date must leave the real numbers alone.
+  await run(Storage.use.saveDailyTotals({ site: [], pages: [] }, ["2024-03-01"]))
+
+  const history = await run(Storage.use.historyWithPending())
+  const day = history.find((candidate) => candidate.date === "2024-03-01")
+  expect(day?.impressions).toBe(90)
+  expect(day?.clicks).toBe(4)
+})
+
 test("saveDailyTotals feeds pagesWindowOverview true totals + coverage", async () => {
   await run(
     Storage.use.saveSnapshots([

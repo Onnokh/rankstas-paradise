@@ -922,6 +922,22 @@ export const layer = Layer.effect(
         Effect.gen(function* () {
           for (const date of fetchedDates)
             yield* sql`delete from page_daily where date = ${date}`
+          // A day Google has no rows for is a day with no impressions, and it
+          // has to be recorded as such. Without this the date never enters
+          // site_daily, so `missingDailyTotalDates` reports it missing again on
+          // the next sync — and every sync after that, forever. A quiet site can
+          // spend minutes and a large slice of the API quota re-asking about the
+          // same few hundred empty days on every run.
+          //
+          // `do nothing` on conflict: a stored reading is never overwritten with
+          // zeros, so a transient empty response cannot erase real data.
+          const returned = new Set(totals.site.map((row) => row.date))
+          for (const date of fetchedDates)
+            if (!returned.has(date))
+              yield* sql`
+                insert into site_daily (date, clicks, impressions, ctr, position)
+                values (${date}, 0, 0, 0, 0)
+                on conflict(date) do nothing`
           for (const row of totals.site)
             yield* sql`
               insert into site_daily (date, clicks, impressions, ctr, position)

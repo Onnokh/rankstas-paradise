@@ -45,6 +45,17 @@ export const App = () => {
   const [view, setView] = useState<View>("home")
   const [selected, setSelected] = useState(0)
   const [status, setStatus] = useState("")
+  // A failure reads differently from a receipt, and the pill is small enough
+  // that colour is the only room there is to say so.
+  const [statusTone, setStatusTone] = useState<"info" | "error">("info")
+  // Which site a sync is on, and how far through a run of them. A bare
+  // "Syncing…" is indistinguishable from a hang, and it is not a short wait: a
+  // site whose daily totals have a large gap can take minutes on its own.
+  const [progress, setProgress] = useState<{
+    readonly name: string
+    readonly index: number
+    readonly total: number
+  } | null>(null)
   const [rangeDays, setRangeDays] = useState(TREND_WINDOW)
   // Which of the two shapes the window is in: the cross-site overview, which
   // belongs to no site, or one site's five views. The app opens on the
@@ -71,6 +82,19 @@ export const App = () => {
     return { ...dashboard, history: periods(history.data, rangeDays).current }
   }, [snapshot.data, history.data, rangeDays])
 
+  // A sync's outcome is a receipt, not state. It clears itself, because the
+  // sidebar was otherwise left carrying "Refreshing Shadertown…" from a sweep
+  // that ended at launch — a line that looks live and is not. A failure sticks:
+  // it is the only place the reason is shown, and it stays until the next try.
+  const clearStatus = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const report = useCallback((message: string, sticky = false) => {
+    setStatus(message)
+    setStatusTone(sticky ? "error" : "info")
+    clearTimeout(clearStatus.current)
+    if (!sticky) clearStatus.current = setTimeout(() => setStatus(""), 5000)
+  }, [])
+  useEffect(() => () => clearTimeout(clearStatus.current), [])
+
   // A sync is a server-side job. When it finishes, the two queries it can change
   // are invalidated by key rather than refetched by hand.
   const sync = useMutation({
@@ -80,14 +104,20 @@ export const App = () => {
         return result.value
       }),
     onSuccess: async (message, { id }) => {
-      setStatus(message)
+      report(message)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: keys.dashboard(id) }),
         queryClient.invalidateQueries({ queryKey: keys.historiesFor(id) }),
         queryClient.invalidateQueries({ queryKey: keys.status(id) }),
       ])
     },
-    onError: (cause) => setStatus(`Refresh failed; showing cached data. ${String(cause)}`),
+    onError: (cause) =>
+      // The thrown message is already a sentence naming what failed; `String(cause)`
+      // would only bolt "Error: " onto the front of it.
+      report(
+        `${cause instanceof Error ? cause.message : String(cause)} Showing the last data received.`,
+        true,
+      ),
   })
 
   // Selecting a row is per site and per view, so it resets when either changes.
@@ -137,9 +167,35 @@ export const App = () => {
     [view],
   )
 
+  // One walk shared by the startup sweep, "sync all sites", and a single site,
+  // so all three report progress the same way. Sequential on purpose: a site
+  // holds its own sync lock for the whole run, and firing them together only
+  // trades a wait for a pile of 409s to coalesce back onto.
+  const syncMany = useCallback(
+    async (targets: readonly { id: string; name: string }[]) => {
+      for (const [index, target] of targets.entries()) {
+        setProgress({ name: target.name, index: index + 1, total: targets.length })
+        try {
+          await sync.mutateAsync({ id: target.id, name: target.name })
+        } catch {
+          // A site that cannot sync leaves its cached snapshot in place; the
+          // mutation's onError has already put the reason in the status pill.
+        }
+      }
+      setProgress(null)
+    },
+    [sync],
+  )
+
+  // The button says what it does. On the overview no single site is in view, so
+  // syncing one arbitrary site would be a lie; it walks all of them instead.
   const runSync = useCallback(() => {
-    if (site) sync.mutate({ id: site.id, name: site.name })
-  }, [site, sync])
+    if (scope === "overview") {
+      void syncMany(sites.data ?? [])
+      return
+    }
+    if (site) void syncMany([site])
+  }, [scope, site, sites.data, syncMany])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -188,19 +244,9 @@ export const App = () => {
     const list = sites.data
     if (!list || list.length === 0 || swept.current) return
     swept.current = true
-    void (async () => {
-      setStatus("Refreshing in the background…")
-      const ordered = [...list].sort((a) => (a.id === activeSiteId ? -1 : 0))
-      for (const target of ordered) {
-        try {
-          await sync.mutateAsync({ id: target.id, name: target.name })
-        } catch {
-          // A site that cannot sync leaves its cached snapshot in place; the
-          // mutation's onError has already put the reason in the status line.
-        }
-      }
-    })()
-  }, [sites.data, activeSiteId, sync])
+    const ordered = [...list].sort((a) => (a.id === activeSiteId ? -1 : 0))
+    void syncMany(ordered)
+  }, [sites.data, activeSiteId, syncMany])
 
   if (sites.isError) return <Fatal message={String(sites.error)} />
   if (snapshot.isError) return <Fatal message={String(snapshot.error)} />
@@ -214,7 +260,7 @@ export const App = () => {
         subtitle: `${sites.data.length} sites, each against its own previous ${rangeName(rangeDays)}`,
       }
     : data
-      ? heading(data, view, rangeDays)
+      ? heading(data, view, rangeDays, site)
       : { title: "Loading…", subtitle: "" }
   const checkedAt = freshness.data?.data.lastCheckedAt
   const syncedAt = freshness.data?.data.lastSyncedAt
@@ -230,7 +276,9 @@ export const App = () => {
         onOpenOverview={openOverview}
         onSync={runSync}
         isSyncing={sync.isPending}
+        progress={progress}
         status={status}
+        statusTone={statusTone}
       />
       <div className="content">
         <header className="topbar">

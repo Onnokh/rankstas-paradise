@@ -138,7 +138,7 @@ select:focus {
 
 .app {
   display: grid;
-  grid-template-columns: 232px 1fr;
+  grid-template-columns: 248px 1fr;
   height: 100vh;
 }
 
@@ -149,7 +149,7 @@ select:focus {
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  padding: 0 12px 12px;
+  padding: 0 10px 12px;
 }
 
 /* The traffic lights sit over this strip; it is the window's drag handle. */
@@ -159,55 +159,28 @@ select:focus {
   height: 46px;
 }
 
-/* --- source list ---------------------------------------------------------- */
-
-.site-group {
-  padding-bottom: 10px;
-}
-
-.site-name {
+.brand {
   align-items: center;
-  background: none;
-  border: none;
-  color: var(--muted);
-  cursor: default;
   display: flex;
-  font-size: 10px;
-  font-weight: 600;
-  gap: 7px;
-  letter-spacing: 0.07em;
-  padding: 6px 10px;
-  text-align: left;
-  text-transform: uppercase;
-  width: 100%;
+  gap: 9px;
+  padding: 0 8px 14px;
 }
 
-.site-name:hover {
-  color: var(--text);
-}
-
-/* The dot is the only marker of which site is live; the view rows below carry
-   the selected-view highlight, and two accented rows would compete. */
-.site-dot {
-  background: var(--border-strong);
-  border-radius: 50%;
+.brand-mark {
+  border-radius: 7px;
   flex-shrink: 0;
-  height: 6px;
-  width: 6px;
+  height: 26px;
+  width: 26px;
 }
 
-.site-group.is-active .site-name {
+.brand-name {
   color: var(--text-strong);
-}
-
-.site-group.is-active .site-dot {
-  background: var(--accent);
-}
-
-.site-views {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nav {
@@ -227,8 +200,8 @@ select:focus {
   color: var(--muted);
   cursor: default;
   display: flex;
-  gap: 9px;
-  padding: 6px 10px 6px 17px;
+  gap: 10px;
+  padding: 8px 10px;
   text-align: left;
   width: 100%;
 }
@@ -238,6 +211,9 @@ select:focus {
   color: var(--text);
 }
 
+/* The filled pill marks the open screen. Only one row carries it at a time: an
+   open site shows it on the view, not on the site header, so the two never
+   compete for the eye. */
 .nav-item.is-active {
   background: var(--accent-soft);
   color: var(--accent-text);
@@ -245,7 +221,11 @@ select:focus {
 
 .nav-label {
   flex: 1;
+  font-size: 13px;
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nav-count {
@@ -258,39 +238,173 @@ select:focus {
   color: var(--accent-text);
 }
 
+/* --- site groups ---------------------------------------------------------- */
+
+.site-group {
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+}
+
+/* The open site's header stays plain but brightens, so the group reads as
+   current while its selected view keeps the accent. */
+.site-head.is-current {
+  color: var(--text-strong);
+}
+
+.site-dot {
+  background: var(--border-strong);
+  border-radius: 50%;
+  flex-shrink: 0;
+  height: 14px;
+  width: 14px;
+}
+
+.site-head.is-current .site-dot {
+  background: var(--accent);
+}
+
+/* The site's own favicon, in the slot the dot occupies. */
+.site-favicon {
+  border-radius: 4px;
+  flex-shrink: 0;
+  height: 16px;
+  object-fit: contain;
+  width: 16px;
+}
+
+/* Flush with the site rows above them. The gap between groups is what separates
+   one site's views from the next, so an indent added a second signal for
+   something already unambiguous. */
+.site-views {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 1px 0 2px;
+}
+
+/* Same icon slot and gap as the rows above, so labels line up to the pixel;
+   only the vertical padding is tighter, which is what makes a view read as
+   subordinate to its site now that nothing is indented. */
+.nav-sub {
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: default;
+  display: flex;
+  gap: 10px;
+  padding: 5px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.nav-sub .icon {
+  color: var(--faint);
+}
+
+.nav-sub:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.nav-sub.is-active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.nav-sub.is-active .icon,
+.nav-sub.is-active .nav-count {
+  color: var(--accent-text);
+}
+
+.nav-sub .nav-label {
+  font-size: 12.5px;
+}
+
 .sidebar-foot {
   border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-top: 12px;
+  margin-top: 10px;
+  padding-top: 8px;
+  /* Anchors the status pill, which is positioned out of flow. */
+  position: relative;
 }
 
 .sync-button {
-  background: var(--surface-raised);
-  border: 1px solid var(--border-strong);
+  align-items: center;
+  background: none;
+  border: none;
   border-radius: var(--radius-sm);
-  color: var(--text-strong);
+  color: var(--muted);
   cursor: default;
+  display: flex;
+  font-size: 13px;
   font-weight: 500;
-  padding: 6px 12px;
+  gap: 10px;
+  padding: 8px 10px;
+  text-align: left;
+  width: 100%;
 }
 
 .sync-button:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent-text);
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
+.sync-button:disabled,
 .sync-button.is-busy {
-  color: var(--muted);
+  color: var(--faint);
 }
 
+/* The icon turns while a sync is in flight, which is the only progress this
+   button can honestly show — the server reports nothing until the job ends. */
+.sync-button.is-busy .icon {
+  animation: spin 1.1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Out of flow on purpose. In flow it changed the footer's height every time a
+   sync started or finished, and the whole sidebar jumped with it. */
 .status {
-  color: var(--faint);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  bottom: calc(100% + 8px);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  /* Three lines is enough for a sync receipt; `title` carries the rest. */
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  display: -webkit-box;
   font-size: 11px;
-  line-height: 1.4;
-  max-height: 44px;
+  left: 0;
+  line-height: 1.45;
+  margin: 0;
   overflow: hidden;
+  padding: 8px 10px;
+  position: absolute;
+  right: 0;
+  animation: status-in 140ms ease-out;
+}
+
+.status-error {
+  border-color: var(--negative);
+  color: var(--negative);
+}
+
+@keyframes status-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
 }
 
 /* --- content -------------------------------------------------------------- */
@@ -1164,13 +1278,6 @@ select:focus {
 
 /* --- cross-site overview -------------------------------------------------- */
 
-/* The "Overview" row sits above the site groups, so it takes the padding a site
-   group would have given it and loses the indent the per-site view rows carry —
-   it is a peer of the groups, not a child of one. */
-.nav-root {
-  margin-bottom: 10px;
-  padding-left: 10px;
-}
 
 .site-table {
   display: flex;
@@ -1300,20 +1407,14 @@ select:focus {
   padding: 14px;
 }
 
-/* The site's own favicon, in the slot the dot occupies. Same 6px-dot footprint
-   grown to a legible 14px, so swapping one for the other moves no text. */
+/* The dot marked the live site by turning accent-coloured; a favicon cannot, so
+   the sites you are not in recede instead. Geometry lives with the other sidebar
+   rules above — only the state belongs here. */
 .site-favicon {
-  border-radius: 3px;
-  flex-shrink: 0;
-  height: 14px;
-  object-fit: contain;
-  /* The dot marked the live site by turning accent-coloured; a favicon cannot,
-     so the inactive ones recede instead. */
-  opacity: 0.55;
-  width: 14px;
+  opacity: 0.6;
 }
 
-.site-group.is-active .site-favicon,
-.site-name:hover .site-favicon {
+.site-head.is-current .site-favicon,
+.site-head:hover .site-favicon {
   opacity: 1;
 }
