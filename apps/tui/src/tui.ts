@@ -324,9 +324,19 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
         `Sources: ${summary.rows} raw rows · ${data.sitemapPageCount} sitemap pages · ${data.registry.filter((entry) => entry.keyword.trim()).length} keywords`,
         // Ahrefs' licence requires the score to be credited wherever it is
         // shown, so the attribution is part of the line rather than optional.
-        data.domainRating
-          ? `Domain Rating by Ahrefs: ${data.domainRating.rating.toFixed(1)} / 100 · read ${data.domainRating.fetchedAt.slice(0, 10)}`
-          : "Domain Rating by Ahrefs: no reading yet",
+        (() => {
+          if (!data.domainRating) return "Domain Rating by Ahrefs: no reading yet"
+          const series = data.domainRatingHistory ?? []
+          const first = series[0]
+          // The series is one this app accumulated — Ahrefs sells only the
+          // present value — so it says how far back it reaches instead of
+          // implying a comparison it cannot make.
+          const move =
+            series.length > 1 && first
+              ? ` · ${data.domainRating.rating - first.rating >= 0 ? "+" : "−"}${Math.abs(data.domainRating.rating - first.rating).toFixed(1)} since ${first.date}`
+              : " · no history yet"
+          return `Domain Rating by Ahrefs: ${data.domainRating.rating.toFixed(1)} / 100${move}`
+        })(),
       ].join("\n")
       if (selectedKind === "sitemap-coverage") {
         detailTitle.content = `Sitemap coverage · ${sitemapGaps.length} unmapped pages`

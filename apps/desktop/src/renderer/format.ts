@@ -154,3 +154,35 @@ export const fetchedLabel = (iso: string): string => {
   return isToday ? time : `${at.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} ${time}`
 }
 
+
+// The Domain Rating move across a window: the newest reading against the newest
+// one at least `days` old.
+//
+// Not `periods()`. That cuts two equal spans from a dense daily series; this
+// series is sparse and short — it only started when the feature shipped and only
+// grows on days a sync ran. So the comparison walks back to the last reading on
+// or before the cutoff, and reports nothing when the series does not reach that
+// far rather than inventing a baseline from its oldest point.
+export interface RatingMove {
+  readonly current: number
+  readonly delta: number | null
+  readonly since: string | null
+}
+
+export const ratingMove = (
+  history: readonly { readonly date: string; readonly rating: number }[],
+  days: number,
+): RatingMove | null => {
+  const latest = history.at(-1)
+  if (!latest) return null
+  const cutoff = new Date(`${latest.date}T12:00:00Z`)
+  cutoff.setUTCDate(cutoff.getUTCDate() - days)
+  const iso = cutoff.toISOString().slice(0, 10)
+  const baseline = [...history].reverse().find((point) => point.date <= iso)
+  if (!baseline) return { current: latest.rating, delta: null, since: null }
+  return {
+    current: latest.rating,
+    delta: latest.rating - baseline.rating,
+    since: baseline.date,
+  }
+}

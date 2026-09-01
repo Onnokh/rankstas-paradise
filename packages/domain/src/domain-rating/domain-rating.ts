@@ -1,16 +1,19 @@
-// DomainRating service: the site's Ahrefs Domain Rating, cached on the volume.
+// DomainRating service: the site's Ahrefs Domain Rating, kept in the ledger.
 //
 // Shaped like Sitemap deliberately. `refresh` reaches the network and is called
-// by Sync; `cached` only reads the file and is what the dashboard read uses. A
-// dashboard must never block on Ahrefs — if it did, a slow third party would
+// by Sync; `cached` only reads stored data and is what the dashboard read uses.
+// A dashboard must never block on Ahrefs — if it did, a slow third party would
 // stall a screen whose other numbers are already on disk.
+//
+// Readings go into the per-site SQLite rather than a JSON file, one row per
+// calendar day. Ahrefs' free endpoint reports only the present value and offers
+// no history, so a series can only ever be accumulated: every sync that does not
+// record one is a day of comparison permanently lost. That is also why the store
+// is the ledger and not a cache — this data cannot be re-fetched.
 //
 // The whole feature is optional. With no API key configured, `refresh` is a
 // no-op and `cached` yields null, and every caller renders a site without a
 // rating rather than an error.
-import { mkdir } from "node:fs/promises"
-import { dirname } from "node:path"
-
 import { Config as EffectConfig, Context, Effect, Layer, Option, Redacted } from "effect"
 import {
   FetchHttpClient,
@@ -20,11 +23,14 @@ import {
 
 import { CurrentSite } from "../sites/current-site.ts"
 import { serviceUse } from "../service-use.ts"
+import { Storage } from "../storage/storage.ts"
 import { DomainRatingError, type DomainRating } from "./schema.ts"
 
 export interface Interface {
-  // The stored reading, or null when the site has none. Never fails and never
-  // reaches the network — this is what report reads call.
+  // The newest stored reading, or null when the site has none. Never reaches the
+  // network and never fails — this is what report reads call, and a rating is
+  // supplementary: its absence, for any reason, must not cost a caller the
+  // dashboard it came for.
   readonly cached: () => Effect.Effect<DomainRating | null>
   // Ask Ahrefs and store the answer. Returns null when no API key is
   // configured, so an unconfigured deployment simply has no rating.
@@ -70,6 +76,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const currentSite = yield* CurrentSite.Service
     const httpClient = yield* HttpClient.HttpClient
+    const storage = yield* Storage.Service
 
     // Redacted so the key cannot reach a log line or an error message. Absent by
     // design on a deployment that has not configured Ahrefs.
@@ -77,30 +84,23 @@ export const layer = Layer.effect(
       EffectConfig.option,
     )
 
-    // Beside the site's other cached third-party read (sitemap.json), on the
-    // persistent volume rather than in memory, so a restart does not cost a
-    // request against the account's quota.
-    const cachePath = Effect.fn("DomainRating.cachePath")(function* () {
-      const directory = yield* currentSite.dataDirectory()
-      return `${directory}/domain-rating.json`
-    })
-
     const impl: Interface = {
       cached: () =>
         Effect.gen(function* () {
-          const path = yield* cachePath()
-          // A missing or malformed cache is not an error; it is a site with no
-          // reading yet, which every caller already renders.
-          return yield* Effect.promise(async () => {
-            const file = Bun.file(path)
-            if (!(await file.exists())) return null
-            try {
-              const parsed = JSON.parse(await file.text()) as DomainRating
-              return typeof parsed?.rating === "number" ? parsed : null
-            } catch {
-              return null
-            }
-          })
+          const site = yield* currentSite.current()
+          const target = hostOf(site.origin)
+          // An unreadable ledger reads as "no rating yet" rather than an
+          // error, for the reason given on the interface.
+          const latest = yield* storage
+            .latestDomainRating()
+            .pipe(Effect.catchCause(() => Effect.succeed(null)))
+          if (!latest || !target) return null
+          return {
+            target,
+            rating: latest.rating,
+            fetchedAt: latest.fetchedAt,
+            license: latest.license,
+          }
         }),
 
       refresh: Effect.fn("DomainRating.refresh")(function* () {
@@ -189,18 +189,17 @@ export const layer = Layer.effect(
             "https://ahrefs.com/legal/domain-rating-license",
         }
 
-        const path = yield* cachePath()
-        yield* Effect.tryPromise({
-          try: async () => {
-            await mkdir(dirname(path), { recursive: true })
-            await Bun.write(path, `${JSON.stringify(reading, null, 2)}\n`)
-          },
-          catch: (cause) =>
-            new DomainRatingError({
-              message: "Could not cache the domain rating.",
-              cause,
-            }),
-        })
+        yield* storage
+          .saveDomainRating(reading.rating, reading.fetchedAt, reading.license)
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new DomainRatingError({
+                  message: "Could not store the domain rating.",
+                  cause,
+                }),
+            ),
+          )
         return reading
       }),
     }
@@ -210,6 +209,7 @@ export const layer = Layer.effect(
 )
 
 export const defaultLayer = layer.pipe(
+  Layer.provide(Storage.defaultLayer),
   Layer.provide(CurrentSite.defaultLayer),
   Layer.provide(FetchHttpClient.layer),
 )

@@ -22,6 +22,7 @@ import { type RegistryEntry } from "../registry/schema.ts"
 import { serviceUse } from "../service-use.ts"
 import {
   type BaselineCapture,
+  type DomainRatingDay,
   type HistoryDay,
   type LogEntry,
   type LogEntryInput,
@@ -68,6 +69,13 @@ export interface Interface {
   // including one that fetched nothing — that run is exactly the one no other
   // table records, because `synced_day` only gains a row when a day is fetched.
   readonly recordSyncCheck: () => Effect.Effect<void, StorageError>
+  // Record today's Domain Rating, replacing any reading already stored for the
+  // same day.
+  readonly saveDomainRating: (
+    rating: number,
+    fetchedAt: string,
+    license: string,
+  ) => Effect.Effect<void, StorageError>
 
   // --- freshness / coverage queries ---
   readonly missingDailyTotalDates: (
@@ -104,6 +112,15 @@ export interface Interface {
   readonly finalizationCutoff: () => Effect.Effect<string>
 
   // --- reads / analysis ---
+  // The newest stored reading, or null when the site has none.
+  readonly latestDomainRating: () => Effect.Effect<
+    { readonly rating: number; readonly fetchedAt: string; readonly license: string } | null,
+    StorageError
+  >
+  // The stored Domain Rating series, oldest first.
+  readonly domainRatingHistory: (
+    limit?: number,
+  ) => Effect.Effect<ReadonlyArray<DomainRatingDay>, StorageError>
   readonly historyWithPending: (
     limit?: number,
   ) => Effect.Effect<ReadonlyArray<HistoryDay>, StorageError>
@@ -285,6 +302,17 @@ export const layer = Layer.effect(
       `create table if not exists sync_run (
         id integer primary key check (id = 1),
         checked_at text not null default current_timestamp
+      )`,
+      // One Domain Rating per calendar day. Ahrefs' free endpoint reports only
+      // the present value, so this series cannot be backfilled — it is worth
+      // exactly as much as the number of days it has been recording. Keyed by
+      // date (not by fetch instant) so several syncs in one day settle on one
+      // reading instead of inflating the series.
+      `create table if not exists domain_rating (
+        date text primary key,
+        rating real not null,
+        fetched_at text not null,
+        license text not null default ''
       )`,
     ]
     yield* Effect.forEach(ddl, (statement) => sql.unsafe(statement)).pipe(
@@ -915,6 +943,34 @@ export const layer = Layer.effect(
       insert into sync_run (id, checked_at) values (1, current_timestamp)
       on conflict(id) do update set checked_at = current_timestamp`
 
+    // `date('now')` is UTC, matching how every other date in this ledger is
+    // keyed, so a reading does not land on a different day than the totals
+    // fetched beside it.
+    const saveDomainRatingI = (rating: number, fetchedAt: string, license: string) => sql`
+      insert into domain_rating (date, rating, fetched_at, license)
+      values (date('now'), ${rating}, ${fetchedAt}, ${license})
+      on conflict(date) do update set
+        rating = excluded.rating,
+        fetched_at = excluded.fetched_at,
+        license = excluded.license`
+
+    const latestDomainRatingI = Effect.gen(function* () {
+      const rows = yield* sql<{
+        rating: number
+        fetchedAt: string
+        license: string
+      }>`select rating, fetched_at as "fetchedAt", license from domain_rating
+         order by date desc limit 1`
+      return rows[0] ?? null
+    })
+
+    const domainRatingHistoryI = (limit = 180) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<DomainRatingDay>`
+          select date, rating from domain_rating order by date`
+        return rows.slice(-limit) as ReadonlyArray<DomainRatingDay>
+      })
+
     const savePageIndexStatusesI = (statuses: ReadonlyArray<PageIndexStatus>) =>
       sql.withTransaction(
         Effect.gen(function* () {
@@ -1084,6 +1140,15 @@ export const layer = Layer.effect(
         ),
       recordSyncCheck: () =>
         recordSyncCheckI.pipe(Effect.asVoid, mapErr("recordSyncCheck")),
+      saveDomainRating: (rating, fetchedAt, license) =>
+        saveDomainRatingI(rating, fetchedAt, license).pipe(
+          Effect.asVoid,
+          mapErr("saveDomainRating"),
+        ),
+      latestDomainRating: () =>
+        latestDomainRatingI.pipe(mapErr("latestDomainRating")),
+      domainRatingHistory: (limit) =>
+        domainRatingHistoryI(limit).pipe(mapErr("domainRatingHistory")),
       missingDailyTotalDates: (dates) =>
         missingDailyTotalDatesI(dates).pipe(mapErr("missingDailyTotalDates")),
       missingSnapshotDates: (dates) =>

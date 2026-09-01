@@ -57,7 +57,7 @@ for all of them.
 - **Overview** — the only screen not scoped to a site, and the one the app opens
   on. Every site on its own row, columns aligned: clicks, impressions, CTR and
   average position, each against **that site's own** previous period, plus its
-  Ahrefs **DR** (Domain Rating). Then one
+  Ahrefs **DR** (Domain Rating) and its move over the selected range. Then one
   daily impressions-and-clicks chart per site, side by side. Below those, the
   largest signals on any site, ranked by impressions; clicking one opens that
   site's Opportunities view on that exact row.
@@ -104,6 +104,20 @@ came from.
 
 The one thing combined across sites is the opportunity **ranking**, which is a
 list rather than a total: no site's number is altered by another's presence.
+
+### Domain Rating has no back-history
+
+Ahrefs' free endpoint reports only the present score — there is no historical
+series to fetch. So the DR column's move is computed from a series **this app
+accumulates**, one reading per calendar day, starting from the first sync that
+recorded one. Two consequences worth knowing:
+
+- Every day without a sync is a day of comparison permanently lost. That is why
+  readings live in the site's SQLite ledger rather than a cache: this data cannot
+  be re-fetched.
+- Until the series reaches back past the selected range, the cell reads
+  `no history` rather than showing a move. It does not fall back to the oldest
+  reading it has, because a "6M change" measured over four days would be a lie.
 
 A range picker (3D / 7D / 30D / 3M / 6M) appears on the Overview, Home and
 History. It

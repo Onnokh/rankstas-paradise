@@ -26,6 +26,8 @@ import {
   percent,
   periods,
   position,
+  ratingMove,
+  readableDate,
   shortDate,
   signed,
   trend,
@@ -50,6 +52,7 @@ interface SiteRow {
   readonly previous: readonly TrendDay[]
   readonly signals: readonly OpportunitySignal[]
   readonly domainRating: DashboardSnapshot["domainRating"]
+  readonly ratingHistory: NonNullable<DashboardSnapshot["domainRatingHistory"]>
   readonly latestDate: string | null
   readonly isLoading: boolean
 }
@@ -73,11 +76,14 @@ const Metric = ({
 
 const SiteRowView = ({
   row,
+  rangeDays,
   onOpen,
 }: {
   row: SiteRow
+  rangeDays: number
   onOpen: SitesOverviewProps["onOpen"]
 }) => {
+  const move = ratingMove(row.ratingHistory, rangeDays)
   const now = windowTotals(row.current)
   const before = windowTotals(row.previous)
   const clicks = trend(now.clicks, before.clicks)
@@ -98,14 +104,28 @@ const SiteRowView = ({
         <span className="site-row-loading">Loading…</span>
       ) : (
         <>
-          {/* A site attribute rather than a period metric, so it carries no
-              comparison — Ahrefs reports today's score, not a history. */}
+          {/* Ahrefs sells only today's score, so the series here is one this
+              app accumulated. Until it reaches back past the selected range
+              there is no move to report, and saying so beats implying zero. */}
           <div className="site-metric">
             <span className="site-metric-value">
               {row.domainRating ? row.domainRating.rating.toFixed(1) : "—"}
             </span>
-            <span className="site-metric-delta tone-muted">
-              {row.domainRating ? shortDate(row.domainRating.fetchedAt.slice(0, 10)) : "no reading"}
+            <span
+              className={`site-metric-delta tone-${
+                move?.delta == null ? "muted" : move.delta >= 0 ? "positive" : "negative"
+              }`}
+              title={
+                move?.since
+                  ? `Against ${readableDate(move.since)}`
+                  : "Not enough Domain Rating history yet for this range"
+              }
+            >
+              {move?.delta == null
+                ? row.domainRating
+                  ? "no history"
+                  : "no reading"
+                : signed(move.delta, 1)}
             </span>
           </div>
           <Metric
@@ -211,6 +231,7 @@ export const SitesOverview = ({ sites, rangeDays, onOpen }: SitesOverviewProps) 
       previous: split?.previous ?? [],
       signals: snapshot?.digest.signals ?? [],
       domainRating: snapshot?.domainRating ?? null,
+      ratingHistory: snapshot?.domainRatingHistory ?? [],
       latestDate: snapshot?.digest.latestDate ?? null,
       isLoading: !snapshot && !days,
     }
@@ -252,7 +273,7 @@ export const SitesOverview = ({ sites, rangeDays, onOpen }: SitesOverviewProps) 
           <span />
         </div>
         {rows.map((row) => (
-          <SiteRowView key={row.site.id} row={row} onOpen={onOpen} />
+          <SiteRowView key={row.site.id} row={row} rangeDays={rangeDays} onOpen={onOpen} />
         ))}
       </div>
       <SectionHeading>Daily impressions and clicks</SectionHeading>

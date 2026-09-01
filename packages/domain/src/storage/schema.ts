@@ -268,4 +268,11 @@ export class StorageError extends Schema.TaggedErrorClass<StorageError>()(
   },
 ) {}
 
+// One day's Domain Rating. Ahrefs reports only the present value, so the series
+// is accumulated one reading at a time — there is no way to backfill it.
+export interface DomainRatingDay {
+  readonly date: string
+  readonly rating: number
+}
+
 export * as StorageSchema from "./schema"
