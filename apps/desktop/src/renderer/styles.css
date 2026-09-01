@@ -327,9 +327,10 @@ select:focus {
   border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 2px;
   margin-top: 10px;
   padding-top: 8px;
+  /* Anchors the status pill, which is positioned out of flow. */
+  position: relative;
 }
 
 .sync-button {
@@ -370,14 +371,40 @@ select:focus {
   }
 }
 
+/* Out of flow on purpose. In flow it changed the footer's height every time a
+   sync started or finished, and the whole sidebar jumped with it. */
 .status {
-  color: var(--faint);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  bottom: calc(100% + 8px);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  /* Three lines is enough for a sync receipt; `title` carries the rest. */
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  display: -webkit-box;
   font-size: 11px;
-  line-height: 1.4;
+  left: 0;
+  line-height: 1.45;
   margin: 0;
-  max-height: 44px;
   overflow: hidden;
-  padding: 0 10px 2px;
+  padding: 8px 10px;
+  position: absolute;
+  right: 0;
+  animation: status-in 140ms ease-out;
+}
+
+.status-error {
+  border-color: var(--negative);
+  color: var(--negative);
+}
+
+@keyframes status-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
 }
 
 /* --- content -------------------------------------------------------------- */

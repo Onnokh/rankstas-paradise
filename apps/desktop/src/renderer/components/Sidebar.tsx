@@ -49,6 +49,7 @@ export interface SidebarProps {
   readonly onSync: () => void
   readonly isSyncing: boolean
   readonly status: string
+  readonly statusTone: "info" | "error"
 }
 
 // The site's own favicon. It arrives as a `data:` URL over the bridge (see
@@ -71,6 +72,7 @@ export const Sidebar = ({
   onSync,
   isSyncing,
   status,
+  statusTone,
 }: SidebarProps) => {
   const snapshots = useQueries({
     queries: sites.map((site) => dashboardQuery(site.id)),
@@ -147,7 +149,15 @@ export const Sidebar = ({
             {isSyncing ? "Syncing…" : isOverview ? "Sync all sites" : "Sync this site"}
           </span>
         </button>
-        {status && <p className="status">{status}</p>}
+        {/* A pill floating over the list rather than a line in it: the message
+            comes and goes on its own, and as a block it shoved the whole
+            sidebar up and down every time a sync started or ended. `title`
+            carries the full text, since the pill clamps to three lines. */}
+        {status && (
+          <p className={`status status-${statusTone}`} title={status} role="status">
+            {status}
+          </p>
+        )}
       </div>
     </aside>
   )

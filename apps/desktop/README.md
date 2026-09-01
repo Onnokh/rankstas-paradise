@@ -86,10 +86,16 @@ exactly the counts the list exists to show. The counts beside a view are the siz
 of the collection it opens; they appear per site as that site's snapshot lands,
 which the startup sweep fills in for all of them.
 
-The line under **Sync** is a receipt, not a state. It clears itself after a few
-seconds, because otherwise the sidebar sat there reading "Refreshing Shadertown
-on the server…" from a sweep that had finished at launch — a line that looks live
-and is not. A failure sticks, since it is the only place the reason is shown.
+A sync's outcome appears as a pill floating above **Sync**, positioned out of
+flow. In flow it changed the footer's height whenever a sync started or ended,
+and the whole sidebar jumped with it. It clamps to three lines and carries the
+full text in its `title`.
+
+The message is a receipt, not a state. It clears itself after five seconds,
+because otherwise the sidebar sat there reading "Refreshing Shadertown on the
+server…" from a sweep that had finished at launch — a line that looks live and is
+not. A failure sticks and turns red, since the pill is the only place the reason
+is shown.
 
 **Sync** at the foot says what it will do. On the cross-site overview no single
 site is in view, so it walks every site — sequentially, because the server holds

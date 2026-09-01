@@ -45,6 +45,9 @@ export const App = () => {
   const [view, setView] = useState<View>("home")
   const [selected, setSelected] = useState(0)
   const [status, setStatus] = useState("")
+  // A failure reads differently from a receipt, and the pill is small enough
+  // that colour is the only room there is to say so.
+  const [statusTone, setStatusTone] = useState<"info" | "error">("info")
   const [rangeDays, setRangeDays] = useState(TREND_WINDOW)
   // Which of the two shapes the window is in: the cross-site overview, which
   // belongs to no site, or one site's five views. The app opens on the
@@ -78,6 +81,7 @@ export const App = () => {
   const clearStatus = useRef<ReturnType<typeof setTimeout>>(undefined)
   const report = useCallback((message: string, sticky = false) => {
     setStatus(message)
+    setStatusTone(sticky ? "error" : "info")
     clearTimeout(clearStatus.current)
     if (!sticky) clearStatus.current = setTimeout(() => setStatus(""), 5000)
   }, [])
@@ -259,6 +263,7 @@ export const App = () => {
         onSync={runSync}
         isSyncing={sync.isPending}
         status={status}
+        statusTone={statusTone}
       />
       <div className="content">
         <header className="topbar">
