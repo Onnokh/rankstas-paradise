@@ -137,9 +137,26 @@ export const App = () => {
     [view],
   )
 
+  // The button says what it does. On the overview no single site is in view, so
+  // syncing one arbitrary site would be a lie; it walks all of them instead.
+  // Sequentially, because the server holds one sync lock across sites and
+  // parallel requests would just 409 against each other.
   const runSync = useCallback(() => {
+    if (scope === "overview") {
+      void (async () => {
+        for (const target of sites.data ?? []) {
+          try {
+            await sync.mutateAsync({ id: target.id, name: target.name })
+          } catch {
+            // A site that cannot sync leaves its cached snapshot in place; the
+            // mutation's onError has already put the reason in the status line.
+          }
+        }
+      })()
+      return
+    }
     if (site) sync.mutate({ id: site.id, name: site.name })
-  }, [site, sync])
+  }, [scope, site, sites.data, sync])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -214,7 +231,7 @@ export const App = () => {
         subtitle: `${sites.data.length} sites, each against its own previous ${rangeName(rangeDays)}`,
       }
     : data
-      ? heading(data, view, rangeDays)
+      ? heading(data, view, rangeDays, site)
       : { title: "Loading…", subtitle: "" }
   const checkedAt = freshness.data?.data.lastCheckedAt
   const syncedAt = freshness.data?.data.lastSyncedAt

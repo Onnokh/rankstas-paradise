@@ -46,5 +46,8 @@ await cp(`${root}src/renderer/styles.css`, `${outdir}/styles.css`)
 // The app icon ships beside the bundles for the same reason the template does:
 // the main process resolves everything it loads from `app.getAppPath()/dist`.
 await cp(`${root}assets/icon.png`, `${outdir}/icon.png`)
+// The sidebar's wordmark uses the artwork without Apple's icon-grid margin, so
+// it is a separate, smaller file rather than the dock icon scaled down.
+await cp(`${root}assets/logo.png`, `${outdir}/logo.png`)
 
 console.log(`Built the desktop bundles into ${outdir}.`)

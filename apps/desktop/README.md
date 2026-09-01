@@ -75,11 +75,21 @@ an empty dashboard.
 
 ## The screens
 
-The sidebar is a source list: **Overview** at the top, then every configured
-site with its own five views under it, so one click reaches any view of any
-site. The counts beside a view are the size of the collection it opens; they
-appear per site as that site's snapshot lands, which the startup sweep fills in
-for all of them.
+The sidebar is a source list: the wordmark, **All sites**, then every configured
+site with its views nested under it. A site's own name IS its Home — clicking it
+opens that site's overview — so Home is not repeated as a child row, and the page
+it opens is titled with the site's name rather than "Overview", which already
+names the cross-site screen.
+
+Every site stays open. There are a handful of them, and collapsing would hide
+exactly the counts the list exists to show. The counts beside a view are the size
+of the collection it opens; they appear per site as that site's snapshot lands,
+which the startup sweep fills in for all of them.
+
+**Sync** at the foot says what it will do. On the cross-site overview no single
+site is in view, so it walks every site — sequentially, because the server holds
+one sync lock and parallel requests would only 409 against each other. Inside a
+site it syncs that site alone.
 
 - **Overview** — the only screen not scoped to a site, and the one the app opens
   on. Every site on its own row, columns aligned: clicks, impressions, CTR and

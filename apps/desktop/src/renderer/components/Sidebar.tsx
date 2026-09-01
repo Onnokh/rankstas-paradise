@@ -1,5 +1,9 @@
-// A source list: every configured site, each with its own five views, so one
-// click reaches any view of any site.
+// The source list: the brand, the cross-site overview, then every site with its
+// views nested under it.
+//
+// A site's own name IS its Home — clicking it opens that site's overview — so
+// Home is not repeated as a child. Every site stays open: there are a handful of
+// them, and collapsing hides exactly the counts the list exists to show.
 //
 // The counts come from `useQueries` over every site's dashboard — one query per
 // site, all cached under their own keys. That is also what makes switching feel
@@ -22,6 +26,9 @@ const navIcons: Record<View, IconName> = {
   log: "clock",
 }
 
+// Home is the site row itself, so it is not listed again beneath it.
+const childViews = views.filter((item) => item.view !== "home")
+
 const navCount = (snapshot: DashboardSnapshot | undefined, view: View): string | null => {
   if (!snapshot || view === "home") return null
   if (view === "opportunities") return count(snapshot.digest.signals.length)
@@ -35,7 +42,7 @@ export interface SidebarProps {
   readonly activeSiteId: string | undefined
   readonly view: View
   // True when the cross-site overview is open. It belongs to no site, so no
-  // site group is highlighted while it is.
+  // site row is highlighted while it is.
   readonly isOverview: boolean
   readonly onOpen: (siteId: string, view: View) => void
   readonly onOpenOverview: () => void
@@ -44,10 +51,10 @@ export interface SidebarProps {
   readonly status: string
 }
 
-// The site's own favicon, standing in for the generic dot. It arrives as a
-// `data:` URL over the bridge (see main/favicon.ts), so a site that has no
-// readable icon — or whose lookup has not landed yet — keeps the dot rather
-// than leaving a gap that would shift the row.
+// The site's own favicon. It arrives as a `data:` URL over the bridge (see
+// main/favicon.ts), so a site with no readable icon — or whose lookup has not
+// landed yet — keeps a plain dot rather than leaving a gap that would shift the
+// row.
 const SiteMark = ({ origin }: { origin: string }) => {
   const icon = useQuery(faviconQuery(origin))
   if (!icon.data) return <span className="site-dot" />
@@ -71,42 +78,48 @@ export const Sidebar = ({
 
   return (
     <aside className="sidebar">
+      {/* The traffic lights sit over this strip; it is the window's drag handle. */}
       <div className="sidebar-drag" />
+      <header className="brand">
+        <img className="brand-mark" src="logo.png" alt="" aria-hidden="true" />
+        <span className="brand-name">Ranksta’s Paradise</span>
+      </header>
       <nav className="nav" aria-label="Sites and views">
-        {/* Above the site groups, because it is not one of them: this page sets
-            the sites beside each other rather than opening one. */}
         <button
-          className={`nav-item nav-root${isOverview ? " is-active" : ""}`}
+          className={`nav-item${isOverview ? " is-active" : ""}`}
           type="button"
           onClick={onOpenOverview}
         >
           <Icon name="layers" />
-          <span className="nav-label">Overview</span>
+          <span className="nav-label">All sites</span>
           <span className="nav-count">{count(sites.length)}</span>
         </button>
+
         {sites.map((site, index) => {
           const isActiveSite = !isOverview && site.id === activeSiteId
           // A site whose query has not resolved yet has no counts to show; its
           // views still open, they just carry no number until the read lands.
           const snapshot = snapshots[index]?.data
           return (
-            <div key={site.id} className={`site-group${isActiveSite ? " is-active" : ""}`}>
+            <div key={site.id} className="site-group">
               <button
-                className="site-name"
+                className={`nav-item site-head${isActiveSite && view === "home" ? " is-active" : ""}${
+                  isActiveSite ? " is-current" : ""
+                }`}
                 type="button"
                 title={site.origin}
-                onClick={() => onOpen(site.id, view)}
+                onClick={() => onOpen(site.id, "home")}
               >
                 <SiteMark origin={site.origin} />
-                <span>{site.name}</span>
+                <span className="nav-label">{site.name}</span>
               </button>
               <div className="site-views">
-                {views.map((item) => {
+                {childViews.map((item) => {
                   const badgeText = navCount(snapshot, item.view)
                   return (
                     <button
                       key={item.view}
-                      className={`nav-item${isActiveSite && item.view === view ? " is-active" : ""}`}
+                      className={`nav-sub${isActiveSite && item.view === view ? " is-active" : ""}`}
                       type="button"
                       onClick={() => onOpen(site.id, item.view)}
                     >
@@ -129,9 +142,12 @@ export const Sidebar = ({
           disabled={isSyncing}
           onClick={onSync}
         >
-          Sync
+          <Icon name="refresh" />
+          <span>
+            {isSyncing ? "Syncing…" : isOverview ? "Sync all sites" : "Sync this site"}
+          </span>
         </button>
-        <p className="status">{status}</p>
+        {status && <p className="status">{status}</p>}
       </div>
     </aside>
   )

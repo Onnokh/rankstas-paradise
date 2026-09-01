@@ -39,11 +39,15 @@ export const heading = (
   data: Dashboard,
   view: View,
   rangeDays: number,
+  site: Site | undefined,
 ): { title: string; subtitle: string } => {
   const window = `${data.digest.currentStart ? readableDate(data.digest.currentStart) : "—"} – ${data.digest.latestDate ? readableDate(data.digest.latestDate) : "—"}`
+  // The site's own name, not "Overview": the sidebar no longer lists a Home row
+  // under each site — the site's name IS that page — so the heading has to match
+  // what was clicked, and "Overview" already names the cross-site screen.
   if (view === "home")
     return {
-      title: "Overview",
+      title: site?.name ?? "Overview",
       subtitle: `Last ${rangeName(rangeDays)} versus the ${rangeName(rangeDays)} before`,
     }
   if (view === "opportunities")
