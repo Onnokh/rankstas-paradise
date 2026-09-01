@@ -6,7 +6,7 @@
 // IPC, because a rejected `invoke` reaches the renderer as an opaque
 // "Error invoking remote method" string and the user would lose the real cause
 // (a missing client.json, a 401, an unreachable host).
-import { BrowserWindow, app, ipcMain, shell } from "electron"
+import { BrowserWindow, app, ipcMain, nativeImage, shell } from "electron"
 import { join } from "node:path"
 
 import { dashboard, history, sites, status, syncSite } from "./api.ts"
@@ -37,8 +37,14 @@ const attempt = async <A>(work: () => Promise<A>): Promise<IpcResult<A>> => {
   }
 }
 
+const icon = () => nativeImage.createFromPath(join(assets(), "icon.png"))
+
 const createWindow = () => {
   const window = new BrowserWindow({
+    // Windows and Linux take the icon from the window. macOS ignores this and
+    // reads the running bundle instead, which is why the dock is set separately
+    // below — without that, `bun run desktop` shows Electron's own icon.
+    icon: icon(),
     width: 1440,
     height: 920,
     minWidth: 960,
@@ -91,6 +97,10 @@ ipcMain.handle("rp:open-external", (_event, url: string) => {
 })
 
 void app.whenReady().then(() => {
+  // macOS only: `app.dock` is undefined elsewhere. A packaged build would carry
+  // the icon in its bundle, but this app has no packaging step yet, so without
+  // this the dock shows Electron's icon in every dev run.
+  if (process.platform === "darwin") app.dock?.setIcon(icon())
   createWindow()
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

@@ -36,6 +36,25 @@ On macOS the menu-bar title comes from the running `.app` bundle, so a `bun run
 desktop` session still shows "Electron" there. Only a packaged build carries the
 real name into the menu bar, and this app has no packaging step yet.
 
+## Its icon
+
+`assets/icon.png` is the app icon, copied into `dist/` by the build and loaded
+from there like every other asset. It is set twice, because the two platforms
+disagree: `BrowserWindow({ icon })` is what Windows and Linux read, while macOS
+ignores it and takes the icon from the running bundle — so `app.dock.setIcon()`
+covers the dev run, which would otherwise show Electron's own icon.
+
+The artwork was supplied without an alpha channel, which would have put opaque
+black corners around the squircle in the dock (macOS does not mask app icons the
+way iOS does). The corners are flood-filled to transparent from each of the four
+edges, which removes only the black *outside* the artwork and leaves the ninja's
+black body untouched. It is also quantised to 128 colours: the source was 722 KB
+of anti-aliasing noise for what is flat art, and the palette version is 70 KB at
+0.44% deviation.
+
+A packaged build would take its icon from an `.icns` in the bundle rather than
+from either of these calls. There is no packaging step yet, so none is committed.
+
 ## Configuration
 
 The app reads the **same client config as the TUI**, in the same order:

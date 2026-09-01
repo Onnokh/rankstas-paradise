@@ -43,4 +43,8 @@ await bundle("src/renderer/main.tsx", "renderer.js", { target: "browser", format
 await cp(`${root}src/renderer/index.html`, `${outdir}/index.html`)
 await cp(`${root}src/renderer/styles.css`, `${outdir}/styles.css`)
 
+// The app icon ships beside the bundles for the same reason the template does:
+// the main process resolves everything it loads from `app.getAppPath()/dist`.
+await cp(`${root}assets/icon.png`, `${outdir}/icon.png`)
+
 console.log(`Built the desktop bundles into ${outdir}.`)
