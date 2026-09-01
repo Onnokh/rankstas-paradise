@@ -71,6 +71,18 @@ export const App = () => {
     return { ...dashboard, history: periods(history.data, rangeDays).current }
   }, [snapshot.data, history.data, rangeDays])
 
+  // A sync's outcome is a receipt, not state. It clears itself, because the
+  // sidebar was otherwise left carrying "Refreshing Shadertown…" from a sweep
+  // that ended at launch — a line that looks live and is not. A failure sticks:
+  // it is the only place the reason is shown, and it stays until the next try.
+  const clearStatus = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const report = useCallback((message: string, sticky = false) => {
+    setStatus(message)
+    clearTimeout(clearStatus.current)
+    if (!sticky) clearStatus.current = setTimeout(() => setStatus(""), 5000)
+  }, [])
+  useEffect(() => () => clearTimeout(clearStatus.current), [])
+
   // A sync is a server-side job. When it finishes, the two queries it can change
   // are invalidated by key rather than refetched by hand.
   const sync = useMutation({
@@ -80,14 +92,14 @@ export const App = () => {
         return result.value
       }),
     onSuccess: async (message, { id }) => {
-      setStatus(message)
+      report(message)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: keys.dashboard(id) }),
         queryClient.invalidateQueries({ queryKey: keys.historiesFor(id) }),
         queryClient.invalidateQueries({ queryKey: keys.status(id) }),
       ])
     },
-    onError: (cause) => setStatus(`Refresh failed; showing cached data. ${String(cause)}`),
+    onError: (cause) => report(`Refresh failed; showing cached data. ${String(cause)}`, true),
   })
 
   // Selecting a row is per site and per view, so it resets when either changes.
@@ -206,7 +218,6 @@ export const App = () => {
     if (!list || list.length === 0 || swept.current) return
     swept.current = true
     void (async () => {
-      setStatus("Refreshing in the background…")
       const ordered = [...list].sort((a) => (a.id === activeSiteId ? -1 : 0))
       for (const target of ordered) {
         try {

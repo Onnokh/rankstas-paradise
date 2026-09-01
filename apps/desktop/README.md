@@ -86,6 +86,11 @@ exactly the counts the list exists to show. The counts beside a view are the siz
 of the collection it opens; they appear per site as that site's snapshot lands,
 which the startup sweep fills in for all of them.
 
+The line under **Sync** is a receipt, not a state. It clears itself after a few
+seconds, because otherwise the sidebar sat there reading "Refreshing Shadertown
+on the server…" from a sweep that had finished at launch — a line that looks live
+and is not. A failure sticks, since it is the only place the reason is shown.
+
 **Sync** at the foot says what it will do. On the cross-site overview no single
 site is in view, so it walks every site — sequentially, because the server holds
 one sync lock and parallel requests would only 409 against each other. Inside a

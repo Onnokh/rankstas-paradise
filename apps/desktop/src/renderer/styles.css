@@ -273,16 +273,19 @@ select:focus {
   width: 16px;
 }
 
-/* Indented to start exactly under the site's name — the row's own 10px padding
-   plus this margin lands the view icons on the parent label. Alignment is what
-   ties them to their site; a rail down the side only added a stray line. */
+/* Flush with the site rows above them. The gap between groups is what separates
+   one site's views from the next, so an indent added a second signal for
+   something already unambiguous. */
 .site-views {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  margin: 1px 0 2px 26px;
+  margin: 1px 0 2px;
 }
 
+/* Same icon slot and gap as the rows above, so labels line up to the pixel;
+   only the vertical padding is tighter, which is what makes a view read as
+   subordinate to its site now that nothing is indented. */
 .nav-sub {
   align-items: center;
   background: none;
@@ -291,8 +294,8 @@ select:focus {
   color: var(--muted);
   cursor: default;
   display: flex;
-  gap: 9px;
-  padding: 6px 10px;
+  gap: 10px;
+  padding: 5px 10px;
   text-align: left;
   width: 100%;
 }
