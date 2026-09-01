@@ -91,7 +91,7 @@ export const Sidebar = ({
           onClick={onOpenOverview}
         >
           <Icon name="layers" />
-          <span className="nav-label">All sites</span>
+          <span className="nav-label">Overview</span>
           <span className="nav-count">{count(sites.length)}</span>
         </button>
 

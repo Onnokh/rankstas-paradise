@@ -273,15 +273,14 @@ select:focus {
   width: 16px;
 }
 
+/* Indented to start exactly under the site's name — the row's own 10px padding
+   plus this margin lands the view icons on the parent label. Alignment is what
+   ties them to their site; a rail down the side only added a stray line. */
 .site-views {
-  /* The rail ties the views to their site and gives the indent a reason to
-     exist, rather than leaving them floating in space. */
-  border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   gap: 1px;
-  margin: 2px 0 4px 19px;
-  padding-left: 8px;
+  margin: 1px 0 2px 26px;
 }
 
 .nav-sub {

@@ -75,7 +75,7 @@ an empty dashboard.
 
 ## The screens
 
-The sidebar is a source list: the wordmark, **All sites**, then every configured
+The sidebar is a source list: the wordmark, **Overview**, then every configured
 site with its views nested under it. A site's own name IS its Home — clicking it
 opens that site's overview — so Home is not repeated as a child row, and the page
 it opens is titled with the site's name rather than "Overview", which already
