@@ -33,4 +33,13 @@ export class DomainRatingError extends Schema.TaggedErrorClass<DomainRatingError
   },
 ) {}
 
+// One day of the accumulated series. Only the number and its day: the target
+// and licence belong to the current reading, not repeated per point.
+export const DomainRatingDay = Schema.Struct({
+  date: Schema.String,
+  rating: Schema.Number,
+}).annotate({ identifier: "DomainRatingDay" })
+export interface DomainRatingDay
+  extends Schema.Schema.Type<typeof DomainRatingDay> {}
+
 export * as DomainRatingSchema from "./schema"

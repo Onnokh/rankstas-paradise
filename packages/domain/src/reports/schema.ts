@@ -3,7 +3,7 @@
 // and are the contract downstream frontends and the HTTP server code against.
 import { Schema } from "effect"
 
-import { DomainRating } from "../domain-rating/schema.ts"
+import { DomainRating, DomainRatingDay } from "../domain-rating/schema.ts"
 
 import {
   HistoryDay,
@@ -175,6 +175,11 @@ export const DashboardSnapshot = Schema.Struct({
   // make every TUI read fail until the server was updated in lockstep. An older
   // server simply omits it and the front-ends show no rating.
   domainRating: Schema.optional(Schema.NullOr(DomainRating)),
+  // The accumulated series behind that reading, oldest first, so a client can
+  // show the move over whichever period it is displaying. Ahrefs sells only the
+  // present value on the free tier, so this starts empty and grows one day per
+  // sync — it can never be backfilled.
+  domainRatingHistory: Schema.optional(Schema.Array(DomainRatingDay)),
 }).annotate({ identifier: "DashboardSnapshot" })
 export interface DashboardSnapshot
   extends Schema.Schema.Type<typeof DashboardSnapshot> {}

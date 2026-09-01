@@ -699,6 +699,7 @@ export const layer = Layer.effect(
             const history = yield* storage.historyWithPending()
             // Read from the volume, never from Ahrefs: Sync owns the refresh.
             const domainRating = yield* domainRatingService.cached()
+            const domainRatingHistory = yield* storage.domainRatingHistory()
             const recentActions = rawLog
               .filter((entry) => entry.kind !== "note")
               .slice(0, 3)
@@ -729,6 +730,7 @@ export const layer = Layer.effect(
               recentActions,
               performances,
               domainRating,
+              domainRatingHistory,
             }
           }),
         ),

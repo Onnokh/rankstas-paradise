@@ -39,10 +39,12 @@ const siteLayer = (site: Site) =>
     Layer.provideMerge(Sync.layer),
     Layer.provideMerge(Sites.layer),
     Layer.provideMerge(SearchConsole.layer),
+    // Above Storage: DomainRating reads the ledger, and in a provideMerge chain
+    // a layer's own requirements are satisfied by the entries below it.
+    Layer.provideMerge(DomainRating.layer),
     Layer.provideMerge(Storage.layer),
     Layer.provideMerge(Registry.layer),
     Layer.provideMerge(Sitemap.layer),
-    Layer.provideMerge(DomainRating.layer),
     Layer.provideMerge(CurrentSite.layerForSite(site)),
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(Config.defaultLayer),
