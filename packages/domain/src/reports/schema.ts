@@ -327,6 +327,7 @@ export interface QueriesReport
 
 export const OpportunitiesReport = Schema.Struct({
   window: ReportWindow,
+  totalSignals: Schema.Number,
   signals: Schema.Array(
     Schema.Struct({
       ...SignalSummary.fields,

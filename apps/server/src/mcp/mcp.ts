@@ -48,10 +48,11 @@ export type RunTool = <A>(
   effect: Effect.Effect<A, never, McpRuntimeContext>,
 ) => Promise<A>
 
-// The DTO rendered as pretty-JSON text, so an agent reads the same document the
-// HTTP API returns.
+// The DTO rendered as compact JSON text — the same document the HTTP API
+// returns. Compact, not pretty: these documents land in an agent's context
+// window, where indentation only doubles the size.
 const asReport = (payload: unknown): CallToolResult => ({
-  content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+  content: [{ type: "text", text: JSON.stringify(payload) }],
 })
 
 // A domain tagged error rendered as a structured MCP error result (not a crash).
@@ -205,15 +206,21 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     "opportunities",
     {
       description:
-        "The opportunity digest signals (striking-distance, ctr, new-demand, cannibalization).",
+        "The opportunity digest signals (striking-distance, ctr, new-demand, cannibalization), strongest first. Returns the top `limit` signals; `totalSignals` reports how many matched.",
       inputSchema: {
         site,
         kind: z.string().optional().describe("Filter to one signal kind."),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Maximum number of signals (default 50)."),
       },
     },
-    async ({ site, kind }) => {
+    async ({ site, kind, limit }) => {
       const id = toSiteId(site)
-      return run(id, scoped(Reports.use.opportunitiesReport(kind), id))
+      return run(id, scoped(Reports.use.opportunitiesReport(kind, limit ?? 50), id))
     },
   )
 
