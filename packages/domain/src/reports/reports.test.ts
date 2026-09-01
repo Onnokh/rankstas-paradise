@@ -485,6 +485,16 @@ test("opportunitiesReport filters by a single kind", async () => {
   ).toBe(true)
 })
 
+test("opportunitiesReport caps signals at the limit but counts them all", async () => {
+  const full = await run(Reports.use.opportunitiesReport())
+  expect(full.totalSignals).toBe(full.signals.length)
+  const limited = await run(Reports.use.opportunitiesReport(undefined, 1))
+  expect(limited.signals.length).toBe(1)
+  expect(limited.totalSignals).toBe(full.totalSignals)
+  // The kept signal is the strongest one.
+  expect(limited.signals[0]).toEqual(full.signals[0])
+})
+
 test("registryList includes a known target with its keywords", async () => {
   const report = await run(Reports.use.registryList())
   const pocket = report.targets.find(
