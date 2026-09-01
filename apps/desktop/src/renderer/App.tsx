@@ -103,7 +103,13 @@ export const App = () => {
         queryClient.invalidateQueries({ queryKey: keys.status(id) }),
       ])
     },
-    onError: (cause) => report(`Refresh failed; showing cached data. ${String(cause)}`, true),
+    onError: (cause) =>
+      // The thrown message is already a sentence naming what failed; `String(cause)`
+      // would only bolt "Error: " onto the front of it.
+      report(
+        `${cause instanceof Error ? cause.message : String(cause)} Showing the last data received.`,
+        true,
+      ),
   })
 
   // Selecting a row is per site and per view, so it resets when either changes.

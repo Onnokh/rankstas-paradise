@@ -185,6 +185,22 @@ Keys carry over from the TUI: `0`–`4` switch view, `←`/`→` cycle, `↑`/`�
 `s` switches site, `r` syncs. `a` returns to the Overview; from there, any key
 that addresses a row or a per-site view enters the active site first.
 
+### Jobs are per site, and so are the reads of them
+
+Each site's runtime holds its own job registry and its own single-job lock. A
+`GET /api/jobs` without `?site=` returns the **first** site's registry, so a job
+belonging to any other site is invisible in it.
+
+That is worth knowing because a 409 from `POST /api/jobs/sync` is normal: opening
+the window reads every site's dashboard, each read warms that site, and the warm
+starts a sync that the explicit sync then collides with. The client is meant to
+coalesce onto the running job — but an unscoped job read cannot see it, and the
+sync reports a refusal instead. Every job read here passes the site.
+
+The 409 is safe to coalesce on: the lock is released only after the job is
+marked settled in the same registry, so if the lock is held, a running job for
+that site is always there to be found.
+
 ## Layout
 
 | File | Role |

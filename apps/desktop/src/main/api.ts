@@ -87,13 +87,18 @@ export const history = (site: string, limit: number): Promise<HistoryReport> =>
 export const status = (site: string): Promise<StatusReport> =>
   request("GET", "/api/status", { query: { site } })
 
-const jobs = (): Promise<JobsResponse> => request("GET", "/api/jobs")
+// Scoped to a site. Each site has its OWN job registry and its own single-job
+// lock — they live in that site's runtime — so an unscoped read returns the
+// first site's registry and a job belonging to any other site is invisible in
+// it. That is what made a 409 look like "refused, and nothing is running".
+const jobs = (site: string): Promise<JobsResponse> =>
+  request("GET", "/api/jobs", { query: { site } })
 
-// Poll the process-wide job list until the job leaves "running", capped so a
-// wedged job cannot hang the refresh forever. Mirrors the TUI's `waitForJob`.
-const waitForJob = async (id: number): Promise<SyncJob | undefined> => {
+// Poll the site's job list until the job leaves "running", capped so a wedged
+// job cannot hang the refresh forever. Mirrors the TUI's `waitForJob`.
+const waitForJob = async (id: number, site: string): Promise<SyncJob | undefined> => {
   for (let attempt = 0; attempt < 600; attempt += 1) {
-    const { jobs: running } = await jobs()
+    const { jobs: running } = await jobs(site)
     const job = running.find((candidate) => candidate.id === id)
     if (job && job.status !== "running") return job
     await new Promise((resolve) => setTimeout(resolve, 1000))
@@ -111,12 +116,17 @@ export const syncSite = async (siteId: string, siteName: string): Promise<string
     job = (await request<JobResponse>("POST", "/api/jobs/sync", { query: { site: siteId } })).job
   } catch (cause) {
     if (!(cause instanceof ApiError) || cause.status !== 409) throw cause
-    job = (await jobs()).jobs.find((candidate) => candidate.status === "running")
+    // A 409 means this site's lock is held, and the lock is released only after
+    // the job is marked settled in the same registry — so a running job for this
+    // site is always there to be found. Reads triggered by opening the app warm
+    // their own site, which is exactly what this coalesces onto.
+    job = (await jobs(siteId)).jobs.find((candidate) => candidate.status === "running")
   }
-  if (!job) return `Refreshing ${siteName} on the server…`
-  const finished = await waitForJob(job.id)
-  if (!finished) return `Sync for ${siteName} is still running on the server.`
+  if (!job) return `Could not sync ${siteName}: the server refused without naming a job.`
+  const finished = await waitForJob(job.id, siteId)
+  // The poll gave up rather than the job failing; it may still finish.
+  if (!finished) return `${siteName} is still syncing.`
   return finished.status === "done"
-    ? `Synced ${siteName} from the server.`
-    : `Server sync failed for ${siteName}: ${finished.message ?? "unknown error"}`
+    ? `Synced ${siteName}.`
+    : `Could not sync ${siteName}: ${finished.message ?? "the server gave no reason"}`
 }
