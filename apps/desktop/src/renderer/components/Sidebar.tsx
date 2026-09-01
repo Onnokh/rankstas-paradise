@@ -48,6 +48,9 @@ export interface SidebarProps {
   readonly onOpenOverview: () => void
   readonly onSync: () => void
   readonly isSyncing: boolean
+  // Which site is being synced and how far through a run of them, so a wait of
+  // minutes reads as work rather than a hang.
+  readonly progress: { readonly name: string; readonly index: number; readonly total: number } | null
   readonly status: string
   readonly statusTone: "info" | "error"
 }
@@ -71,6 +74,7 @@ export const Sidebar = ({
   onOpenOverview,
   onSync,
   isSyncing,
+  progress,
   status,
   statusTone,
 }: SidebarProps) => {
@@ -146,7 +150,13 @@ export const Sidebar = ({
         >
           <Icon name="refresh" />
           <span>
-            {isSyncing ? "Syncing…" : isOverview ? "Sync all sites" : "Sync this site"}
+            {isSyncing
+              ? progress
+                ? `Syncing ${progress.name}${progress.total > 1 ? ` · ${progress.index}/${progress.total}` : ""}…`
+                : "Syncing…"
+              : isOverview
+                ? "Sync all sites"
+                : "Sync this site"}
           </span>
         </button>
         {/* A pill floating over the list rather than a line in it: the message

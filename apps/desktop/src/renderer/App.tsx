@@ -48,6 +48,14 @@ export const App = () => {
   // A failure reads differently from a receipt, and the pill is small enough
   // that colour is the only room there is to say so.
   const [statusTone, setStatusTone] = useState<"info" | "error">("info")
+  // Which site a sync is on, and how far through a run of them. A bare
+  // "Syncing…" is indistinguishable from a hang, and it is not a short wait: a
+  // site whose daily totals have a large gap can take minutes on its own.
+  const [progress, setProgress] = useState<{
+    readonly name: string
+    readonly index: number
+    readonly total: number
+  } | null>(null)
   const [rangeDays, setRangeDays] = useState(TREND_WINDOW)
   // Which of the two shapes the window is in: the cross-site overview, which
   // belongs to no site, or one site's five views. The app opens on the
@@ -159,26 +167,35 @@ export const App = () => {
     [view],
   )
 
+  // One walk shared by the startup sweep, "sync all sites", and a single site,
+  // so all three report progress the same way. Sequential on purpose: a site
+  // holds its own sync lock for the whole run, and firing them together only
+  // trades a wait for a pile of 409s to coalesce back onto.
+  const syncMany = useCallback(
+    async (targets: readonly { id: string; name: string }[]) => {
+      for (const [index, target] of targets.entries()) {
+        setProgress({ name: target.name, index: index + 1, total: targets.length })
+        try {
+          await sync.mutateAsync({ id: target.id, name: target.name })
+        } catch {
+          // A site that cannot sync leaves its cached snapshot in place; the
+          // mutation's onError has already put the reason in the status pill.
+        }
+      }
+      setProgress(null)
+    },
+    [sync],
+  )
+
   // The button says what it does. On the overview no single site is in view, so
   // syncing one arbitrary site would be a lie; it walks all of them instead.
-  // Sequentially, because the server holds one sync lock across sites and
-  // parallel requests would just 409 against each other.
   const runSync = useCallback(() => {
     if (scope === "overview") {
-      void (async () => {
-        for (const target of sites.data ?? []) {
-          try {
-            await sync.mutateAsync({ id: target.id, name: target.name })
-          } catch {
-            // A site that cannot sync leaves its cached snapshot in place; the
-            // mutation's onError has already put the reason in the status line.
-          }
-        }
-      })()
+      void syncMany(sites.data ?? [])
       return
     }
-    if (site) sync.mutate({ id: site.id, name: site.name })
-  }, [scope, site, sites.data, sync])
+    if (site) void syncMany([site])
+  }, [scope, site, sites.data, syncMany])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -227,18 +244,9 @@ export const App = () => {
     const list = sites.data
     if (!list || list.length === 0 || swept.current) return
     swept.current = true
-    void (async () => {
-      const ordered = [...list].sort((a) => (a.id === activeSiteId ? -1 : 0))
-      for (const target of ordered) {
-        try {
-          await sync.mutateAsync({ id: target.id, name: target.name })
-        } catch {
-          // A site that cannot sync leaves its cached snapshot in place; the
-          // mutation's onError has already put the reason in the status line.
-        }
-      }
-    })()
-  }, [sites.data, activeSiteId, sync])
+    const ordered = [...list].sort((a) => (a.id === activeSiteId ? -1 : 0))
+    void syncMany(ordered)
+  }, [sites.data, activeSiteId, syncMany])
 
   if (sites.isError) return <Fatal message={String(sites.error)} />
   if (snapshot.isError) return <Fatal message={String(snapshot.error)} />
@@ -268,6 +276,7 @@ export const App = () => {
         onOpenOverview={openOverview}
         onSync={runSync}
         isSyncing={sync.isPending}
+        progress={progress}
         status={status}
         statusTone={statusTone}
       />
