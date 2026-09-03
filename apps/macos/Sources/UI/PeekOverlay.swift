@@ -8,6 +8,7 @@ struct PeekOverlay: View {
     let layout: PeekLayout
     let workspace: Workspace
     let model: OverviewModel
+    let favicons: FaviconStore
     /// While Command is held, each card shows its ⌘-number shortcut.
     let showsShortcuts: Bool
     let onSelect: (TabID) -> Void
@@ -27,12 +28,14 @@ struct PeekOverlay: View {
                 let frame = layout.cardFrame(index)
                 let isActive = tab == workspace.activeTabID
                 let shortcut = index < 9 ? "⌘\(index + 1)" : nil
+                let icon: Image? = if case .site(let siteID) = tab { favicons.image(for: siteID) } else { nil }
 
                 Group {
                     if tab == .overview {
                         // The overview is a summary, laid out natively for the card's size.
                         PeekCard(
                             title: tab.title(in: model),
+                            icon: icon,
                             shortcut: shortcut,
                             showsShortcut: showsShortcuts,
                             isActive: isActive,
@@ -46,6 +49,7 @@ struct PeekOverlay: View {
                     } else {
                         PeekCard(
                             title: tab.title(in: model),
+                            icon: icon,
                             shortcut: shortcut,
                             showsShortcut: showsShortcuts,
                             isActive: isActive,
@@ -70,6 +74,7 @@ struct PeekOverlay: View {
 
 private struct PeekCard<Screen: View>: View {
     let title: String
+    let icon: Image?
     let shortcut: String?
     let showsShortcut: Bool
     let isActive: Bool
@@ -93,7 +98,7 @@ private struct PeekCard<Screen: View>: View {
         Button(action: action) {
             VStack(spacing: 0) {
                 // Identical to the tab pill, so the card starts out looking like the tab.
-                TabPillLabel(title: title, shortcut: shortcut, showsShortcut: showsShortcut)
+                TabPillLabel(title: title, icon: icon, shortcut: shortcut, showsShortcut: showsShortcut)
                     .frame(width: size.width, height: layout.cardHeaderHeight)
 
                 // Always mounted, hidden by the card's clip while closed. Mounting it on the

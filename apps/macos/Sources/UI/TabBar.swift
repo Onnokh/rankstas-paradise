@@ -52,15 +52,28 @@ private struct PeekButton: View {
 /// starts out pixel-identical to the pill it grows from.
 struct TabPillLabel: View {
     let title: String
+    /// The site's favicon; falls back to a globe.
+    var icon: Image? = nil
     /// Shown at the trailing edge while Command is held, e.g. "⌘2".
     var shortcut: String? = nil
     var showsShortcut = false
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "globe")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            Group {
+                if let icon {
+                    icon
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .clipShape(.rect(cornerRadius: 3))
+                } else {
+                    Image(systemName: "globe")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 16, height: 16)
             Text(title)
                 .font(.callout)
                 .lineLimit(1)

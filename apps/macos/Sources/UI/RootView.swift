@@ -10,6 +10,7 @@ import SwiftUI
 struct RootView: View {
     @State private var model: OverviewModel
     @State private var workspace: Workspace
+    @State private var favicons = FaviconStore()
     @State private var drag: DragSession?
 
     /// One live three-finger gesture.
@@ -86,6 +87,7 @@ struct RootView: View {
                     layout: layout,
                     workspace: workspace,
                     model: model,
+                    favicons: favicons,
                     showsShortcuts: isCommandHeld,
                     onSelect: select
                 )
@@ -110,6 +112,9 @@ struct RootView: View {
         }
         .onChange(of: model.sites.map(\.id), initial: true) { _, siteIDs in
             workspace.reconcile(siteIDs: siteIDs)
+        }
+        .task(id: model.sites.map(\.id)) {
+            await favicons.load(model.sites)
         }
     }
 
