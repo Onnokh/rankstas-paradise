@@ -3,7 +3,9 @@
   "references": [
     { "path": "packages/domain" },
     { "path": "packages/api-client" },
+    { "path": "packages/mascot" },
     { "path": "apps/server" },
-    { "path": "apps/tui" }
+    { "path": "apps/tui" },
+    { "path": "apps/mascot-playground" }
   ]
 }

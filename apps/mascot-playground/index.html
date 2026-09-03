@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Ranksta mascot — motion playground</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --void:#08090a; --panel:#15181d; --line:#292e36; --line-strong:#3b424d;
+      --mist:#8b929d; --cloud:#c9ced5; --paper:#f7f8f8;
+      --coral:#fb3949; --acid:#c4fa04;
+      --font:"Instrument Sans",ui-sans-serif,system-ui,-apple-system,sans-serif;
+      --secondary:"Instrument Serif",Georgia,serif;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;color:var(--paper);background:var(--void);font-family:var(--font);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+    button{font:inherit;cursor:pointer}
+    svg{display:block}
+    ::selection{color:var(--void);background:var(--acid)}
+
+    .page{max-width:1080px;margin:0 auto;padding:56px 32px 96px}
+    .page-head::before{content:"";display:block;width:17px;height:5px;margin-bottom:20px;background:var(--acid);transform:skewX(-24deg)}
+    h1{margin:0;font-size:clamp(34px,5vw,52px);line-height:.98;letter-spacing:-.035em}
+    h1 .accent{display:block;color:var(--acid);font-family:var(--secondary);font-style:italic;font-weight:400}
+    .page-head p{max-width:56ch;color:var(--mist)}
+
+    .grid-lab{margin-top:44px;padding-top:30px;border-top:1px solid var(--line)}
+    .grid-head h2{margin:0;font-size:13px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:var(--mist)}
+    .grid-head p{margin:6px 0 0;color:var(--mist);font-size:13px}
+    .grid-controls{display:flex;flex-wrap:wrap;align-items:center;gap:18px;margin-top:16px}
+    .grid-controls .switch{gap:8px}
+    .grid-controls input[type=range],.controls input[type=range]{width:130px;accent-color:var(--acid)}
+    .controls .switch input[type=range]{width:220px}
+    .grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin-top:22px}
+    .grid-cell{display:flex;flex-direction:column;gap:8px}
+    .grid-cell .frame{border-radius:22%;overflow:hidden;outline:1px solid rgba(255,255,255,.1)}
+    .grid-cell figcaption{display:flex;flex-direction:column;gap:4px;color:var(--mist);font-size:11px;letter-spacing:.04em}
+    .grid-cell figcaption strong{color:var(--cloud);font-weight:600;text-transform:uppercase}
+    .grid-cell figcaption .why{letter-spacing:0;line-height:1.4}
+    .grid-cell.active figcaption strong{color:var(--acid)}
+    .lab{display:grid;grid-template-columns:minmax(260px,.82fr) minmax(0,1.18fr);margin-top:44px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+    .stage{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:460px;margin:0;padding:46px 28px;border-right:1px solid var(--line)}
+    .portrait{width:min(100%,300px)}
+    .portrait.tile{outline:1px solid rgba(255,255,255,.1);border-radius:27%;overflow:hidden}
+    .voice{max-width:280px;margin:28px 0 0;color:var(--paper);font-family:var(--secondary);font-size:clamp(25px,2.5vw,34px);font-style:italic;line-height:1;text-align:center}
+
+    .controls{display:flex;flex-direction:column;gap:26px;padding:38px 42px}
+    .controls h2{margin:0;font-size:13px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:var(--mist)}
+    .controls p{margin:6px 0 0;color:var(--mist);font-size:13px}
+
+    .rows{display:flex;flex-direction:column}
+    .row{position:relative;display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:46px;padding:0 0 0 20px;color:var(--cloud);background:none;border:0;border-bottom:1px solid var(--line);text-align:left}
+    .row::before{content:"";position:absolute;left:0;top:calc(50% - 2.5px);width:11px;height:5px;background:var(--line-strong);transform:skewX(-24deg)}
+    .row:hover{color:var(--paper);background:rgba(255,255,255,.025)}
+    .row[aria-pressed="true"]{color:var(--paper)}
+    .row[aria-pressed="true"]::before{background:var(--acid)}
+    .row span:last-child{color:var(--mist);font-size:11px;letter-spacing:.04em}
+
+    .buttons{display:flex;flex-wrap:wrap;gap:10px}
+    .button{min-height:40px;padding:0 16px;color:var(--paper);background:transparent;border:1px solid var(--line-strong);border-radius:8px}
+    .button:hover{background:rgba(255,255,255,.04)}
+    .button.acid{color:#121500;background:var(--acid);border-color:var(--acid)}
+
+    .switches{display:flex;flex-direction:column;gap:10px}
+    .switch{display:flex;align-items:center;gap:10px;color:var(--cloud);font-size:14px}
+
+    .readout{padding:14px 16px;color:var(--cloud);background:var(--panel);border:1px solid var(--line);border-radius:10px;font-size:13px}
+    .readout strong{color:var(--paper)}
+
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+
+    @media(max-width:760px){
+      .page{padding:36px 18px 72px}
+      .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .lab{grid-template-columns:1fr}
+      .stage{min-height:340px;border-right:0;border-bottom:1px solid var(--line)}
+      .controls{padding:28px 0}
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="page-head">
+      <h1>Ranksta rig.<span class="accent">Five states.</span></h1>
+      <p>A rigged inline-SVG prototype. Each state has its own silhouette and its own motion in that silhouette, and the black shape morphs in place from one to the next. Nothing is a stored pose: every frame is generated from spring-carried numbers. Text stays the source of truth — motion only agrees with it.</p>
+    </header>
+
+    <section class="grid-lab">
+      <header class="grid-head">
+        <h2>Every state at once</h2>
+        <p>Each cell holds one state. With the loop on, every cell drops back to idle and returns, so the arrival can be judged against all the others in one look.</p>
+        <div class="grid-controls">
+          <label class="switch"><input type="checkbox" id="gridLoop"> Loop through idle</label>
+          <label class="switch">Dwell <input type="range" id="gridDwell" min="400" max="2600" step="100" value="2200"><span id="gridDwellValue">2200ms</span></label>
+          <button class="button" type="button" id="gridStep">Re-enter the states</button>
+        </div>
+      </header>
+      <div class="grid" id="silhouetteGrid"></div>
+    </section>
+
+    <div class="lab">
+      <figure class="stage">
+        <div class="portrait tile" id="portrait"></div>
+        <figcaption class="voice" id="voice">Watching quietly.</figcaption>
+      </figure>
+
+      <div class="controls">
+        <div>
+          <h2>State</h2>
+          <p>Held until the application changes it. Any state can follow any other.</p>
+          <div class="rows" id="stateRows" role="group" aria-label="Mascot state"></div>
+        </div>
+        </div>
+
+        <div>
+          <h2>Turn tests</h2>
+          <p>A yaw on a spherical head. The visor and eyes re-project on the sphere and compress toward the far rim, the band is a ring whose crest swings across the head, and the knot goes round the back where the body hides it. Applies to every mascot on the page.</p>
+          <label class="switch">Yaw <input type="range" id="turnYaw" min="-100" max="100" step="1" value="0"><span id="turnYawValue">0.00</span></label>
+          <div class="buttons" style="margin-top:10px">
+            <button class="button" type="button" data-turn-test="sweep">Sweep</button>
+            <button class="button" type="button" data-turn-test="shake">Shake no</button>
+            <button class="button" type="button" data-turn-test="peek">Peek left, then right</button>
+            <button class="button" type="button" data-turn-test="release">Release</button>
+          </div>
+        </div>
+
+        <div>
+          <h2>Attention</h2>
+          <div class="buttons">
+            <button class="button" type="button" id="blink">Blink now</button>
+            <button class="button" type="button" id="release">Release gaze</button>
+          </div>
+        </div>
+
+        <div class="switches">
+          <label class="switch"><input type="checkbox" id="followPointer" checked> Gaze follows the pointer</label>
+          <label class="switch"><input type="checkbox" id="showTile" checked> Show the coral app-icon tile</label>
+          <label class="switch"><input type="checkbox" id="reduceMotion"> Force reduced motion</label>
+        </div>
+
+        <p class="readout" id="readout" role="status" aria-live="polite">
+          State <strong>idle</strong> · motion on
+        </p>
+      </div>
+    </div>
+  </main>
+
+  <script type="module" src="./src/main.ts"></script>
+</body>
+</html>
