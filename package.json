@@ -5,6 +5,7 @@
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "check": "tsc --build",
+    "desktop": "bun run --cwd apps/desktop start",
     "playground": "bun --hot apps/mascot-playground/src/server.ts",
     "seo": "bun run apps/tui/src/main.ts",
     "server": "bun run apps/server/src/main.ts",
@@ -22,5 +23,6 @@
   "devDependencies": {
     "@types/bun": "latest",
     "typescript": "latest"
-  }
+  },
+  "trustedDependencies": ["electron"]
 }

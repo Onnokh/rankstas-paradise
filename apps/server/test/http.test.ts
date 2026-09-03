@@ -103,6 +103,24 @@ describe("JSON routes", () => {
     expect(sites.some((entry) => entry.id === FIXTURE_SITE_ID)).toBe(true)
   })
 
+  // /api/jobs is the one site-scoped read whose ?site= is optional, so both
+  // shapes have to keep working: bare (the desktop app polls it that way) and
+  // explicit (the only way to inspect a non-default site's sync history).
+  test("GET /api/jobs → jobs array, with and without ?site=", async () => {
+    const bare = await requestJson(server, "/api/jobs")
+    expect(bare.status).toBe(200)
+    expect(Array.isArray((bare.body as { jobs: unknown }).jobs)).toBe(true)
+
+    const scoped = await requestJson(server, `/api/jobs${site}`)
+    expect(scoped.status).toBe(200)
+    expect(Array.isArray((scoped.body as { jobs: unknown }).jobs)).toBe(true)
+  })
+
+  test("GET /api/jobs with an unknown ?site= → 400", async () => {
+    const { status } = await requestJson(server, "/api/jobs?site=nope")
+    expect(status).toBe(400)
+  })
+
   test("GET /api/status → debug envelope with generatedAt + expected keys", async () => {
     const { status, body } = await requestJson(server, `/api/status${site}`)
     expect(status).toBe(200)
@@ -117,6 +135,19 @@ describe("JSON routes", () => {
     expect(typeof envelope.data).toBe("object")
     expect(typeof envelope.registry).toBe("object")
     expect(typeof envelope.sitemap).toBe("object")
+    // data.lastSyncedAt is the instant Search Console data last arrived (the
+    // sync just seeded above), reported as its own ISO 8601 instant — a client
+    // must not read freshness off generatedAt, which is serialization time.
+    const data = envelope.data as Record<string, unknown>
+    expect(data.lastSyncedAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
+    )
+    // data.lastCheckedAt is the instant the sync RUN completed. The seeding sync
+    // above both fetched and ran, so both fields are set here; the pair is what
+    // lets a client separate "ran, nothing new" from "never ran".
+    expect(data.lastCheckedAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
+    )
   })
 })
 

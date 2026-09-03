@@ -23,6 +23,7 @@ import {
 import { Sitemap } from "../sitemap/sitemap.ts"
 import { type SitemapPage } from "../sitemap/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
+import { DomainRating } from "../domain-rating/domain-rating.ts"
 import { type Site } from "../sites/schema.ts"
 import { type StorageError } from "../storage/schema.ts"
 import { Storage } from "../storage/storage.ts"
@@ -329,10 +330,16 @@ beforeAll(async () => {
   } satisfies Sitemap.Interface)
 
   const storageLayer = Storage.layer.pipe(Layer.provide(currentSiteLayer))
+  // The dashboard reads a stored rating and never fetches one; a site without a
+  // reading is the ordinary case, so the stub yields null.
+  const domainRatingLayer = Layer.mock(DomainRating.Service)({
+    cached: () => Effect.succeed(null),
+  })
   const base = Layer.mergeAll(
     storageLayer,
     registryLayer,
     sitemapLayer,
+    domainRatingLayer,
     currentSiteLayer,
   )
   runtime = ManagedRuntime.make(Reports.layer.pipe(Layer.provideMerge(base)))
@@ -383,6 +390,16 @@ test("statusReport counts registry targets/keywords and sitemap pages", async ()
   expect(report.data.syncedDays).toBe(56)
   expect(report.data.firstDate).toBe("2026-05-18")
   expect(report.data.lastDate).toBe("2026-07-12")
+  // lastSyncedAt is when the data arrived — the newest synced_day.fetched_at,
+  // written as this fixture was seeded — not when the report was shaped.
+  expect(report.data.lastSyncedAt).toMatch(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
+  )
+  // This fixture writes straight to Storage and never runs a sync, so the two
+  // fields disagree here on purpose: data has arrived, but Ranksta never asked
+  // Google for it. That is the "never checked" state a client must be able to
+  // tell apart from a checked site with nothing new.
+  expect(report.data.lastCheckedAt).toBeNull()
 })
 
 test("pagesReport sorts a known page by impressions desc", async () => {
@@ -466,6 +483,16 @@ test("opportunitiesReport filters by a single kind", async () => {
   expect(
     report.signals.every((signal) => signal.kind === "striking-distance"),
   ).toBe(true)
+})
+
+test("opportunitiesReport caps signals at the limit but counts them all", async () => {
+  const full = await run(Reports.use.opportunitiesReport())
+  expect(full.totalSignals).toBe(full.signals.length)
+  const limited = await run(Reports.use.opportunitiesReport(undefined, 1))
+  expect(limited.signals.length).toBe(1)
+  expect(limited.totalSignals).toBe(full.totalSignals)
+  // The kept signal is the strongest one.
+  expect(limited.signals[0]).toEqual(full.signals[0])
 })
 
 test("registryList includes a known target with its keywords", async () => {

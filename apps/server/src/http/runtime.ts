@@ -18,6 +18,7 @@ import { FetchHttpClient } from "effect/unstable/http"
 
 import { Config } from "@rp/domain/config/config"
 import { CurrentSite } from "@rp/domain/sites/current-site"
+import { DomainRating } from "@rp/domain/domain-rating/domain-rating"
 import { Registry } from "@rp/domain/registry/registry"
 import { Reports } from "@rp/domain/reports/reports"
 import { SearchConsole } from "@rp/domain/search-console/search-console"
@@ -38,6 +39,9 @@ const siteLayer = (site: Site) =>
     Layer.provideMerge(Sync.layer),
     Layer.provideMerge(Sites.layer),
     Layer.provideMerge(SearchConsole.layer),
+    // Above Storage: DomainRating reads the ledger, and in a provideMerge chain
+    // a layer's own requirements are satisfied by the entries below it.
+    Layer.provideMerge(DomainRating.layer),
     Layer.provideMerge(Storage.layer),
     Layer.provideMerge(Registry.layer),
     Layer.provideMerge(Sitemap.layer),

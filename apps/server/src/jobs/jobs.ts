@@ -117,8 +117,20 @@ export const layer = Layer.effect(
             const finishedAt = yield* nowIso
             yield* Exit.match(exit, {
               onSuccess: (message) => settle(id, "done", message, finishedAt),
+              // A failure also goes to the error log, not only into the registry.
+              // The registry is per-process and in-memory, so a failure that
+              // preceded the last deploy is gone and a failure on a site nobody
+              // polls /api/jobs for is never seen — which is how a broken sync
+              // reads exactly like a healthy one from outside the process. The
+              // log line names the site and carries Cause.pretty, so the reason
+              // survives in the container log whatever the client does.
               onFailure: (cause) =>
-                settle(id, "failed", Cause.pretty(cause), finishedAt),
+                Effect.andThen(
+                  settle(id, "failed", Cause.pretty(cause), finishedAt),
+                  Effect.logError(
+                    `The ${name} job for site ${siteId} failed: ${Cause.pretty(cause)}`,
+                  ),
+                ),
             })
           }),
         )

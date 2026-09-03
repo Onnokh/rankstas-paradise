@@ -22,6 +22,7 @@ import { type RegistryEntry } from "../registry/schema.ts"
 import { serviceUse } from "../service-use.ts"
 import {
   type BaselineCapture,
+  type DomainRatingDay,
   type HistoryDay,
   type LogEntry,
   type LogEntryInput,
@@ -64,6 +65,17 @@ export interface Interface {
     entries: ReadonlyArray<RegistryEntry>,
     baselineDate: string,
   ) => Effect.Effect<BaselineCapture, StorageError>
+  // Stamp that a sync run completed for this site. Every completed run stamps,
+  // including one that fetched nothing — that run is exactly the one no other
+  // table records, because `synced_day` only gains a row when a day is fetched.
+  readonly recordSyncCheck: () => Effect.Effect<void, StorageError>
+  // Record today's Domain Rating, replacing any reading already stored for the
+  // same day.
+  readonly saveDomainRating: (
+    rating: number,
+    fetchedAt: string,
+    license: string,
+  ) => Effect.Effect<void, StorageError>
 
   // --- freshness / coverage queries ---
   readonly missingDailyTotalDates: (
@@ -89,10 +101,26 @@ export interface Interface {
   >
   readonly snapshotSummary: () => Effect.Effect<SnapshotSummary, StorageError>
   readonly latestSnapshotDate: () => Effect.Effect<string | null, StorageError>
+  // The newest `synced_day.fetched_at` as an ISO 8601 instant: when Search
+  // Console data last arrived for this site. Null when nothing is synced yet.
+  readonly latestSyncedAt: () => Effect.Effect<string | null, StorageError>
+  // The `sync_run.checked_at` stamp as an ISO 8601 instant: when a sync run for
+  // this site last completed. Null until one has. Moves on every completed run,
+  // where latestSyncedAt moves only on a run that fetched a day.
+  readonly latestCheckedAt: () => Effect.Effect<string | null, StorageError>
   // The last date whose numbers are trusted as final (today − 3, UTC). Pure.
   readonly finalizationCutoff: () => Effect.Effect<string>
 
   // --- reads / analysis ---
+  // The newest stored reading, or null when the site has none.
+  readonly latestDomainRating: () => Effect.Effect<
+    { readonly rating: number; readonly fetchedAt: string; readonly license: string } | null,
+    StorageError
+  >
+  // The stored Domain Rating series, oldest first.
+  readonly domainRatingHistory: (
+    limit?: number,
+  ) => Effect.Effect<ReadonlyArray<DomainRatingDay>, StorageError>
   readonly historyWithPending: (
     limit?: number,
   ) => Effect.Effect<ReadonlyArray<HistoryDay>, StorageError>
@@ -264,6 +292,27 @@ export const layer = Layer.effect(
         verdict text not null,
         coverage_state text not null default '',
         inspected_at text not null default current_timestamp
+      )`,
+      // One row, pinned to id 1: this is a single per-site scalar, not a series,
+      // and a run that fetched nothing has no day to hang its instant off — so
+      // unlike latestSyncedAt it cannot be derived from `synced_day`. It lives in
+      // the ledger rather than in a process variable because the hosted server
+      // restarts on every deploy, and an in-memory stamp would come back reading
+      // "never checked" over a site that has been checked all along.
+      `create table if not exists sync_run (
+        id integer primary key check (id = 1),
+        checked_at text not null default current_timestamp
+      )`,
+      // One Domain Rating per calendar day. Ahrefs' free endpoint reports only
+      // the present value, so this series cannot be backfilled — it is worth
+      // exactly as much as the number of days it has been recording. Keyed by
+      // date (not by fetch instant) so several syncs in one day settle on one
+      // reading instead of inflating the series.
+      `create table if not exists domain_rating (
+        date text primary key,
+        rating real not null,
+        fetched_at text not null,
+        license text not null default ''
       )`,
     ]
     yield* Effect.forEach(ddl, (statement) => sql.unsafe(statement)).pipe(
@@ -445,7 +494,10 @@ export const layer = Layer.effect(
               score: currentMetrics.impressions,
             })
           }
-          if (pages.length < 2) continue
+          // Same impression floor as the other kinds: a query split across
+          // pages at a handful of impressions is long-tail noise, not a
+          // cannibalization problem worth a signal.
+          if (pages.length < 2 || currentMetrics.impressions < 20) continue
           signals.push({
             kind: "cannibalization",
             label: query,
@@ -870,6 +922,22 @@ export const layer = Layer.effect(
         Effect.gen(function* () {
           for (const date of fetchedDates)
             yield* sql`delete from page_daily where date = ${date}`
+          // A day Google has no rows for is a day with no impressions, and it
+          // has to be recorded as such. Without this the date never enters
+          // site_daily, so `missingDailyTotalDates` reports it missing again on
+          // the next sync — and every sync after that, forever. A quiet site can
+          // spend minutes and a large slice of the API quota re-asking about the
+          // same few hundred empty days on every run.
+          //
+          // `do nothing` on conflict: a stored reading is never overwritten with
+          // zeros, so a transient empty response cannot erase real data.
+          const returned = new Set(totals.site.map((row) => row.date))
+          for (const date of fetchedDates)
+            if (!returned.has(date))
+              yield* sql`
+                insert into site_daily (date, clicks, impressions, ctr, position)
+                values (${date}, 0, 0, 0, 0)
+                on conflict(date) do nothing`
           for (const row of totals.site)
             yield* sql`
               insert into site_daily (date, clicks, impressions, ctr, position)
@@ -886,6 +954,38 @@ export const layer = Layer.effect(
                 ctr = excluded.ctr, position = excluded.position, collected_at = current_timestamp`
         }),
       )
+
+    const recordSyncCheckI = sql`
+      insert into sync_run (id, checked_at) values (1, current_timestamp)
+      on conflict(id) do update set checked_at = current_timestamp`
+
+    // `date('now')` is UTC, matching how every other date in this ledger is
+    // keyed, so a reading does not land on a different day than the totals
+    // fetched beside it.
+    const saveDomainRatingI = (rating: number, fetchedAt: string, license: string) => sql`
+      insert into domain_rating (date, rating, fetched_at, license)
+      values (date('now'), ${rating}, ${fetchedAt}, ${license})
+      on conflict(date) do update set
+        rating = excluded.rating,
+        fetched_at = excluded.fetched_at,
+        license = excluded.license`
+
+    const latestDomainRatingI = Effect.gen(function* () {
+      const rows = yield* sql<{
+        rating: number
+        fetchedAt: string
+        license: string
+      }>`select rating, fetched_at as "fetchedAt", license from domain_rating
+         order by date desc limit 1`
+      return rows[0] ?? null
+    })
+
+    const domainRatingHistoryI = (limit = 180) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<DomainRatingDay>`
+          select date, rating from domain_rating order by date`
+        return rows.slice(-limit) as ReadonlyArray<DomainRatingDay>
+      })
 
     const savePageIndexStatusesI = (statuses: ReadonlyArray<PageIndexStatus>) =>
       sql.withTransaction(
@@ -1013,6 +1113,26 @@ export const layer = Layer.effect(
       return rows[0] ?? { first: null, last: null }
     })
 
+    // `fetched_at` is written by SQLite's current_timestamp, so it is UTC in
+    // 'YYYY-MM-DD HH:MM:SS' form — lexicographically ordered, hence max().
+    // strftime restates it as an ISO 8601 instant for the wire.
+    const latestSyncedAtI = Effect.gen(function* () {
+      const rows = yield* sql<{ fetched_at: string | null }>`
+        select strftime('%Y-%m-%dT%H:%M:%SZ', max(fetched_at)) as fetched_at
+        from synced_day`
+      return rows[0]?.fetched_at ?? null
+    })
+
+    // `checked_at` is written by the same SQLite current_timestamp that stamps
+    // `synced_day.fetched_at`, so the two instants a status report carries are
+    // read off one clock and are directly comparable.
+    const latestCheckedAtI = Effect.gen(function* () {
+      const rows = yield* sql<{ checked_at: string | null }>`
+        select strftime('%Y-%m-%dT%H:%M:%SZ', checked_at) as checked_at
+        from sync_run where id = 1`
+      return rows[0]?.checked_at ?? null
+    })
+
     const snapshotSummaryI = Effect.gen(function* () {
       const rows = yield* sql<{ rows: number; dates: number }>`
         select (select count(*) from search_snapshot) as rows,
@@ -1034,6 +1154,17 @@ export const layer = Layer.effect(
         capturePageBaselinesI(entries, baselineDate).pipe(
           mapErr("capturePageBaselines"),
         ),
+      recordSyncCheck: () =>
+        recordSyncCheckI.pipe(Effect.asVoid, mapErr("recordSyncCheck")),
+      saveDomainRating: (rating, fetchedAt, license) =>
+        saveDomainRatingI(rating, fetchedAt, license).pipe(
+          Effect.asVoid,
+          mapErr("saveDomainRating"),
+        ),
+      latestDomainRating: () =>
+        latestDomainRatingI.pipe(mapErr("latestDomainRating")),
+      domainRatingHistory: (limit) =>
+        domainRatingHistoryI(limit).pipe(mapErr("domainRatingHistory")),
       missingDailyTotalDates: (dates) =>
         missingDailyTotalDatesI(dates).pipe(mapErr("missingDailyTotalDates")),
       missingSnapshotDates: (dates) =>
@@ -1052,6 +1183,8 @@ export const layer = Layer.effect(
       snapshotSummary: () => snapshotSummaryI.pipe(mapErr("snapshotSummary")),
       latestSnapshotDate: () =>
         latestSnapshotDateI.pipe(mapErr("latestSnapshotDate")),
+      latestSyncedAt: () => latestSyncedAtI.pipe(mapErr("latestSyncedAt")),
+      latestCheckedAt: () => latestCheckedAtI.pipe(mapErr("latestCheckedAt")),
       finalizationCutoff: () => Effect.sync(finalizationCutoffValue),
       historyWithPending: (limit) =>
         historyWithPendingI(limit).pipe(mapErr("historyWithPending")),

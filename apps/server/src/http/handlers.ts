@@ -171,6 +171,12 @@ export const makeApiGroup = (ctx: ServerContext) => {
       Effect.gen(function* () {
         yield* Storage.use.saveSnapshots(debugSnapshots, debugDates)
         yield* Storage.use.saveDailyTotals(debugDailyTotals, debugDates)
+        // This seed IS debug mode's sync run — it is what POST /api/jobs/sync
+        // does here — so it stamps the check like the real one. Without it a
+        // client pointed at a debug server would read "never checked" forever
+        // over data it can plainly see, and debug mode exists to render every
+        // report faithfully, not to render one field wrong.
+        yield* Storage.use.recordSyncCheck()
         return `Saved ${debugSnapshots.length} fake rows to the isolated debug database.`
       }),
     )
@@ -258,9 +264,17 @@ export const makeApiGroup = (ctx: ServerContext) => {
           return siteJson(query.site, Reports.use.historyReport(limit ?? 28))
         }),
       )
-      .handle("jobs", () =>
+      // Without ?site= this falls back to the first configured site, which is
+      // what the desktop app's bare polling relies on. With it, every site's job
+      // history becomes readable — until this existed, the sync each per-site
+      // cron kicks off could be started but never inspected. Deliberately does
+      // not `warm`: this endpoint is polled about once a second.
+      .handle("jobs", ({ query }) =>
         Effect.promise(async () => {
-          const site = await ctx.firstSite()
+          const site = query.site
+            ? await resolveSite(query.site)
+            : await ctx.firstSite()
+          if (!("id" in site)) return site
           const rt = ctx.runtimeFor(site)
           const jobs = await rt.runPromise(Jobs.use.list())
           return jsonEnvelope({ jobs }, ctx.debug)

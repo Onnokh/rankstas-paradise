@@ -8,6 +8,7 @@
 import { Context, Effect, Layer } from "effect"
 
 import { CurrentSite } from "../sites/current-site.ts"
+import { DomainRating } from "../domain-rating/domain-rating.ts"
 import { type RegistryEntry, type RegistryPatch } from "../registry/schema.ts"
 import { type RegistryError } from "../registry/schema.ts"
 import { Registry } from "../registry/registry.ts"
@@ -64,6 +65,7 @@ export interface Interface {
   ) => Effect.Effect<QueriesReport, ReportsError>
   readonly opportunitiesReport: (
     kind?: string,
+    limit?: number,
   ) => Effect.Effect<OpportunitiesReport, ReportsError>
   readonly registryList: () => Effect.Effect<RegistryListReport, ReportsError>
   readonly registryAdd: (
@@ -107,6 +109,7 @@ export const layer = Layer.effect(
     const storage = yield* Storage.Service
     const registry = yield* Registry.Service
     const sitemap = yield* Sitemap.Service
+    const domainRatingService = yield* DomainRating.Service
     const site = yield* CurrentSite.Service
     const resolved = yield* site.current()
     const origin = resolved.origin
@@ -200,6 +203,8 @@ export const layer = Layer.effect(
             const sitemapPages = yield* sitemap.loadCachedSitemapPages()
             const summary = yield* storage.snapshotSummary()
             const range = yield* storage.snapshotDateRange()
+            const lastSyncedAt = yield* storage.latestSyncedAt()
+            const lastCheckedAt = yield* storage.latestCheckedAt()
             const overview = yield* storage.pagesWindowOverview()
             const unmapped = yield* sitemap.unmappedSitemapPages(
               sitemapPages,
@@ -214,6 +219,8 @@ export const layer = Layer.effect(
                 syncedDays: summary.dates,
                 snapshotRows: summary.rows,
                 dailyTotalsDays: overview.totalsCoverage.siteDays,
+                lastSyncedAt,
+                lastCheckedAt,
                 note: "Snapshot rows exclude anonymized long-tail queries; daily totals are the true numbers.",
               },
               registry: {
@@ -451,14 +458,17 @@ export const layer = Layer.effect(
           }),
         ),
 
-      opportunitiesReport: (kind) =>
+      opportunitiesReport: (kind, limit) =>
         wrap(
           Effect.gen(function* () {
             const entries = yield* registry.loadRegistry()
             const digest = yield* storage.opportunityDigest(entries)
-            const signals = digest.signals.filter(
+            const matching = digest.signals.filter(
               (signal) => !kind || signal.kind === kind,
             )
+            // The digest is score-sorted, so a limit keeps the strongest signals.
+            const signals =
+              limit !== undefined ? matching.slice(0, limit) : matching
             const registryForSignal = (signal: OpportunitySignal) => {
               const byKeyword = signal.query
                 ? entries.find(
@@ -481,6 +491,7 @@ export const layer = Layer.effect(
                 previousStart: digest.previousStart,
                 previousEnd: digest.previousEnd,
               },
+              totalSignals: matching.length,
               signals: signals.map((signal) => {
                 const mapping = registryForSignal(signal)
                 return {
@@ -691,6 +702,9 @@ export const layer = Layer.effect(
             )
             const digest = yield* storage.opportunityDigest(entries)
             const history = yield* storage.historyWithPending()
+            // Read from the volume, never from Ahrefs: Sync owns the refresh.
+            const domainRating = yield* domainRatingService.cached()
+            const domainRatingHistory = yield* storage.domainRatingHistory()
             const recentActions = rawLog
               .filter((entry) => entry.kind !== "note")
               .slice(0, 3)
@@ -720,6 +734,8 @@ export const layer = Layer.effect(
               history,
               recentActions,
               performances,
+              domainRating,
+              domainRatingHistory,
             }
           }),
         ),
@@ -728,6 +744,7 @@ export const layer = Layer.effect(
 )
 
 export const defaultLayer = layer.pipe(
+  Layer.provide(DomainRating.defaultLayer),
   Layer.provide(Storage.defaultLayer),
   Layer.provide(Registry.defaultLayer),
   Layer.provide(Sitemap.defaultLayer),
@@ -826,8 +843,12 @@ export const verdictFor = (
   signals: ReadonlyArray<OpportunitySignal>,
   origin: string,
 ): Verdict => {
+  // A hub page can match dozens of signals (every cannibalization group it
+  // appears in); narrate only the strongest few so the verdict stays readable.
+  // The digest is score-sorted, so the first matches are the ones that matter.
+  const maxNarratedSignals = 5
   const reasons: string[] = []
-  for (const signal of signals) {
+  for (const signal of signals.slice(0, maxNarratedSignals)) {
     if (signal.kind === "striking-distance")
       reasons.push(
         `"${signal.query}" ranks at position ${signal.current.position.toFixed(1)} with ${signal.current.impressions} impressions — within striking distance of the top results.`,
@@ -841,6 +862,10 @@ export const verdictFor = (
         `"${signal.query}" is split across ${signal.pages.length} pages: ${signal.pages.map((page) => pathOf(page, origin)).join(", ")}.`,
       )
   }
+  if (signals.length > maxNarratedSignals)
+    reasons.push(
+      `…and ${signals.length - maxNarratedSignals} more matched signals (see the opportunities report).`,
+    )
   if (phase === "PRE")
     return {
       verdict: "awaiting-launch",

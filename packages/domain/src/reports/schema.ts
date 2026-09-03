@@ -3,6 +3,8 @@
 // and are the contract downstream frontends and the HTTP server code against.
 import { Schema } from "effect"
 
+import { DomainRating, DomainRatingDay } from "../domain-rating/schema.ts"
+
 import {
   HistoryDay,
   IndexStatus,
@@ -163,6 +165,21 @@ export const DashboardSnapshot = Schema.Struct({
       performance: RegistryPerformance,
     }),
   ),
+  // Ahrefs' backlink-strength score, or null when the deployment has no Ahrefs
+  // key or the site has not been synced since one was added. It rides on the
+  // snapshot rather than its own read so both front-ends get it for free, and it
+  // is served from the volume — a dashboard never waits on Ahrefs.
+  //
+  // The KEY is optional, not just the value. The clients decode against this
+  // schema but run against whatever server is deployed, so a required key would
+  // make every TUI read fail until the server was updated in lockstep. An older
+  // server simply omits it and the front-ends show no rating.
+  domainRating: Schema.optional(Schema.NullOr(DomainRating)),
+  // The accumulated series behind that reading, oldest first, so a client can
+  // show the move over whichever period it is displaying. Ahrefs sells only the
+  // present value on the free tier, so this starts empty and grows one day per
+  // sync — it can never be backfilled.
+  domainRatingHistory: Schema.optional(Schema.Array(DomainRatingDay)),
 }).annotate({ identifier: "DashboardSnapshot" })
 export interface DashboardSnapshot
   extends Schema.Schema.Type<typeof DashboardSnapshot> {}
@@ -176,6 +193,19 @@ export const StatusReport = Schema.Struct({
     syncedDays: Schema.Number,
     snapshotRows: Schema.Number,
     dailyTotalsDays: Schema.Number,
+    // When Search Console data last arrived for this site (the newest sync), as
+    // an ISO 8601 instant; null until the site is synced once. Not the same as
+    // the envelope's generatedAt, which is when this response was serialized.
+    lastSyncedAt: Schema.NullOr(Schema.String),
+    // When Ranksta last ASKED Google for this site — the instant a sync run last
+    // completed — as an ISO 8601 instant; null until one has. Kept separate from
+    // lastSyncedAt because the two answer different questions and collapsing them
+    // loses the distinction that matters: lastSyncedAt is when the DATA CHANGED,
+    // and it cannot move on a run that correctly found nothing new. A
+    // lastCheckedAt just now over a lastSyncedAt from yesterday is a healthy
+    // site; a lastCheckedAt that will not move is a sync that is failing or
+    // never being asked for, and the reason for a failure is on the error log.
+    lastCheckedAt: Schema.NullOr(Schema.String),
     note: Schema.String,
   }),
   registry: Schema.Struct({
@@ -302,6 +332,7 @@ export interface QueriesReport
 
 export const OpportunitiesReport = Schema.Struct({
   window: ReportWindow,
+  totalSignals: Schema.Number,
   signals: Schema.Array(
     Schema.Struct({
       ...SignalSummary.fields,
