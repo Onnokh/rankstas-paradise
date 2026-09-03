@@ -88,7 +88,7 @@ An opportunity kind: multiple pages competing for the same query, splitting its 
 The application's per-page judgment of performance — one of `improving`, `declining`, `needs-optimization`, `needs-attention`, `new-visibility`, `no-visibility`, `steady`, or `awaiting-launch`.
 
 **Phase** (app-specific):
-The launch stage of a keyword target: **PRE** (its published/baseline date is still ahead of the available data), **LIVE** (it has impressions), **NONE** (measured but no impressions yet), **UNMAPPED** (a page with no target). Distinct from Verdict — Phase is about launch timing, Verdict is about performance.
+The launch stage of a keyword target, in lifecycle order: **NEW** (the site has no query data at all yet), **PRE** (the synced data has not yet passed its published/baseline date, or no date is set), **NONE** (measured past the baseline, no impressions yet), **LIVE** (it has impressions). Two more cover non-targets: **PAGE** (an inventory-only row — tracked, but with no keyword to launch) and **UNMAPPED** (a page with no registry row at all). Distinct from Verdict — Phase is about launch timing, Verdict is about performance.
 
 **Indexed**:
 Whether Google's URL Inspection reports a target URL as in its index. Un-indexed targets are dimmed in the interface.
