@@ -59,3 +59,21 @@ Regenerate the Xcode project after changing `project.yml` with:
 ```sh
 xcodegen generate
 ```
+
+## Layout
+
+- `Sources/Model` — API client, DTOs, cache-first repository, `OverviewModel`. Data only, shared by every tab.
+- `Sources/Workspace` — `Workspace` (tabs, active tab, bounded mounted set), per-tab state, `PeekProgress` (0 closed, 1 strip, 2 grid).
+- `Sources/Gesture` — three-finger trackpad drag recogniser streaming travel and velocity.
+- `Sources/UI` — `RootView`, `TabBar`, `PeekOverlay`, `TabContentStack`, and `PeekLayout`, the pure struct that turns window size plus peek progress into every frame.
+- `Sources/UI/Screens` — one screen per tab kind, rendered from tab state so previews match the live screen.
+
+Peek: swipe down with three fingers (or ⌘⇧P) to reveal live previews under the tabs; keep swiping for the grid. Esc or a click closes it. ⌘1…⌘9 select tabs.
+
+## Judging animation feel
+
+Use a Release build. Debug builds run SwiftUI unoptimised and drop frames during the peek:
+
+```bash
+xcodebuild -project RankstasParadise.xcodeproj -scheme RankstasParadise -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath /tmp/rankstas-paradise-derived build && open /tmp/rankstas-paradise-derived/Build/Products/Release/RankstasParadise.app
+```

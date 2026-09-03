@@ -1,11 +1,11 @@
 import SwiftUI
 
-struct ContentView: View {
-    @State private var model: OverviewModel
+struct OverviewScreen: View {
+    let model: OverviewModel
+    @Bindable var state: OverviewTabState
+    let onOpenSite: (Site.ID) -> Void
 
-    init(model: OverviewModel = OverviewModel()) {
-        _model = State(initialValue: model)
-    }
+    @Environment(\.isTabPreview) private var isPreview
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -41,8 +41,16 @@ struct ContentView: View {
                     Task { await model.refresh() }
                 }
                 Spacer()
+            } else if isPreview {
+                // A real Table is an AppKit view that re-lays out on every animation tick.
+                // Previews are scaled and inert, so a lookalike is enough and far cheaper.
+                SiteTableLookalike(overviews: model.overviews, selection: state.selectedSiteID)
             } else {
-                SiteTable(overviews: model.overviews)
+                SiteTable(
+                    overviews: model.overviews,
+                    selection: $state.selectedSiteID,
+                    onOpen: onOpenSite
+                )
 
                 HStack {
                     Text("\(model.loadedSiteCount) of \(model.sites.count) sites loaded")
@@ -50,6 +58,7 @@ struct ContentView: View {
                         Text("Cached")
                     }
                     Spacer()
+                    Text("Double-click a site to open it")
                     if let errorMessage = model.errorMessage {
                         Text(errorMessage)
                             .foregroundStyle(.red)
@@ -60,17 +69,16 @@ struct ContentView: View {
             }
         }
         .padding(24)
-        .task {
-            await model.start()
-        }
     }
 }
 
 private struct SiteTable: View {
     let overviews: [SiteOverview]
+    @Binding var selection: Site.ID?
+    let onOpen: (Site.ID) -> Void
 
     var body: some View {
-        Table(overviews) {
+        Table(overviews, selection: $selection) {
             TableColumn("Site") { overview in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(overview.site.name)
@@ -110,10 +118,77 @@ private struct SiteTable: View {
             }
             .width(95)
         }
+        // Double-click or Return opens the site; a single click only selects the row,
+        // so the selection survives as part of the overview tab's state.
+        .contextMenu(forSelectionType: Site.ID.self) { _ in
+        } primaryAction: { siteIDs in
+            if let siteID = siteIDs.first {
+                onOpen(siteID)
+            }
+        }
     }
 }
 
-private struct MetricText: View {
+/// Plain SwiftUI stand-in for `SiteTable`, used only in scaled previews.
+private struct SiteTableLookalike: View {
+    let overviews: [SiteOverview]
+    let selection: Site.ID?
+
+    private let columns: [(String, CGFloat)] = [
+        ("Clicks", 70), ("Impressions", 90), ("CTR", 65), ("Position", 70), ("Opportunities", 95)
+    ]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                Text("Site")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                ForEach(columns, id: \.0) { column in
+                    Text(column.0)
+                        .frame(width: column.1, alignment: .leading)
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+
+            Divider()
+
+            ForEach(Array(overviews.enumerated()), id: \.element.id) { index, overview in
+                HStack(spacing: 0) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(overview.site.name)
+                        Text(overview.site.origin)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    MetricText(overview.stats?.clicks, style: .number).frame(width: 70)
+                    MetricText(overview.stats?.impressions, style: .number).frame(width: 90)
+                    MetricText(overview.stats?.ctr, style: .percent).frame(width: 65)
+                    MetricText(overview.stats?.position, style: .decimal).frame(width: 70)
+                    Text(overview.dashboard?.digest.signals.count.formatted() ?? "—")
+                        .monospacedDigit()
+                        .frame(width: 95, alignment: .trailing)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    overview.id == selection
+                        ? Color.accentColor.opacity(0.35)
+                        : (index.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.04))
+                )
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5), in: .rect(cornerRadius: 6))
+    }
+}
+
+struct MetricText: View {
     enum Style {
         case number
         case percent
@@ -163,9 +238,4 @@ private struct ErrorView: View {
         }
         .frame(maxWidth: .infinity)
     }
-}
-
-#Preview("Overview") {
-    ContentView(model: .preview)
-        .frame(width: 980, height: 480)
 }

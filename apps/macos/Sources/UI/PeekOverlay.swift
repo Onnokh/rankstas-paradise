@@ -1,0 +1,127 @@
+import SwiftUI
+
+/// The tabs and the peek, as one set of views. A card is the tab pill grown into a container:
+/// its header is the pill, the preview sits inset below. At progress 0 a card is exactly a
+/// pill. Cards are positioned by absolute frames from `PeekLayout`, so one card view serves
+/// the closed bar, the strip, the grid, and every point in between without being rebuilt.
+struct PeekOverlay: View {
+    let layout: PeekLayout
+    let workspace: Workspace
+    let model: OverviewModel
+    let onSelect: (TabID) -> Void
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            let heading = layout.gridHeadingFrame
+            Text("Projects")
+                .font(.title3.weight(.semibold))
+                .frame(width: heading.width, height: heading.height, alignment: .leading)
+                .position(x: heading.midX, y: heading.midY)
+                .opacity(layout.gridOpacity)
+                .allowsHitTesting(false)
+                .accessibilityHidden(layout.gridOpacity < 0.5)
+
+            ForEach(Array(workspace.tabs.enumerated()), id: \.element) { index, tab in
+                let frame = layout.cardFrame(index)
+                PeekCard(
+                    title: tab.title(in: model),
+                    isActive: tab == workspace.activeTabID,
+                    layout: layout,
+                    size: frame.size,
+                    action: { onSelect(tab) }
+                ) {
+                    TabScreen(tab: tab, workspace: workspace, model: model, actions: .none)
+                }
+                .frame(width: frame.width, height: frame.height)
+                .position(x: frame.midX, y: frame.midY)
+            }
+        }
+        .frame(width: layout.size.width, height: layout.size.height, alignment: .topLeading)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Tabs")
+    }
+}
+
+private struct PeekCard<Screen: View>: View {
+    let title: String
+    let isActive: Bool
+    let layout: PeekLayout
+    let size: CGSize
+    let action: () -> Void
+    @ViewBuilder let screen: () -> Screen
+
+    @State private var isHovering = false
+
+    private var reveal: CGFloat { layout.reveal }
+    private var previewWidth: CGFloat { size.width - PeekLayout.previewInset * 2 }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 0) {
+                // Identical to the tab pill, so the card starts out looking like the tab.
+                TabPillLabel(title: title)
+                    .frame(width: size.width, height: layout.cardHeaderHeight)
+
+                // Always mounted, hidden by the card's clip while closed. Mounting it on the
+                // first drag sample made every preview fill in over a few frames, which read
+                // as a flash across the whole bar.
+                ScreenPreview(width: previewWidth, height: previewWidth * PeekLayout.previewAspect, screen: screen)
+                    .clipShape(.rect(cornerRadius: 6))
+                    .padding(.horizontal, PeekLayout.previewInset)
+                    .padding(.bottom, PeekLayout.cardBottomPadding)
+            }
+            .frame(width: size.width, height: size.height, alignment: .top)
+            .background {
+                // The shadow sits on the shape, not the card's contents: a content shadow is
+                // re-rasterised on every frame the card changes size.
+                ZStack {
+                    RoundedRectangle(cornerRadius: PeekLayout.cardCornerRadius)
+                        .fill(Color(nsColor: .underPageBackgroundColor))
+                        .shadow(color: .black.opacity(0.28 * Double(min(reveal, 1))), radius: 10, y: 5)
+                    RoundedRectangle(cornerRadius: PeekLayout.cardCornerRadius)
+                        .fill(.primary.opacity(fillOpacity))
+                }
+            }
+            .clipShape(.rect(cornerRadius: PeekLayout.cardCornerRadius))
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .accessibilityLabel(title)
+        .accessibilityHint("Open this project")
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+    }
+
+    /// The active pill keeps its fill; inactive pills show a hover fill and gain a faint card
+    /// fill as they grow.
+    private var fillOpacity: Double {
+        if isActive { return 0.12 }
+        let hover = isHovering ? 0.05 : 0
+        return max(hover, Double(min(reveal, 1)) * (isHovering ? 0.08 : 0.05))
+    }
+}
+
+/// A non-interactive, scaled-down live render of a tab's screen.
+private struct ScreenPreview<Screen: View>: View {
+    /// Logical size a screen is rendered at before it is scaled into a card.
+    static var renderSize: CGSize { CGSize(width: 980, height: 560) }
+
+    let width: CGFloat
+    let height: CGFloat
+    @ViewBuilder let screen: () -> Screen
+
+    var body: some View {
+        let render = Self.renderSize
+        let scale = width / render.width
+
+        screen()
+            .environment(\.isTabPreview, true)
+            .frame(width: render.width, height: render.height, alignment: .top)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .scaleEffect(scale, anchor: .topLeading)
+            .frame(width: width, height: max(height, 0), alignment: .topLeading)
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
