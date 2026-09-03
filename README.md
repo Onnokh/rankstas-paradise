@@ -15,9 +15,15 @@ packages/api-client  — typed HTTP client + client config for the UIs
 apps/server          — the HTTP + MCP service; entry apps/server/src/main.ts
 apps/tui             — remote-only opentui dashboard + agent CLI (talks HTTP)
 apps/desktop         — Electron desktop client (same dashboard read as the TUI)
+apps/macos           — native SwiftUI technology preview (same hosted API)
 ```
 
-Only `apps/server` depends on `packages/domain`; `apps/tui` and `apps/desktop` depend only on `packages/api-client` and never touch SQLite or Google directly. Deploy the service on Coolify — see [docs/deploy.md](docs/deploy.md).
+Only `apps/server` depends on `packages/domain`. The TypeScript clients use
+`packages/api-client`, while the native macOS client consumes the same HTTP
+contract in Swift and keeps a local overview snapshot for instant warm starts.
+It refreshes that snapshot in the background. No client touches SQLite or
+Google directly. Deploy the service on Coolify — see
+[docs/deploy.md](docs/deploy.md).
 
 Multiple sites are supported; each has an `id` in `config.json` and its own data under `sites/<id>/`.
 
