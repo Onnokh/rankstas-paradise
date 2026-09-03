@@ -41,24 +41,24 @@ const ARTWORK: readonly (readonly [string, string])[] = [
 ];
 
 describe("parsePath and emitPath", () => {
-  for (const [name, d] of ARTWORK) {
-    test(`a round trip of ${name} keeps every point`, () => {
+  test("a round trip of every artwork path keeps every point", () => {
+    for (const [name, d] of ARTWORK) {
       const once = parsePath(d);
       const twice = parsePath(emitPath(once));
 
-      expect(twice.length).toBe(once.length);
-      expect(signature(twice)).toBe(signature(once));
+      expect(twice.length, name).toBe(once.length);
+      expect(signature(twice), name).toBe(signature(once));
       for (let i = 0; i < once.length; i++) {
         const before = once[i]!.points;
         const after = twice[i]!.points;
-        expect(after.length).toBe(before.length);
+        expect(after.length, name).toBe(before.length);
         for (let j = 0; j < before.length; j++) {
-          expect(Math.abs(after[j]!.x - before[j]!.x)).toBeLessThanOrEqual(EMIT_PRECISION);
-          expect(Math.abs(after[j]!.y - before[j]!.y)).toBeLessThanOrEqual(EMIT_PRECISION);
+          expect(Math.abs(after[j]!.x - before[j]!.x), name).toBeLessThanOrEqual(EMIT_PRECISION);
+          expect(Math.abs(after[j]!.y - before[j]!.y), name).toBeLessThanOrEqual(EMIT_PRECISION);
         }
       }
-    });
-  }
+    }
+  });
 
   test("a parsed path holds only the four commands a caller can move", () => {
     for (const [, d] of ARTWORK) {
