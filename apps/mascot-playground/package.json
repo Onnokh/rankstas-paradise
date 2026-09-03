@@ -1,0 +1,13 @@
+{
+  "name": "@rp/mascot-playground",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot src/server.ts",
+    "start": "bun run src/server.ts"
+  },
+  "dependencies": {
+    "@rp/mascot": "workspace:*"
+  }
+}

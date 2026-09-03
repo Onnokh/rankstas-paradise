@@ -5,8 +5,11 @@
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "check": "tsc --build",
+    "playground": "bun --hot apps/mascot-playground/src/server.ts",
     "seo": "bun run apps/tui/src/main.ts",
     "server": "bun run apps/server/src/main.ts",
+    "test": "bun test",
+    "test:mascot": "bun run --filter @rp/mascot test",
     "desktop": "bun run --cwd apps/desktop start"
   },
   "dependencies": {
