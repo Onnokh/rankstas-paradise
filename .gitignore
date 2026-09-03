@@ -22,3 +22,6 @@ DerivedData/
 .derivedData/
 xcuserdata/
 *.xcuserstate
+
+# Claude Code session files and worktrees
+.claude/
