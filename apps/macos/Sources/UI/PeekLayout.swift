@@ -16,10 +16,8 @@ struct PeekLayout {
     static let peekButtonSize: CGFloat = 28
     static let previewAspect: CGFloat = 560.0 / 980.0
     static let stripPadding: CGFloat = 12
-    /// Gap between the card edge and the preview inside it.
-    static let previewInset: CGFloat = 8
-    /// Extra room under the preview, so the card reads as a frame around it.
-    static let cardBottomPadding: CGFloat = 12
+    /// Gap between the card edge and the preview inside it: the same above, beside and below.
+    static let previewInset: CGFloat = 10
     /// Gap between the window edge and the content pane.
     static let contentInset: CGFloat = 12
     static let contentCornerRadius: CGFloat = 12
@@ -59,11 +57,11 @@ struct PeekLayout {
     }
 
     func cardHeight(forWidth width: CGFloat) -> CGFloat {
-        cardHeaderHeight + Self.previewInset + (width - Self.previewInset * 2) * Self.previewAspect + Self.cardBottomPadding
+        cardHeaderHeight + Self.previewInset * 2 + (width - Self.previewInset * 2) * Self.previewAspect
     }
 
     func cardWidth(forHeight height: CGFloat) -> CGFloat {
-        (height - cardHeaderHeight - Self.previewInset - Self.cardBottomPadding) / Self.previewAspect + Self.previewInset * 2
+        (height - cardHeaderHeight - Self.previewInset * 2) / Self.previewAspect + Self.previewInset * 2
     }
 
     /// The content pane: inset from the window on the sides and bottom, below the tab bar.

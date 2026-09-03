@@ -91,7 +91,7 @@ private struct PeekCard<Screen: View>: View {
     private var reveal: CGFloat { layout.reveal }
     private var previewWidth: CGFloat { size.width - PeekLayout.previewInset * 2 }
     private var previewHeight: CGFloat {
-        max(size.height - layout.cardHeaderHeight - PeekLayout.previewInset - PeekLayout.cardBottomPadding, 0)
+        max(size.height - layout.cardHeaderHeight - PeekLayout.previewInset * 2, 0)
     }
 
     var body: some View {
@@ -114,7 +114,8 @@ private struct PeekCard<Screen: View>: View {
                 }
                 .clipShape(.rect(cornerRadius: 6))
                 .padding(.horizontal, PeekLayout.previewInset)
-                .padding(.bottom, PeekLayout.cardBottomPadding)
+                .padding(.top, PeekLayout.previewInset)
+                .padding(.bottom, PeekLayout.previewInset)
             }
             .frame(width: size.width, height: size.height, alignment: .top)
             .background {
