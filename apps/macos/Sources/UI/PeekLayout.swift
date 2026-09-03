@@ -12,6 +12,8 @@ struct PeekLayout {
     static let tabMaxWidth: CGFloat = 200
     static let tabSpacing: CGFloat = 10
     static let tabTrailingInset: CGFloat = 12
+    /// The peek button sits between the traffic lights and the first tab.
+    static let peekButtonSize: CGFloat = 28
     static let previewAspect: CGFloat = 560.0 / 980.0
     static let stripPadding: CGFloat = 12
     /// Gap between the card edge and the preview inside it.
@@ -25,6 +27,8 @@ struct PeekLayout {
     static let gridGap: CGFloat = 20
     static let gridHeadingHeight: CGFloat = 44
     static let gridColumns = 2
+    /// The overview card on the left is a little narrower than a site card and spans two rows.
+    static let overviewCardWidthRatio: CGFloat = 0.85
 
     /// Progress above the strip that does not yet start the grid morph. A springy landing on
     /// the strip overshoots into this zone and reads as the strip stretching, not the grid
@@ -88,16 +92,30 @@ struct PeekLayout {
 
     // MARK: Tabs
 
+    var peekButtonFrame: CGRect {
+        CGRect(
+            x: chrome.tabsLeadingX,
+            y: chrome.buttonsCenterY - Self.peekButtonSize / 2,
+            width: Self.peekButtonSize,
+            height: Self.peekButtonSize
+        )
+    }
+
+    /// First x a tab may use: right of the peek button.
+    var tabsLeadingX: CGFloat {
+        peekButtonFrame.maxX + Self.tabSpacing
+    }
+
     var tabWidth: CGFloat {
         let count = CGFloat(max(tabCount, 1))
-        let available = size.width - chrome.tabsLeadingX - Self.tabTrailingInset - Self.tabSpacing * (count - 1)
+        let available = size.width - tabsLeadingX - Self.tabTrailingInset - Self.tabSpacing * (count - 1)
         return max(60, min(Self.tabMaxWidth, available / count))
     }
 
     /// Pills share the traffic lights' row, so the tab bar reads as the title bar.
     func tabFrame(_ index: Int) -> CGRect {
         CGRect(
-            x: chrome.tabsLeadingX + CGFloat(index) * (tabWidth + Self.tabSpacing),
+            x: tabsLeadingX + CGFloat(index) * (tabWidth + Self.tabSpacing),
             y: chrome.buttonsCenterY - tabPillHeight / 2,
             width: tabWidth,
             height: tabPillHeight
@@ -128,29 +146,42 @@ struct PeekLayout {
     }
 
     // MARK: Grid
+    //
+    // Tab 0 is the overview. In the grid it becomes a summary card on the left, two rows tall.
+    // The site tabs fill a two-column grid to its right, under the "Projects" heading.
+
+    var siteCount: Int { max(tabCount - 1, 0) }
 
     var gridRows: Int {
-        max(1, Int((Double(tabCount) / Double(Self.gridColumns)).rounded(.up)))
+        max(1, Int((Double(siteCount) / Double(Self.gridColumns)).rounded(.up)))
     }
+
+    /// Rows the block is sized for: the overview card needs at least two.
+    private var sizedRows: Int { max(gridRows, 2) }
 
     var gridCardSize: CGSize {
         let columns = CGFloat(Self.gridColumns)
-        let rows = CGFloat(gridRows)
-        let blockWidth = size.width * 0.62
+        let rows = CGFloat(sizedRows)
+        let blockWidth = size.width * 0.72
         let blockHeight = size.height * 0.7 - Self.gridHeadingHeight
-        let byWidth = (blockWidth - Self.gridGap * (columns - 1)) / columns
+        let byWidth = (blockWidth - Self.gridGap * columns) / (columns + Self.overviewCardWidthRatio)
         let rowHeight = (blockHeight - Self.gridGap * (rows - 1)) / rows
         let byHeight = cardWidth(forHeight: rowHeight)
         let width = max(120, min(byWidth, byHeight))
         return CGSize(width: width, height: cardHeight(forWidth: width))
     }
 
+    var overviewCardSize: CGSize {
+        let card = gridCardSize
+        return CGSize(width: card.width * Self.overviewCardWidthRatio, height: card.height * 2 + Self.gridGap)
+    }
+
     var gridBlockSize: CGSize {
         let card = gridCardSize
         let columns = CGFloat(Self.gridColumns)
-        let rows = CGFloat(gridRows)
+        let rows = CGFloat(sizedRows)
         return CGSize(
-            width: card.width * columns + Self.gridGap * (columns - 1),
+            width: overviewCardSize.width + Self.gridGap + card.width * columns + Self.gridGap * (columns - 1),
             height: Self.gridHeadingHeight + card.height * rows + Self.gridGap * (rows - 1)
         )
     }
@@ -160,17 +191,35 @@ struct PeekLayout {
         return CGPoint(x: (size.width - block.width) / 2, y: (size.height - block.height) / 2)
     }
 
+    /// Left edge of the site grid, right of the overview card.
+    private var siteGridMinX: CGFloat {
+        gridOrigin.x + overviewCardSize.width + Self.gridGap
+    }
+
+    /// The "Projects" heading sits over the site grid only.
     var gridHeadingFrame: CGRect {
-        CGRect(origin: gridOrigin, size: CGSize(width: gridBlockSize.width, height: Self.gridHeadingHeight))
+        let card = gridCardSize
+        let columns = CGFloat(Self.gridColumns)
+        return CGRect(
+            x: siteGridMinX,
+            y: gridOrigin.y,
+            width: card.width * columns + Self.gridGap * (columns - 1),
+            height: Self.gridHeadingHeight
+        )
     }
 
     func gridFrame(_ index: Int) -> CGRect {
+        let top = gridOrigin.y + Self.gridHeadingHeight
+        if index == 0 {
+            return CGRect(origin: CGPoint(x: gridOrigin.x, y: top), size: overviewCardSize)
+        }
         let card = gridCardSize
-        let column = CGFloat(index % Self.gridColumns)
-        let row = CGFloat(index / Self.gridColumns)
+        let slot = index - 1
+        let column = CGFloat(slot % Self.gridColumns)
+        let row = CGFloat(slot / Self.gridColumns)
         return CGRect(
-            x: gridOrigin.x + column * (card.width + Self.gridGap),
-            y: gridOrigin.y + Self.gridHeadingHeight + row * (card.height + Self.gridGap),
+            x: siteGridMinX + column * (card.width + Self.gridGap),
+            y: top + row * (card.height + Self.gridGap),
             width: card.width,
             height: card.height
         )

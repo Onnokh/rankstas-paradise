@@ -19,6 +19,7 @@ struct RootView: View {
         var committed = false
     }
     @State private var chrome = WindowChrome.fallback
+    @State private var isCommandHeld = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(model: OverviewModel = OverviewModel(), workspace: Workspace = Workspace()) {
@@ -78,15 +79,24 @@ struct RootView: View {
                     }
                     .offset(x: pane.minX, y: pane.minY + layout.contentOffset)
 
-                TabBar(layout: layout)
+                TabBar(layout: layout, onPeek: advancePeek)
 
                 // The tabs themselves. Always present: a closed peek is just pills.
-                PeekOverlay(layout: layout, workspace: workspace, model: model, onSelect: select)
+                PeekOverlay(
+                    layout: layout,
+                    workspace: workspace,
+                    model: model,
+                    showsShortcuts: isCommandHeld,
+                    onSelect: select
+                )
 
                 ThreeFingerDragRecognizer(handlers: gestureHandlers)
                     .frame(width: 0, height: 0)
 
                 WindowChromeReader { chrome = $0 }
+                    .frame(width: 0, height: 0)
+
+                CommandKeyMonitor { isCommandHeld = $0 }
                     .frame(width: 0, height: 0)
 
                 keyboardShortcuts

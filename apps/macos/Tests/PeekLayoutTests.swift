@@ -62,9 +62,28 @@ final class PeekLayoutTests: XCTestCase {
     func testTabPillsShareTheTrafficLightsRow() {
         let chrome = WindowChrome(tabsLeadingX: 90, buttonsCenterY: 16)
         let layout = PeekLayout(size: size, tabCount: 3, progress: PeekProgress.closed, chrome: chrome)
-        XCTAssertEqual(layout.tabFrame(0).minX, 90)
+        XCTAssertEqual(layout.peekButtonFrame.minX, 90)
+        XCTAssertEqual(layout.peekButtonFrame.midY, 16, accuracy: 0.001)
+        XCTAssertEqual(layout.tabFrame(0).minX, 90 + PeekLayout.peekButtonSize + PeekLayout.tabSpacing, accuracy: 0.001)
         XCTAssertEqual(layout.tabFrame(0).midY, 16, accuracy: 0.001)
-        XCTAssertEqual(layout.tabFrame(1).minX, 90 + layout.tabWidth + PeekLayout.tabSpacing, accuracy: 0.001)
+        XCTAssertEqual(layout.tabFrame(1).minX, layout.tabFrame(0).minX + layout.tabWidth + PeekLayout.tabSpacing, accuracy: 0.001)
+    }
+
+    func testGridPutsTheOverviewLeftSpanningTwoRowsAndSitesInTwoColumns() {
+        let layout = PeekLayout(size: size, tabCount: 5, progress: PeekProgress.grid)
+        let overview = layout.gridFrame(0)
+        let first = layout.gridFrame(1)
+        let second = layout.gridFrame(2)
+        let third = layout.gridFrame(3)
+
+        XCTAssertEqual(overview.height, first.height * 2 + PeekLayout.gridGap, accuracy: 0.001)
+        XCTAssertEqual(first.minX, overview.maxX + PeekLayout.gridGap, accuracy: 0.001)
+        XCTAssertEqual(first.minY, overview.minY, accuracy: 0.001)
+        XCTAssertEqual(second.minX, first.maxX + PeekLayout.gridGap, accuracy: 0.001)
+        XCTAssertEqual(third.minX, first.minX, accuracy: 0.001)
+        XCTAssertEqual(third.minY, first.maxY + PeekLayout.gridGap, accuracy: 0.001)
+        XCTAssertEqual(layout.gridHeadingFrame.minX, first.minX, accuracy: 0.001)
+        XCTAssertEqual(layout.gridHeadingFrame.maxY, first.minY, accuracy: 0.001)
     }
 
     func testOvershootPastTheStripStretchesItWithoutStartingTheMorph() {

@@ -8,6 +8,8 @@ struct PeekOverlay: View {
     let layout: PeekLayout
     let workspace: Workspace
     let model: OverviewModel
+    /// While Command is held, each card shows its ⌘-number shortcut.
+    let showsShortcuts: Bool
     let onSelect: (TabID) -> Void
 
     var body: some View {
@@ -23,14 +25,38 @@ struct PeekOverlay: View {
 
             ForEach(Array(workspace.tabs.enumerated()), id: \.element) { index, tab in
                 let frame = layout.cardFrame(index)
-                PeekCard(
-                    title: tab.title(in: model),
-                    isActive: tab == workspace.activeTabID,
-                    layout: layout,
-                    size: frame.size,
-                    action: { onSelect(tab) }
-                ) {
-                    TabScreen(tab: tab, workspace: workspace, model: model, actions: .none)
+                let isActive = tab == workspace.activeTabID
+                let shortcut = index < 9 ? "⌘\(index + 1)" : nil
+
+                Group {
+                    if tab == .overview {
+                        // The overview is a summary, laid out natively for the card's size.
+                        PeekCard(
+                            title: tab.title(in: model),
+                            shortcut: shortcut,
+                            showsShortcut: showsShortcuts,
+                            isActive: isActive,
+                            layout: layout,
+                            size: frame.size,
+                            scalesContent: false,
+                            action: { onSelect(tab) }
+                        ) {
+                            OverviewSummaryCard(model: model)
+                        }
+                    } else {
+                        PeekCard(
+                            title: tab.title(in: model),
+                            shortcut: shortcut,
+                            showsShortcut: showsShortcuts,
+                            isActive: isActive,
+                            layout: layout,
+                            size: frame.size,
+                            scalesContent: true,
+                            action: { onSelect(tab) }
+                        ) {
+                            TabScreen(tab: tab, workspace: workspace, model: model, actions: .none)
+                        }
+                    }
                 }
                 .frame(width: frame.width, height: frame.height)
                 .position(x: frame.midX, y: frame.midY)
@@ -44,9 +70,14 @@ struct PeekOverlay: View {
 
 private struct PeekCard<Screen: View>: View {
     let title: String
+    let shortcut: String?
+    let showsShortcut: Bool
     let isActive: Bool
     let layout: PeekLayout
     let size: CGSize
+    /// Scaled screens render at a fixed logical size and shrink; native content lays itself
+    /// out for the area the card offers.
+    let scalesContent: Bool
     let action: () -> Void
     @ViewBuilder let screen: () -> Screen
 
@@ -54,21 +85,31 @@ private struct PeekCard<Screen: View>: View {
 
     private var reveal: CGFloat { layout.reveal }
     private var previewWidth: CGFloat { size.width - PeekLayout.previewInset * 2 }
+    private var previewHeight: CGFloat {
+        max(size.height - layout.cardHeaderHeight - PeekLayout.previewInset - PeekLayout.cardBottomPadding, 0)
+    }
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 0) {
                 // Identical to the tab pill, so the card starts out looking like the tab.
-                TabPillLabel(title: title)
+                TabPillLabel(title: title, shortcut: shortcut, showsShortcut: showsShortcut)
                     .frame(width: size.width, height: layout.cardHeaderHeight)
 
                 // Always mounted, hidden by the card's clip while closed. Mounting it on the
                 // first drag sample made every preview fill in over a few frames, which read
                 // as a flash across the whole bar.
-                ScreenPreview(width: previewWidth, height: previewWidth * PeekLayout.previewAspect, screen: screen)
-                    .clipShape(.rect(cornerRadius: 6))
-                    .padding(.horizontal, PeekLayout.previewInset)
-                    .padding(.bottom, PeekLayout.cardBottomPadding)
+                Group {
+                    if scalesContent {
+                        ScreenPreview(width: previewWidth, height: previewHeight, screen: screen)
+                    } else {
+                        screen()
+                            .frame(width: previewWidth, height: previewHeight)
+                    }
+                }
+                .clipShape(.rect(cornerRadius: 6))
+                .padding(.horizontal, PeekLayout.previewInset)
+                .padding(.bottom, PeekLayout.cardBottomPadding)
             }
             .frame(width: size.width, height: size.height, alignment: .top)
             .background {
