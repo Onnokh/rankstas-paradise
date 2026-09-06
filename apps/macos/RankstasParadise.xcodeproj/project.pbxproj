@@ -41,6 +41,7 @@
 		F9BE1413FD53E51A943A6613 /* TabID.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31326E990B111E0658AB101D /* TabID.swift */; };
 		FCF8BB7FA387F8E6EF75DE9C /* RankstasParadiseApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99CF10FA929DAD1D5987DD20 /* RankstasParadiseApp.swift */; };
 		FF96390E0022FC4C9BF4725D /* WorkspaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB82AF93569E40E4297CF5AC /* WorkspaceTests.swift */; };
+		A55E75C0A11C0A11C0A11C02 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A55E75C0A11C0A11C0A11C01 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -87,16 +88,17 @@
 		D47884F5C76365B32D976D91 /* RemoteTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTarget.swift; sourceTree = "<group>"; };
 		D8E17C8B77CA1B192AFF6678 /* RankstasParadiseTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RankstasParadiseTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DB82AF93569E40E4297CF5AC /* WorkspaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceTests.swift; sourceTree = "<group>"; };
-		E1CA89C89C02C407A80DF8C6 /* RankstasParadise.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RankstasParadise.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E1CA89C89C02C407A80DF8C6 /* Ranksta's Paradise.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Ranksta's Paradise.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		FDBE29CE70B5A9DA353D559F /* OverviewScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewScreen.swift; sourceTree = "<group>"; };
 		FF8132411C3FF78734ECE39C /* DashboardStatsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardStatsTests.swift; sourceTree = "<group>"; };
+		A55E75C0A11C0A11C0A11C01 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
 		2866C33CC1E51FC2ABD7E8C7 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				E1CA89C89C02C407A80DF8C6 /* RankstasParadise.app */,
+				E1CA89C89C02C407A80DF8C6 /* Ranksta's Paradise.app */,
 				D8E17C8B77CA1B192AFF6678 /* RankstasParadiseTests.xctest */,
 			);
 			name = Products;
@@ -182,6 +184,7 @@
 			isa = PBXGroup;
 			children = (
 				BD2F4E02EC37A362F54224D7 /* App */,
+				A55E75C0A11C0A11C0A11C01 /* Assets.xcassets */,
 				E1C6F9B59AED3EC3BC42E4C8 /* Gesture */,
 				657CB13A9B9527ADE17E22AC /* Model */,
 				AAFDB717B48AE836DD8654CD /* UI */,
@@ -233,6 +236,7 @@
 			buildConfigurationList = 8F2DC3395978E3BEC2BD32C0 /* Build configuration list for PBXNativeTarget "RankstasParadise" */;
 			buildPhases = (
 				B1B4648EED50FD65733F6AB7 /* Sources */,
+				A55E75C0A11C0A11C0A11C03 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -242,7 +246,7 @@
 			packageProductDependencies = (
 			);
 			productName = RankstasParadise;
-			productReference = E1CA89C89C02C407A80DF8C6 /* RankstasParadise.app */;
+			productReference = E1CA89C89C02C407A80DF8C6 /* Ranksta's Paradise.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -275,6 +279,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A55E75C0A11C0A11C0A11C03 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A55E75C0A11C0A11C0A11C02 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		7379B7791869CD78886BF643 /* Sources */ = {
@@ -470,7 +485,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.rankstasparadise.mac.tests;
 				SDKROOT = macosx;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RankstasParadise.app/Contents/MacOS/RankstasParadise";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Ranksta's Paradise.app/Contents/MacOS/Ranksta's Paradise";
 			};
 			name = Debug;
 		};
@@ -487,7 +502,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.rankstasparadise.mac.tests;
 				SDKROOT = macosx;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RankstasParadise.app/Contents/MacOS/RankstasParadise";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Ranksta's Paradise.app/Contents/MacOS/Ranksta's Paradise";
 			};
 			name = Release;
 		};
@@ -505,6 +520,8 @@
 				);
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.rankstasparadise.mac;
+				PRODUCT_MODULE_NAME = RankstasParadise;
+				PRODUCT_NAME = "Ranksta's Paradise";
 				SDKROOT = macosx;
 			};
 			name = Release;
@@ -523,6 +540,8 @@
 				);
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.rankstasparadise.mac;
+				PRODUCT_MODULE_NAME = RankstasParadise;
+				PRODUCT_NAME = "Ranksta's Paradise";
 				SDKROOT = macosx;
 			};
 			name = Debug;

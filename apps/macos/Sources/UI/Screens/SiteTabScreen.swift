@@ -632,62 +632,56 @@ private struct TrendChart: View {
     /// as separate series so they are drawn on their own, without adding legend entries.
     @ChartContentBuilder
     private func series(_ run: [HistoryReportDay], suffix: String, opacity: Double) -> some ChartContent {
-        ForEach(run) { day in
+        ForEach(run) { point in
             AreaMark(
-                x: .value("Date", day.day),
-                y: .value("Impressions", day.impressions),
+                x: .value("Date", point.day),
+                y: .value("Impressions", point.impressions),
                 series: .value("Series", "Impressions" + suffix),
                 stacking: .unstacked
             )
-            .interpolationMethod(.catmullRom)
             .foregroundStyle(Self.gradient(Self.impressionsColor).opacity(opacity))
 
             // The finalised lines carry the by-series style, which is what feeds the legend.
             if suffix.isEmpty {
                 LineMark(
-                    x: .value("Date", day.day),
-                    y: .value("Impressions", day.impressions),
+                    x: .value("Date", point.day),
+                    y: .value("Impressions", point.impressions),
                     series: .value("Series", "Impressions")
                 )
-                .interpolationMethod(.catmullRom)
                 .foregroundStyle(by: .value("Series", "Impressions"))
                 .lineStyle(StrokeStyle(lineWidth: 1.5, lineJoin: .round))
             } else {
                 LineMark(
-                    x: .value("Date", day.day),
-                    y: .value("Impressions", day.impressions),
+                    x: .value("Date", point.day),
+                    y: .value("Impressions", point.impressions),
                     series: .value("Series", "Impressions" + suffix)
                 )
-                .interpolationMethod(.catmullRom)
                 .foregroundStyle(Self.impressionsColor.opacity(opacity))
                 .lineStyle(StrokeStyle(lineWidth: 1.5, lineJoin: .round))
             }
 
             AreaMark(
-                x: .value("Date", day.day),
-                y: .value("Clicks", day.clicks),
+                x: .value("Date", point.day),
+                y: .value("Clicks", point.clicks),
                 series: .value("Series", "Clicks" + suffix),
                 stacking: .unstacked
             )
-            .interpolationMethod(.catmullRom)
             .foregroundStyle(Self.gradient(Self.clicksColor).opacity(opacity))
 
             if suffix.isEmpty {
                 LineMark(
-                    x: .value("Date", day.day),
-                    y: .value("Clicks", day.clicks),
+                    x: .value("Date", point.day),
+                    y: .value("Clicks", point.clicks),
                     series: .value("Series", "Clicks")
                 )
-                .interpolationMethod(.catmullRom)
                 .foregroundStyle(by: .value("Series", "Clicks"))
                 .lineStyle(StrokeStyle(lineWidth: 1.5, lineJoin: .round))
             } else {
                 LineMark(
-                    x: .value("Date", day.day),
-                    y: .value("Clicks", day.clicks),
+                    x: .value("Date", point.day),
+                    y: .value("Clicks", point.clicks),
                     series: .value("Series", "Clicks" + suffix)
                 )
-                .interpolationMethod(.catmullRom)
                 .foregroundStyle(Self.clicksColor.opacity(opacity))
                 .lineStyle(StrokeStyle(lineWidth: 1.5, lineJoin: .round))
             }
