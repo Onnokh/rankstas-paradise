@@ -10,6 +10,8 @@ enum TabID: Hashable, Sendable {
 /// A sub-screen inside a site tab.
 enum SiteScreen: Hashable, Sendable {
     case opportunities
+    case registry
+    case log
 }
 
 /// Per-site UI state that outlives the tab's view.
@@ -21,6 +23,8 @@ enum SiteScreen: Hashable, Sendable {
 final class SiteTabState {
     let siteID: Site.ID
     var path: [SiteScreen] = []
+    /// The span the metric cards and chart cover.
+    var period: Period = .d28
 
     init(siteID: Site.ID) {
         self.siteID = siteID

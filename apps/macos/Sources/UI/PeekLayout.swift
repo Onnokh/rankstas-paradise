@@ -16,8 +16,8 @@ struct PeekLayout {
     static let peekButtonSize: CGFloat = 28
     static let previewAspect: CGFloat = 560.0 / 980.0
     static let stripPadding: CGFloat = 12
-    /// Gap between the card edge and the preview inside it: the same above, beside and below.
-    static let previewInset: CGFloat = 10
+    /// The favicon in a tab pill.
+    static let tabIconSize: CGFloat = 16
     /// Gap between the window edge and the content pane.
     static let contentInset: CGFloat = 12
     static let contentCornerRadius: CGFloat = 12
@@ -56,12 +56,21 @@ struct PeekLayout {
         tabPillHeight
     }
 
+    /// The one gap a card is built from: the favicon's distance from the pill's top and
+    /// bottom, which the pill's height fixes. The favicon's leading inset, the preview's
+    /// side and bottom insets, and the gap from the favicon down to the preview all use it,
+    /// so the icon reads as equally far from every edge around it. The preview has no top
+    /// inset of its own: the header's bottom half of this gap is that space.
+    var cardInset: CGFloat {
+        max((tabPillHeight - Self.tabIconSize) / 2, 0)
+    }
+
     func cardHeight(forWidth width: CGFloat) -> CGFloat {
-        cardHeaderHeight + Self.previewInset * 2 + (width - Self.previewInset * 2) * Self.previewAspect
+        cardHeaderHeight + (width - cardInset * 2) * Self.previewAspect + cardInset
     }
 
     func cardWidth(forHeight height: CGFloat) -> CGFloat {
-        (height - cardHeaderHeight - Self.previewInset * 2) / Self.previewAspect + Self.previewInset * 2
+        (height - cardHeaderHeight - cardInset) / Self.previewAspect + cardInset * 2
     }
 
     /// The content pane: inset from the window on the sides and bottom, below the tab bar.

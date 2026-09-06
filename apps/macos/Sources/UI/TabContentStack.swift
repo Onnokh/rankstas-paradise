@@ -7,6 +7,9 @@ import SwiftUI
 struct TabContentStack: View {
     let workspace: Workspace
     let model: OverviewModel
+    let history: HistoryStore
+    let rankings: RankingStore
+    let favicons: FaviconStore
     let actions: TabActions
     let height: CGFloat
 
@@ -15,9 +18,9 @@ struct TabContentStack: View {
             ForEach(workspace.mountedTabIDs, id: \.self) { tab in
                 let isActive = tab == workspace.activeTabID
 
-                TabScreen(tab: tab, workspace: workspace, model: model, actions: actions)
+                TabScreen(tab: tab, workspace: workspace, model: model, history: history, rankings: rankings, favicons: favicons, actions: actions)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .background(Color(nsColor: .windowBackgroundColor))
+                    .background(Palette.panel)
                     .allowsHitTesting(isActive)
                     .accessibilityHidden(!isActive)
                     .geometryGroup()

@@ -11,6 +11,8 @@ struct RootView: View {
     @State private var model: OverviewModel
     @State private var workspace: Workspace
     @State private var favicons = FaviconStore()
+    @State private var history = HistoryStore()
+    @State private var rankings = RankingStore()
     @State private var drag: DragSession?
 
     /// One live three-finger gesture.
@@ -64,9 +66,17 @@ struct RootView: View {
             let pane = layout.contentFrame
 
             ZStack(alignment: .topLeading) {
-                Color(nsColor: .underPageBackgroundColor)
+                Palette.void
 
-                TabContentStack(workspace: workspace, model: model, actions: actions, height: pane.height)
+                TabContentStack(
+                    workspace: workspace,
+                    model: model,
+                    history: history,
+                    rankings: rankings,
+                    favicons: favicons,
+                    actions: actions,
+                    height: pane.height
+                )
                     .frame(width: pane.width, height: pane.height)
                     .allowsHitTesting(!workspace.isPeeking)
                     .overlay {
@@ -87,6 +97,8 @@ struct RootView: View {
                     layout: layout,
                     workspace: workspace,
                     model: model,
+                    history: history,
+                    rankings: rankings,
                     favicons: favicons,
                     showsShortcuts: isCommandHeld,
                     onSelect: select

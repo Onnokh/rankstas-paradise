@@ -61,7 +61,7 @@ struct OverviewScreen: View {
                     Text("Double-click a site to open it")
                     if let errorMessage = model.errorMessage {
                         Text(errorMessage)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Palette.coral)
                     }
                 }
                 .font(.callout)
@@ -84,7 +84,7 @@ private struct SiteTable: View {
                     Text(overview.site.name)
                     Text(overview.errorMessage ?? overview.site.origin)
                         .font(.caption)
-                        .foregroundStyle(overview.errorMessage == nil ? Color.secondary : Color.red)
+                        .foregroundStyle(overview.errorMessage == nil ? Color.secondary : Palette.coral)
                         .lineLimit(1)
                         .help(overview.errorMessage ?? overview.site.origin)
                 }
@@ -184,7 +184,7 @@ private struct SiteTableLookalike: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5), in: .rect(cornerRadius: 6))
+        .cardSurface(cornerRadius: 6)
     }
 }
 

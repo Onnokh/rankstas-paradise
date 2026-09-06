@@ -24,7 +24,7 @@ struct OverviewSummaryCard: View {
                 .frame(width: logical.width, height: logical.height, alignment: .topLeading)
                 .scaleEffect(unit, anchor: .topLeading)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Palette.panel)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

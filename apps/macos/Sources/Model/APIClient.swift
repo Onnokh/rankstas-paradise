@@ -18,6 +18,31 @@ struct APIClient: Sendable {
         try await get(path: "/api/dashboard", query: [URLQueryItem(name: "site", value: siteID)])
     }
 
+    func history(siteID: String, limit: Int) async throws -> HistoryReport {
+        try await get(
+            path: "/api/history",
+            query: [URLQueryItem(name: "site", value: siteID), URLQueryItem(name: "limit", value: String(limit))]
+        )
+    }
+
+    /// The strongest search terms over `windowDays`, brand terms included: the card ranks
+    /// what brings clicks, and for a small site that is often the brand.
+    func queries(siteID: String, windowDays: Int, limit: Int) async throws -> QueriesReport {
+        try await get(
+            path: "/api/queries",
+            query: [
+                URLQueryItem(name: "site", value: siteID),
+                URLQueryItem(name: "window", value: String(windowDays)),
+                URLQueryItem(name: "include-brand", value: "true"),
+                URLQueryItem(name: "limit", value: String(limit)),
+            ]
+        )
+    }
+
+    func registry(siteID: String) async throws -> RegistryListReport {
+        try await get(path: "/api/registry", query: [URLQueryItem(name: "site", value: siteID)])
+    }
+
     private func get<Response: Decodable & Sendable>(
         path: String,
         query: [URLQueryItem] = []

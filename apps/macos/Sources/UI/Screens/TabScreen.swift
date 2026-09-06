@@ -28,6 +28,9 @@ struct TabScreen: View {
     let tab: TabID
     let workspace: Workspace
     let model: OverviewModel
+    let history: HistoryStore
+    let rankings: RankingStore
+    let favicons: FaviconStore
     let actions: TabActions
 
     var body: some View {
@@ -43,6 +46,9 @@ struct TabScreen: View {
                 SiteTabScreen(
                     overview: overview,
                     state: workspace.state(for: siteID),
+                    history: history,
+                    rankings: rankings,
+                    icon: favicons.image(for: siteID),
                     isRefreshing: model.isRefreshing,
                     onRefresh: { Task { await model.refresh() } }
                 )

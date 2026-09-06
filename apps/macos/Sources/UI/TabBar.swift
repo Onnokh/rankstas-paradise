@@ -9,7 +9,7 @@ struct TabBar: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Color(nsColor: .underPageBackgroundColor)
+            Palette.void
                 .modifier(WindowDragArea())
 
             let button = layout.peekButtonFrame
@@ -54,9 +54,15 @@ struct TabPillLabel: View {
     let title: String
     /// The site's favicon; falls back to a globe.
     var icon: Image? = nil
-    /// Shown at the trailing edge while Command is held, e.g. "⌘2".
-    var shortcut: String? = nil
+    /// The tab's ⌘-number, shown at the trailing edge while Command is held.
+    var shortcut: Int? = nil
     var showsShortcut = false
+    /// Carries the guide's acid headband, the way its nav marks the active row.
+    var isActive = false
+    let height: CGFloat
+    /// The favicon's distance from the pill's leading edge, and the cap's from the trailing
+    /// one: `PeekLayout.cardInset`, so a card's header lines up with the preview below it.
+    let inset: CGFloat
 
     var body: some View {
         HStack(spacing: 8) {
@@ -66,32 +72,47 @@ struct TabPillLabel: View {
                         .resizable()
                         .interpolation(.high)
                         .scaledToFit()
-                        .clipShape(.rect(cornerRadius: 3))
+                        // Concentric with the pill's corner: the icon sits close enough to it
+                        // now that a mismatched radius would show.
+                        .clipShape(.rect(cornerRadius: max(PeekLayout.cardCornerRadius - inset, 3)))
                 } else {
                     Image(systemName: "globe")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(width: 16, height: 16)
+            .frame(width: PeekLayout.tabIconSize, height: PeekLayout.tabIconSize)
             Text(title)
                 .font(.callout)
                 .lineLimit(1)
             Spacer(minLength: 0)
-            if let shortcut {
-                // A key cap: legible at pill size, quiet enough not to compete with the title.
-                Text(shortcut)
-                    .font(.footnote.weight(.medium))
-                    .monospacedDigit()
-                    .foregroundStyle(.primary.opacity(0.8))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1.5)
-                    .background(.primary.opacity(0.1), in: .rect(cornerRadius: 4))
-                    .opacity(showsShortcut ? 1 : 0)
-                    .animation(.easeOut(duration: 0.12), value: showsShortcut)
+
+            HeadbandMarker(isActive: isActive)
+
+            if let shortcut, showsShortcut {
+                // A key cap. The symbol image aligns to cap height, unlike the "⌘" glyph,
+                // so the pair sits centred in its box. It claims its width only while
+                // Command is held, which is what nudges the band along beside it.
+                HStack(spacing: 1) {
+                    Image(systemName: "command")
+                    Text(String(shortcut))
+                        .monospacedDigit()
+                }
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.primary.opacity(0.8))
+                .padding(.horizontal, 5)
+                .frame(height: 18)
+                .background(.primary.opacity(0.1), in: .rect(cornerRadius: 4))
+                .transition(.opacity.combined(with: .move(edge: .trailing)))
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, inset)
+        .frame(height: height)
+        // Both on the label rather than on the band or the cap: each one's width is what
+        // moves its neighbours, so they only glide if the whole row's layout is inside the
+        // same animation.
+        .animation(.snappy(duration: 0.24), value: isActive)
+        .animation(.snappy(duration: 0.18), value: showsShortcut)
     }
 }
 

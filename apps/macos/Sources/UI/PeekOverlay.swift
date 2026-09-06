@@ -8,6 +8,8 @@ struct PeekOverlay: View {
     let layout: PeekLayout
     let workspace: Workspace
     let model: OverviewModel
+    let history: HistoryStore
+    let rankings: RankingStore
     let favicons: FaviconStore
     /// While Command is held, each card shows its ⌘-number shortcut.
     let showsShortcuts: Bool
@@ -27,7 +29,7 @@ struct PeekOverlay: View {
             ForEach(Array(workspace.tabs.enumerated()), id: \.element) { index, tab in
                 let frame = layout.cardFrame(index)
                 let isActive = tab == workspace.activeTabID
-                let shortcut = index < 9 ? "⌘\(index + 1)" : nil
+                let shortcut: Int? = index < 9 ? index + 1 : nil
                 let icon: Image? = if case .site(let siteID) = tab { favicons.image(for: siteID) } else { nil }
 
                 Group {
@@ -58,7 +60,7 @@ struct PeekOverlay: View {
                             scalesContent: true,
                             action: { onSelect(tab) }
                         ) {
-                            TabScreen(tab: tab, workspace: workspace, model: model, actions: .none)
+                            TabScreen(tab: tab, workspace: workspace, model: model, history: history, rankings: rankings, favicons: favicons, actions: .none)
                         }
                     }
                 }
@@ -75,7 +77,7 @@ struct PeekOverlay: View {
 private struct PeekCard<Screen: View>: View {
     let title: String
     let icon: Image?
-    let shortcut: String?
+    let shortcut: Int?
     let showsShortcut: Bool
     let isActive: Bool
     let layout: PeekLayout
@@ -89,17 +91,25 @@ private struct PeekCard<Screen: View>: View {
     @State private var isHovering = false
 
     private var reveal: CGFloat { layout.reveal }
-    private var previewWidth: CGFloat { size.width - PeekLayout.previewInset * 2 }
+    private var previewWidth: CGFloat { size.width - layout.cardInset * 2 }
     private var previewHeight: CGFloat {
-        max(size.height - layout.cardHeaderHeight - PeekLayout.previewInset * 2, 0)
+        max(size.height - layout.cardHeaderHeight - layout.cardInset, 0)
     }
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 0) {
                 // Identical to the tab pill, so the card starts out looking like the tab.
-                TabPillLabel(title: title, icon: icon, shortcut: shortcut, showsShortcut: showsShortcut)
-                    .frame(width: size.width, height: layout.cardHeaderHeight)
+                TabPillLabel(
+                    title: title,
+                    icon: icon,
+                    shortcut: shortcut,
+                    showsShortcut: showsShortcut,
+                    isActive: isActive,
+                    height: layout.cardHeaderHeight,
+                    inset: layout.cardInset
+                )
+                .frame(width: size.width)
 
                 // Always mounted, hidden by the card's clip while closed. Mounting it on the
                 // first drag sample made every preview fill in over a few frames, which read
@@ -113,17 +123,19 @@ private struct PeekCard<Screen: View>: View {
                     }
                 }
                 .clipShape(.rect(cornerRadius: 6))
-                .padding(.horizontal, PeekLayout.previewInset)
-                .padding(.top, PeekLayout.previewInset)
-                .padding(.bottom, PeekLayout.previewInset)
+                .padding(.horizontal, layout.cardInset)
+                .padding(.bottom, layout.cardInset)
             }
             .frame(width: size.width, height: size.height, alignment: .top)
+            // Children follow the animating card frame instead of animating on their own,
+            // so the title and preview never trail the card.
+            .geometryGroup()
             .background {
                 // The shadow sits on the shape, not the card's contents: a content shadow is
                 // re-rasterised on every frame the card changes size.
                 ZStack {
                     RoundedRectangle(cornerRadius: PeekLayout.cardCornerRadius)
-                        .fill(Color(nsColor: .underPageBackgroundColor))
+                        .fill(Palette.raised)
                         .shadow(color: .black.opacity(0.28 * Double(min(reveal, 1))), radius: 10, y: 5)
                     RoundedRectangle(cornerRadius: PeekLayout.cardCornerRadius)
                         .fill(.primary.opacity(fillOpacity))
@@ -164,7 +176,7 @@ private struct ScreenPreview<Screen: View>: View {
         screen()
             .environment(\.isTabPreview, true)
             .frame(width: render.width, height: render.height, alignment: .top)
-            .background(Color(nsColor: .windowBackgroundColor))
+            .background(Palette.panel)
             .scaleEffect(scale, anchor: .topLeading)
             .frame(width: width, height: max(height, 0), alignment: .topLeading)
             .clipped()
