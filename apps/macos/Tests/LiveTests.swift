@@ -10,7 +10,8 @@ final class LiveTests: XCTestCase {
         let report = try decode("""
         {"generatedAt":"2026-09-07T19:51:20.381Z","mode":"live",
          "analytics":{"provider":"rybbit","siteId":"11ce3965208b","ready":true,"reason":null},
-         "live":{"visitors":20,"windowMinutes":30,"series":[0,1,0,2],"fetchedAt":"2026-09-07T19:51:20.381Z"}}
+         "live":{"visitors":20,"windowMinutes":30,"online":3,"onlineWindowMinutes":5,
+                 "series":[0,1,0,2],"fetchedAt":"2026-09-07T19:51:20.381Z"}}
         """, as: LiveReport.self)
 
         XCTAssertEqual(report.analytics?.provider, "rybbit")
@@ -18,6 +19,9 @@ final class LiveTests: XCTestCase {
         XCTAssertEqual(report.live?.visitors, 20)
         XCTAssertEqual(report.live?.windowMinutes, 30)
         XCTAssertEqual(report.live?.series, [0, 1, 0, 2])
+        // The header shows the tight count, and says which window it is.
+        XCTAssertEqual(report.live?.onlineNow, 3)
+        XCTAssertEqual(report.live?.onlineMinutes, 5)
     }
 
     func testASiteWithoutAnalyticsDecodesToNulls() throws {
@@ -37,6 +41,9 @@ final class LiveTests: XCTestCase {
 
         XCTAssertEqual(report.live?.visitors, 2)
         XCTAssertNil(report.live?.series)
+        // Without an online count the whole window stands in, and is labelled as such.
+        XCTAssertEqual(report.live?.onlineNow, 2)
+        XCTAssertEqual(report.live?.onlineMinutes, 5)
         // The card still draws its bars, all empty, over the window it was told.
         XCTAssertEqual(report.live?.bars.count, 5)
         XCTAssertEqual(report.live?.bars.reduce(0, +), 0)

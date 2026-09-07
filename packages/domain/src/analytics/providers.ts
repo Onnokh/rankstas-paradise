@@ -24,19 +24,22 @@ export interface Provider {
   readonly fetchVisits: (
     dates: ReadonlyArray<string>,
   ) => Effect.Effect<VisitsDays, AnalyticsError>
-  // Distinct visitors active in the last `windowMinutes`, and how many were
-  // seen in each of those minutes (oldest first, one entry per minute, zeros
-  // for quiet ones). Every vendor in scope answers both — Rybbit's
-  // live-user-count and minute-bucketed time-series, Umami's active and
-  // minute-unit pageviews, GA4's realtime report by minutesAgo — so this is
-  // part of the contract rather than an optional extra.
+  // Distinct visitors active in the last `windowMinutes`, how many were seen
+  // in each of those minutes (oldest first, one entry per minute, zeros for
+  // quiet ones), and the distinct visitors of the last `onlineMinutes` — the
+  // ones on the site right now. Every vendor in scope answers all three —
+  // Rybbit's live-user-count and minute-bucketed time-series, Umami's active
+  // and minute-unit pageviews, GA4's realtime report by minutesAgo — so this
+  // is part of the contract rather than an optional extra.
   readonly liveVisitors: (
     windowMinutes: number,
+    onlineMinutes: number,
   ) => Effect.Effect<LiveSample, AnalyticsError>
 }
 
 export interface LiveSample {
   readonly visitors: number
+  readonly online: number
   readonly perMinute: ReadonlyArray<number>
 }
 

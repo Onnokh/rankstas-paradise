@@ -96,9 +96,18 @@ struct LiveVisitors: Codable, Sendable, Equatable {
     /// Distinct people seen in the last `windowMinutes`.
     let visitors: Double
     let windowMinutes: Int
+    /// Distinct people seen in the last `onlineWindowMinutes`: the ones on the site right
+    /// now. Optional: an older server only knows the whole window.
+    var online: Double? = nil
+    var onlineWindowMinutes: Int? = nil
     /// People seen per minute of the window, oldest first. Optional: an older server omits it.
     var series: [Double]? = nil
     let fetchedAt: String
+
+    /// The figure to call "online". The tight count when the server sends one, otherwise the
+    /// whole window rather than nothing, with `onlineMinutes` saying which it was.
+    var onlineNow: Double { online ?? visitors }
+    var onlineMinutes: Int { online == nil ? windowMinutes : (onlineWindowMinutes ?? windowMinutes) }
 
     /// One bar per minute of the window, oldest first: the series trimmed to its newest
     /// `windowMinutes` entries or padded with leading zeros, so the card always draws a full row.

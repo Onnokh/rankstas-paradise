@@ -115,7 +115,10 @@ One distinct person on one day, as the analytics provider counts it. Does not su
 A named custom action the site reports to its analytics provider (`purchase`, `download_shader`), counted per day. Observed, like a Query. Not an Action — an Action is a change *we* made to a page; an Event is something a *visitor* did.
 
 **Live visitors**:
-The distinct people active on the site in the last five minutes, as the analytics provider counts them. Asked on demand and shown at most thirty seconds old; never stored, never on the dashboard.
+The distinct people active on the site in the last thirty minutes, as the analytics provider counts them, with one count per minute of that window. Asked on demand and shown at most thirty seconds old; never stored, never on the dashboard.
+
+**Online**:
+The distinct people active on the site in the last five minutes: the ones there right now. The figure beside a site's name. The five minutes are what Rybbit and Umami call online; Live visitors is the wider window the realtime bars cover.
 
 **Traffic**:
 Loosely, both. When a number is meant, say which: clicks (Search Console) or visits (analytics).

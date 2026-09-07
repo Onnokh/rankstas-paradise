@@ -27,6 +27,7 @@ import {
   emptyVisitsDays,
   type LiveVisitors,
   liveWindowMinutes,
+  onlineWindowMinutes,
   type VisitsDays,
 } from "./schema.ts"
 
@@ -99,10 +100,12 @@ const ready = (source: AnalyticsSource, provider: Provider) =>
       capacity: 1,
       timeToLive: liveCacheTtl,
       lookup: () =>
-        provider.liveVisitors(liveWindowMinutes).pipe(
+        provider.liveVisitors(liveWindowMinutes, onlineWindowMinutes).pipe(
           Effect.map((sample) => ({
             visitors: sample.visitors,
             windowMinutes: liveWindowMinutes,
+            online: sample.online,
+            onlineWindowMinutes,
             series: normaliseSeries(sample.perMinute, liveWindowMinutes),
             fetchedAt: new Date().toISOString(),
           })),

@@ -351,6 +351,8 @@ beforeAll(async () => {
       Effect.succeed({
         visitors: 4,
         windowMinutes: 30,
+        online: 1,
+        onlineWindowMinutes: 5,
         series: Array<number>(30).fill(0),
         fetchedAt: "2026-07-12T12:00:00.000Z",
       }),

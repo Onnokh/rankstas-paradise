@@ -287,7 +287,8 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     {
       description:
         "Visitors active on the site in the last 30 minutes, from its analytics " +
-        "provider, with live.series: one count per minute, oldest first. The one " +
+        "provider, with live.online (the last 5 minutes: the people on the site " +
+        "right now) and live.series: one count per minute, oldest first. The one " +
         "read that asks the provider (answers are memoised for 30 seconds). live is " +
         "null when the site has no provider; analytics.ready false with a reason " +
         "means the provider is configured but cannot be read.",
