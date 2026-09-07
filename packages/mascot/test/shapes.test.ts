@@ -59,12 +59,12 @@ describe("the shared form", () => {
   /** One M, then one cubic per point. Anything else cannot blend. */
   const SHARED = `M1${"C3".repeat(POINTS)}`;
 
-  for (const [name, spline] of Object.entries(SHAPES)) {
-    test(`the ${name} splines to the shared form`, () => {
-      expect(spline.length).toBe(POINTS + 1);
-      expect(signature(spline)).toBe(SHARED);
-    });
-  }
+  test("every shape splines to the shared form", () => {
+    for (const [name, spline] of Object.entries(SHAPES)) {
+      expect(spline.length, name).toBe(POINTS + 1);
+      expect(signature(spline), name).toBe(SHARED);
+    }
+  });
 
   test("every shape carries the same command list as every other", () => {
     const names = Object.keys(SHAPES);
@@ -126,15 +126,16 @@ describe("ghostSpline", () => {
      */
     const HOLD = 0.5;
 
-    for (const sweep of [0.2, -0.35, 0.6, Math.PI / 4, 1]) {
-      test(`a sweep of ${sweep.toFixed(2)} keeps the sides and the width`, () => {
+    test("every sweep keeps the sides and the width", () => {
+      for (const sweep of [0.2, -0.35, 0.6, Math.PI / 4, 1]) {
+        const where = `a sweep of ${sweep.toFixed(2)}`;
         const turned = boxOf(flatten(ghostSpline(sweep), 16));
 
-        expect(Math.abs(turned.minX - rest.minX)).toBeLessThan(HOLD);
-        expect(Math.abs(turned.maxX - rest.maxX)).toBeLessThan(HOLD);
-        expect(Math.abs(turned.maxX - turned.minX - (rest.maxX - rest.minX))).toBeLessThan(HOLD);
-      });
-    }
+        expect(Math.abs(turned.minX - rest.minX), where).toBeLessThan(HOLD);
+        expect(Math.abs(turned.maxX - rest.maxX), where).toBeLessThan(HOLD);
+        expect(Math.abs(turned.maxX - turned.minX - (rest.maxX - rest.minX)), where).toBeLessThan(HOLD);
+      }
+    });
 
     test("the sides sit on the dome radius, whatever the hem is doing", () => {
       for (const sweep of [0, 0.5, -0.5]) {

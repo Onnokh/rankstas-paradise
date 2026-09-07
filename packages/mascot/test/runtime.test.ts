@@ -197,11 +197,12 @@ describe("a mascot built straight into a state shows that state", () => {
   // mascot built while motion was suppressed drew the state it was leaving:
   // `error` with the acid band of `idle`, which is the one state that says
   // something in colour.
-  for (const suppressed of [false, true]) {
-    const motion = suppressed ? "with motion suppressed" : "with motion allowed";
+  test("every state draws its own silhouette, face, and band", () => {
+    for (const suppressed of [false, true]) {
+      const motion = suppressed ? "with motion suppressed" : "with motion allowed";
 
-    for (const state of STATES) {
-      test(`${state} ${motion} draws its own silhouette, face, and band`, () => {
+      for (const state of STATES) {
+        const where = `${state} ${motion}`;
         const dom = fresh();
         const mascot = mascotIn(dom, { state, reducedMotion: suppressed });
         // The band tint is a 130 ms spring, so with motion allowed the colour
@@ -209,17 +210,19 @@ describe("a mascot built straight into a state shows that state", () => {
         if (!suppressed) dom.advance(300);
 
         const shape = shapeOf(state, suppressed);
-        expect(reachFrom(drawnLoops(mascot).flat(), shape.loops)).toBeLessThanOrEqual(GESTURE_REACH);
+        expect(reachFrom(drawnLoops(mascot).flat(), shape.loops), where).toBeLessThanOrEqual(
+          GESTURE_REACH,
+        );
 
         const eyes = eyesOf(mascot);
-        expect(Math.abs(eyes.x - shape.face.x)).toBeLessThanOrEqual(FACE_REACH.x);
-        expect(Math.abs(eyes.y - shape.face.y)).toBeLessThanOrEqual(FACE_REACH.y);
-        expect(Math.abs(eyes.spread - shape.face.spread)).toBeLessThanOrEqual(SPREAD_REACH);
+        expect(Math.abs(eyes.x - shape.face.x), where).toBeLessThanOrEqual(FACE_REACH.x);
+        expect(Math.abs(eyes.y - shape.face.y), where).toBeLessThanOrEqual(FACE_REACH.y);
+        expect(Math.abs(eyes.spread - shape.face.spread), where).toBeLessThanOrEqual(SPREAD_REACH);
 
-        expect(bandColour(mascot)).toBe(expectedBand(state));
-      });
+        expect(bandColour(mascot), where).toBe(expectedBand(state));
+      }
     }
-  }
+  });
 
   test("error built with motion suppressed carries amber, not the acid it left", () => {
     const dom = fresh();
@@ -232,23 +235,25 @@ describe("a mascot built straight into a state shows that state", () => {
 describe("the render loop starts at construction", () => {
   // It used to start on the first blink, which is 4 to 9 seconds away, so a
   // new mascot stood completely still until then.
-  for (const state of STATES) {
-    test(`${state} holds a frame the moment it is built`, () => {
+  test("every state holds a frame the moment it is built", () => {
+    for (const state of STATES) {
       const dom = fresh();
       mascotIn(dom, { state });
-      expect(dom.pending.frames).toBe(1);
+      expect(dom.pending.frames, state).toBe(1);
       // And keeps holding one: the loop re-arms itself every frame.
       dom.advance(100);
-      expect(dom.pending.frames).toBe(1);
-    });
+      expect(dom.pending.frames, state).toBe(1);
+    }
+  });
 
-    test(`${state} holds no frame when motion is suppressed`, () => {
+  test("no state holds a frame when motion is suppressed", () => {
+    for (const state of STATES) {
       const dom = fresh();
       mascotIn(dom, { state, reducedMotion: true });
-      expect(dom.pending.frames).toBe(0);
-      expect(dom.pending.timeouts).toBe(0);
-    });
-  }
+      expect(dom.pending.frames, state).toBe(0);
+      expect(dom.pending.timeouts, state).toBe(0);
+    }
+  });
 });
 
 // --------------------------------------------------------------- held state
@@ -261,52 +266,74 @@ describe("a held state is not a still frame", () => {
    */
   const HOLD = 700;
 
-  for (const state of STATES) {
-    test(`${state} draws a different silhouette after ${HOLD} ms of frames`, () => {
+  test(`every state draws a different silhouette after ${HOLD} ms of frames`, () => {
+    for (const state of STATES) {
       const dom = fresh();
       const mascot = mascotIn(dom, { state });
       dom.advance(300);
       const before = query(mascot.element, ".rk-body-shape").getAttribute("d");
       dom.advance(HOLD);
-      expect(query(mascot.element, ".rk-body-shape").getAttribute("d")).not.toBe(before);
-    });
-  }
+      expect(query(mascot.element, ".rk-body-shape").getAttribute("d"), state).not.toBe(before);
+    }
+  });
 });
 
 // ------------------------------------------------------------ state changes
 
-describe("every state change lands", () => {
+describe("a state change lands", () => {
   /** Long enough for the source shape and its band to settle before the change. */
   const SETTLE = 400;
   /** A morph is 99 % done in 420 ms, and the longest arrival beat ends at 330 ms. */
   const ARRIVAL = 500;
 
-  for (const from of STATES) {
-    for (const to of STATES) {
-      if (from === to) continue;
+  /**
+   * A sample of the changes, not all twenty of them.
+   *
+   * Every one of these renders 30 real frames, and the full set was two thirds
+   * of the whole package's run time for very little more signal: the runtime
+   * has no per-pair code, so a pair only tests the two shapes at its ends. The
+   * command lists of all twenty pairs are checked without rendering in
+   * `states.test.ts`, and the band mask through every pair mid-morph in
+   * `loops.test.ts`.
+   *
+   * So this walks a ring that uses each state once as a source and once as a
+   * target, and then adds the three that carry something of their own: both
+   * directions of the band's colour, and the way into the cycling state.
+   */
+  const SAMPLE: readonly (readonly [MascotState, MascotState])[] = [
+    ["idle", "thinking"],
+    ["thinking", "loading"],
+    ["loading", "success"],
+    ["success", "error"],
+    ["error", "idle"],
+    ["idle", "error"],
+    ["error", "success"],
+    ["success", "loading"],
+  ];
 
-      test(`${from} into ${to} arrives at the shape and the colour`, () => {
-        const dom = fresh();
-        const mascot = mascotIn(dom, { state: from });
-        dom.advance(SETTLE);
-        mascot.setState(to);
+  test("the sampled changes arrive at the shape and the colour", () => {
+    for (const [from, to] of SAMPLE) {
+      const where = `${from} into ${to}`;
+      const dom = fresh();
+      const mascot = mascotIn(dom, { state: from });
+      dom.advance(SETTLE);
+      mascot.setState(to);
 
-        // Every frame of the change, not just the ends: a NaN anywhere in the
-        // run blanks a path on screen and never shows up in the last frame.
-        for (let elapsed = 0; elapsed < ARRIVAL; elapsed += 1000 / 60) {
-          dom.advance(1000 / 60);
-          expect(drawsNaN(mascot)).toBe(false);
-        }
+      // Every frame of the change, not just the ends: a NaN anywhere in the
+      // run blanks a path on screen and never shows up in the last frame.
+      for (let elapsed = 0; elapsed < ARRIVAL; elapsed += 1000 / 60) {
+        dom.advance(1000 / 60);
+        expect(drawsNaN(mascot), where).toBe(false);
+      }
 
-        expect(mascot.state).toBe(to);
-        const points = drawnLoops(mascot).flat();
-        expect(reachFrom(points, shapeOf(to, false).loops)).toBeLessThanOrEqual(GESTURE_REACH);
-        // And it really left the other shape, rather than sitting between them.
-        expect(reachFrom(points, shapeOf(from, false).loops)).toBeGreaterThan(GESTURE_REACH);
-        expect(bandColour(mascot)).toBe(expectedBand(to));
-      });
+      expect(mascot.state, where).toBe(to);
+      const points = drawnLoops(mascot).flat();
+      expect(reachFrom(points, shapeOf(to, false).loops), where).toBeLessThanOrEqual(GESTURE_REACH);
+      // And it really left the other shape, rather than sitting between them.
+      expect(reachFrom(points, shapeOf(from, false).loops), where).toBeGreaterThan(GESTURE_REACH);
+      expect(bandColour(mascot), where).toBe(expectedBand(to));
     }
-  }
+  });
 });
 
 // ------------------------------------------------------------ reduced motion
@@ -342,8 +369,8 @@ describe("reduced motion holds a still shape", () => {
     expect(query(mascot.element, ".rk-body-shape").getAttribute("d")).toBe(ellipsis);
   });
 
-  for (const state of STATES) {
-    test(`a change into ${state} settles with no travel`, () => {
+  test("a change into any state settles with no travel", () => {
+    for (const state of STATES) {
       const dom = fresh();
       const mascot = mascotIn(dom, { state: state === "idle" ? "error" : "idle", reducedMotion: true });
       mascot.setState(state);
@@ -352,17 +379,18 @@ describe("reduced motion holds a still shape", () => {
       // The shape is the state's own, arrived whole. A change carries a twist,
       // so the emitted string starts at another point of the same outline;
       // the claim is about the shape, not about where its spline begins.
-      expect(reachFrom(drawnLoops(mascot).flat(), shapeOf(state, true).loops)).toBeLessThanOrEqual(
-        SETTLED_REACH,
-      );
+      expect(
+        reachFrom(drawnLoops(mascot).flat(), shapeOf(state, true).loops),
+        state,
+      ).toBeLessThanOrEqual(SETTLED_REACH);
 
       // Nothing is scheduled, so nothing can travel.
-      expect(dom.pending.frames).toBe(0);
-      expect(dom.pending.timeouts).toBe(0);
+      expect(dom.pending.frames, state).toBe(0);
+      expect(dom.pending.timeouts, state).toBe(0);
       dom.advance(2000);
-      expect(query(mascot.element, ".rk-body-shape").getAttribute("d")).toBe(landed);
-    });
-  }
+      expect(query(mascot.element, ".rk-body-shape").getAttribute("d"), state).toBe(landed);
+    }
+  });
 
   test("blinking stops", () => {
     const dom = fresh();
@@ -394,28 +422,32 @@ describe("the motion context stops and restarts the loop", () => {
    */
   const ONE_FRAME = 100;
 
-  for (const [name, suppress] of [
+  const WAYS = [
     ["reduced motion", (dom: FakeDom, on: boolean) => dom.reduceMotion(on)],
     ["a hidden document", (dom: FakeDom, on: boolean) => dom.hide(on)],
-  ] as const) {
-    test(`${name} stops the loop mid-animation and leaves a readable shape`, () => {
+  ] as const;
+
+  test("either way stops the loop mid-animation and leaves a readable shape", () => {
+    for (const [name, suppress] of WAYS) {
       const dom = fresh();
       const mascot = mascotIn(dom, { state: "success" });
       dom.advance(500);
 
       suppress(dom, true);
       dom.advance(ONE_FRAME);
-      expect(dom.pending.frames).toBe(0);
-      expect(dom.pending.timeouts).toBe(0);
+      expect(dom.pending.frames, name).toBe(0);
+      expect(dom.pending.timeouts, name).toBe(0);
 
       const held = query(mascot.element, ".rk-body-shape").getAttribute("d") ?? "";
-      expect(held.length).toBeGreaterThan(0);
-      expect(drawsNaN(mascot)).toBe(false);
+      expect(held.length, name).toBeGreaterThan(0);
+      expect(drawsNaN(mascot), name).toBe(false);
       dom.advance(2000);
-      expect(query(mascot.element, ".rk-body-shape").getAttribute("d")).toBe(held);
-    });
+      expect(query(mascot.element, ".rk-body-shape").getAttribute("d"), name).toBe(held);
+    }
+  });
 
-    test(`${name} restores the loop when it is lifted`, () => {
+  test("either way restores the loop when it is lifted", () => {
+    for (const [name, suppress] of WAYS) {
       const dom = fresh();
       const mascot = mascotIn(dom, { state: "success" });
       dom.advance(500);
@@ -424,13 +456,13 @@ describe("the motion context stops and restarts the loop", () => {
 
       suppress(dom, false);
       // The loop and the blink timer are both back.
-      expect(dom.pending.frames).toBe(1);
-      expect(dom.pending.timeouts).toBe(1);
+      expect(dom.pending.frames, name).toBe(1);
+      expect(dom.pending.timeouts, name).toBe(1);
       const before = query(mascot.element, ".rk-body-shape").getAttribute("d");
       dom.advance(300);
-      expect(query(mascot.element, ".rk-body-shape").getAttribute("d")).not.toBe(before);
-    });
-  }
+      expect(query(mascot.element, ".rk-body-shape").getAttribute("d"), name).not.toBe(before);
+    }
+  });
 
   test("a cycling state picks its cycle back up", () => {
     const dom = fresh();
@@ -523,11 +555,11 @@ describe("lookAtPoint aims from the face layout in force", () => {
   /** The gaze bound is 14 units down, scaled by the layout. Well clear of the noise at two decimals. */
   const READABLE = 0.3;
 
-  for (const [state, sense] of [
-    ["idle", -1],
-    ["error", 1],
-  ] as const) {
-    test(`${state} looks ${sense < 0 ? "up" : "down"} at the same point`, () => {
+  test("the ghost looks up at the point the exclamation mark looks down at", () => {
+    for (const [state, sense] of [
+      ["idle", -1],
+      ["error", 1],
+    ] as const) {
       const dom = fresh();
       // Two mascots on the same clock, so the breath is at the same phase in
       // both and the only difference between them is the aim.
@@ -541,11 +573,11 @@ describe("lookAtPoint aims from the face layout in force", () => {
       dom.advance(400);
 
       const shift = eyesOf(aimed).y - eyesOf(centred).y;
-      expect(Math.sign(shift)).toBe(sense);
-      expect(Math.abs(shift)).toBeGreaterThan(READABLE);
-      expect(Math.abs(shift)).toBeLessThanOrEqual(LIMIT.gazeY);
-    });
-  }
+      expect(Math.sign(shift), state).toBe(sense);
+      expect(Math.abs(shift), state).toBeGreaterThan(READABLE);
+      expect(Math.abs(shift), state).toBeLessThanOrEqual(LIMIT.gazeY);
+    }
+  });
 
   test("an element with no box is not aimed at all", () => {
     const dom = fresh();

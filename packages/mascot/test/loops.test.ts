@@ -111,14 +111,14 @@ describe("the band mask nests inside the body", () => {
     ];
   });
 
-  for (const [name, silhouette] of silhouettes) {
-    test(`${name} holds its mask inside every loop`, () => {
+  test("every silhouette holds its mask inside every loop", () => {
+    for (const [name, silhouette] of silhouettes) {
       const masks = maskOf(silhouette.loops, silhouette.face);
       for (let i = 0; i < masks.length; i++) {
         expect(outsideOf(masks[i]!, silhouette.loops[i]!), `${name} loop ${i}`).toBe(0);
       }
-    });
-  }
+    }
+  });
 
   /**
    * Mid-morph is where a blended mask used to fail, so this is the test that
@@ -129,9 +129,9 @@ describe("the band mask nests inside the body", () => {
    */
   const TWIST = Math.round(POINTS * MORPH_TWIST.offset);
 
-  for (const from of STATES) {
-    for (const to of STATES) {
-      test(`${from} into ${to} holds its mask inside every loop throughout`, () => {
+  test("every ordered pair of states holds its mask inside every loop throughout", () => {
+    for (const from of STATES) {
+      for (const to of STATES) {
         const a = morphShapeOf(from);
         const b = morphShapeOf(to);
         for (const swing of [1, -1]) {
@@ -143,13 +143,14 @@ describe("the band mask nests inside the body", () => {
             const face = blendFace(a.face, b.face, t);
             const masks = maskOf(loops, face);
             for (let i = 0; i < masks.length; i++) {
-              expect(outsideOf(masks[i]!, loops[i]!), `swing ${swing}, t ${t}, loop ${i}`).toBe(0);
+              const where = `${from} into ${to}, swing ${swing}, t ${t}, loop ${i}`;
+              expect(outsideOf(masks[i]!, loops[i]!), where).toBe(0);
             }
           }
         }
-      });
+      }
     }
-  }
+  });
 
   /**
    * Why a copy has to sit in the same place to share the head's anchor.
