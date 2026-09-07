@@ -492,6 +492,32 @@ export const HistoryReport = Schema.Struct({
 export interface HistoryReport
   extends Schema.Schema.Type<typeof HistoryReport> {}
 
+// The site's custom events over a window against the window before it,
+// strongest first, from the analytics provider. Anchored on the Search Console
+// latest date like every other window, so an event count and a clicks count
+// over the same period describe the same days. `events` is empty, not null,
+// when the site has no provider or nothing is synced yet: it is a list, and an
+// empty list already says "nothing to show".
+export const EventsReport = Schema.Struct({
+  analytics: Schema.NullOr(AnalyticsStatus),
+  windowDays: Schema.Number,
+  window: Schema.Struct({
+    currentStart: Schema.NullOr(Schema.String),
+    currentEnd: Schema.NullOr(Schema.String),
+    previousStart: Schema.NullOr(Schema.String),
+    previousEnd: Schema.NullOr(Schema.String),
+  }),
+  events: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      current: Schema.Number,
+      previous: Schema.Number,
+      delta: Schema.Number,
+    }),
+  ),
+}).annotate({ identifier: "EventsReport" })
+export interface EventsReport extends Schema.Schema.Type<typeof EventsReport> {}
+
 // The people on the site right now. The ONE report that reaches the provider
 // on a read (cached 30 seconds in the Analytics service), which is why it is
 // its own document with its own endpoint and never rides on the dashboard

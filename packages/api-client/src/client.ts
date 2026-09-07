@@ -32,6 +32,7 @@ import {
   type ApiError,
   ApiHttpError,
   DashboardSnapshot,
+  EventsReport,
   HistoryReport,
   LiveReport,
   JobResponse,
@@ -90,6 +91,11 @@ export interface Interface {
   // Visitors on the site right now (GET /api/live). Reaches the provider, so
   // poll it on its own timer, not with the dashboard.
   readonly live: (site?: SiteId) => Effect.Effect<LiveReport, ApiError>
+  // Custom events over `window` days against the window before (GET /api/events).
+  readonly events: (
+    window?: number,
+    site?: SiteId,
+  ) => Effect.Effect<EventsReport, ApiError>
 
   // Writes — the server derives the target site from ?site= here too.
   readonly registryAdd: (
@@ -305,6 +311,15 @@ export const layer = Layer.effect(
 
       live: Effect.fn("ApiClient.live")(function* (site?: SiteId) {
         return yield* send("GET", "/api/live", LiveReport, { query: { site } })
+      }),
+
+      events: Effect.fn("ApiClient.events")(function* (
+        window?: number,
+        site?: SiteId,
+      ) {
+        return yield* send("GET", "/api/events", EventsReport, {
+          query: { window, site },
+        })
       }),
 
       registryAdd: Effect.fn("ApiClient.registryAdd")(function* (

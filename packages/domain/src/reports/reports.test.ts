@@ -669,6 +669,25 @@ test("dashboardSnapshot carries the provider, its history, and event counts", as
   expect(snapshot.events).toEqual([{ name: "purchase", current: 56, previous: 56 }])
 })
 
+test("eventsReport sums each event over the window and the one before", async () => {
+  const report = await run(Reports.use.eventsReport())
+  expect(report.analytics?.provider).toBe("fake")
+  expect(report.windowDays).toBe(28)
+  // Anchored on the Search Console latest date, like the pages report.
+  expect(report.window.currentEnd).toBe("2026-07-12")
+  expect(report.window.currentStart).toBe("2026-06-15")
+  expect(report.window.previousEnd).toBe("2026-06-14")
+  expect(report.window.previousStart).toBe("2026-05-18")
+  // Two purchases a day, flat, so both windows agree.
+  expect(report.events).toEqual([
+    { name: "purchase", current: 56, previous: 56, delta: 0 },
+  ])
+
+  const week = await run(Reports.use.eventsReport(7))
+  expect(week.events).toEqual([{ name: "purchase", current: 14, previous: 14, delta: 0 }])
+  expect(week.window.currentStart).toBe("2026-07-06")
+})
+
 test("liveReport carries the provider status and the live count", async () => {
   const report = await run(Reports.use.liveReport())
   expect(report.analytics?.provider).toBe("fake")

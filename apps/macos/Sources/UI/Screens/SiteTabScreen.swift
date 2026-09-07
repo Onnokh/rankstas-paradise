@@ -139,6 +139,15 @@ struct SiteTabScreen: View {
                     }
                     .column()
                     .padding(.top, 36)
+
+                    // What visitors did, over the same period: the provider's third view,
+                    // the full column wide because event names run long.
+                    EventsCard(
+                        rows: rankings.events[RankingStore.KeywordsKey(siteID: overview.id, period: state.period)] ?? [],
+                        loading: rankings.loading.contains(overview.id)
+                    )
+                    .column()
+                    .padding(.top, 20)
                 }
 
                 rankingCards
@@ -870,6 +879,82 @@ private struct RealtimeCard: View {
         let window = "Distinct people in the last \(live.windowMinutes) minutes."
         guard let online = live.online else { return window }
         return "\(window) \(online.formatted(.number.precision(.fractionLength(0)))) online now."
+    }
+}
+
+/// The period's custom events, one row per event, strongest first: the name, the count and
+/// its move against the previous period, over a bar as long as the count against the
+/// strongest row, the same list-as-chart as the ranking cards. Events are what visitors did
+/// (a purchase, a download), so this is the provider's view that carries meaning, not
+/// volume, and it gets the whole column.
+private struct EventsCard: View {
+    let rows: [EventRow]
+    let loading: Bool
+
+    /// Strongest first; the server already sorts, this only defends against a tie order change.
+    private var ranked: [EventRow] {
+        Array(rows.sorted { $0.current > $1.current }.prefix(RankingStore.rowLimit))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                Text("Events")
+                    .font(.headline)
+                if loading {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Spacer()
+                let total = rows.reduce(0) { $0 + $1.current }
+                Text("\(total.formatted(.number.precision(.fractionLength(0)))) in the period")
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+
+            if rows.isEmpty {
+                Text(loading ? "Loading…" : "No events in this period.")
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 8)
+            } else {
+                let ranked = ranked
+                let strongest = max(ranked.map(\.current).max() ?? 1, 1)
+                VStack(spacing: 6) {
+                    ForEach(ranked) { row in
+                        HStack(spacing: 12) {
+                            Text(row.name)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: 0)
+                            if row.previous > 0 || row.delta != 0 {
+                                Text(Trend.signed(row.delta, fractionDigits: 0))
+                                    .font(.caption)
+                                    .monospacedDigit()
+                                    .foregroundStyle(row.delta >= 0 ? Palette.mint : Palette.coral)
+                            }
+                            Text(row.current.formatted(.number.precision(.fractionLength(0))))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                                .frame(minWidth: 48, alignment: .trailing)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(alignment: .leading) {
+                            GeometryReader { geometry in
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(visitsColor.opacity(0.16))
+                                    .frame(width: max(geometry.size.width * (row.current / strongest), 6))
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .cardSurface(cornerRadius: 12)
     }
 }
 

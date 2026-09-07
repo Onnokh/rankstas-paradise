@@ -75,6 +75,20 @@ final class LiveTests: XCTestCase {
         XCTAssertNil(targets[2].visits)
     }
 
+    func testEventsReportDecodes() throws {
+        let report = try decode("""
+        {"generatedAt":"2026-09-07T19:51:20.381Z","mode":"live",
+         "analytics":{"provider":"rybbit","siteId":"x","ready":true,"reason":null},
+         "windowDays":28,
+         "window":{"currentStart":"2026-08-10","currentEnd":"2026-09-06","previousStart":"2026-07-13","previousEnd":"2026-08-09"},
+         "events":[{"name":"purchase","current":12,"previous":9,"delta":3}]}
+        """, as: EventsReport.self)
+
+        XCTAssertEqual(report.windowDays, 28)
+        XCTAssertEqual(report.events.first?.name, "purchase")
+        XCTAssertEqual(report.events.first?.delta, 3)
+    }
+
     func testHistoryDaysDecodeWithAndWithoutVisits() throws {
         let days = try decode("""
         [{"date":"2026-09-06","provisional":false,"impressions":10,"clicks":1,"ctr":0.1,"position":5,

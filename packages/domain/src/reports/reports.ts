@@ -34,6 +34,7 @@ import {
   type DashboardSnapshot,
   type EntrySummary,
   type HistoryReport,
+  type EventsReport,
   type LiveReport,
   type LogAddInput,
   type LogAddResult,
@@ -104,6 +105,9 @@ export interface Interface {
   // The visitors active right now. Reaches the analytics provider (through a
   // 30-second memo); every other read here is served from the ledger.
   readonly liveReport: () => Effect.Effect<LiveReport, ReportsError>
+  readonly eventsReport: (
+    windowDays?: number,
+  ) => Effect.Effect<EventsReport, ReportsError>
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -785,6 +789,44 @@ export const layer = Layer.effect(
                 provisional: day.provisional ?? false,
                 ...tidy(day),
                 visits: visitsByDate.get(day.date) ?? null,
+              })),
+            }
+          }),
+        ),
+
+      eventsReport: (windowDays = 28) =>
+        wrap(
+          Effect.gen(function* () {
+            const analyticsStatus = yield* analytics.status()
+            const empty = {
+              currentStart: null,
+              currentEnd: null,
+              previousStart: null,
+              previousEnd: null,
+            }
+            if (!analyticsStatus)
+              return { analytics: null, windowDays, window: empty, events: [] }
+            // The Search Console latest date when there is one, so the window
+            // is the one the rest of the screen shows; else the newest synced
+            // visits day, so a site without Search Console data still reads.
+            const anchor =
+              (yield* storage.latestSnapshotDate()) ??
+              (yield* storage.visitsSummary()).lastDate
+            if (!anchor)
+              return { analytics: analyticsStatus, windowDays, window: empty, events: [] }
+            const currentStart = dateDaysBefore(anchor, windowDays - 1)
+            const previousEnd = dateDaysBefore(currentStart, 1)
+            const previousStart = dateDaysBefore(previousEnd, windowDays - 1)
+            const rows = yield* storage.eventWindow(windowDays, anchor)
+            return {
+              analytics: analyticsStatus,
+              windowDays,
+              window: { currentStart, currentEnd: anchor, previousStart, previousEnd },
+              events: rows.map((row) => ({
+                name: row.name,
+                current: row.current,
+                previous: row.previous,
+                delta: row.current - row.previous,
               })),
             }
           }),

@@ -285,6 +285,30 @@ export const buildMcpServer = (run: RunTool): McpServer => {
   )
 
   server.registerTool(
+    "events",
+    {
+      description:
+        "The site's custom events (purchase, download_shader, …) from its analytics " +
+        "provider over the last N days against the N days before, strongest first, " +
+        "each with current, previous and delta. Empty when the site has no provider " +
+        "or nothing is synced yet.",
+      inputSchema: {
+        site,
+        window: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Window length in days (default 28)."),
+      },
+    },
+    async ({ site, window }) => {
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.eventsReport(window ?? 28), id))
+    },
+  )
+
+  server.registerTool(
     "live",
     {
       description:

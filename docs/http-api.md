@@ -16,6 +16,7 @@
 | `GET /api/log?path=` | `log list` |
 | `GET /api/history?limit=N` | — (TUI history view) |
 | `GET /api/live` | — (visitors on the site right now; the one read that asks the analytics provider) |
+| `GET /api/events?window=N` | `events --window N` |
 
 `GET /api/status` reports two instants in `data`, both ISO 8601
 (`YYYY-MM-DDTHH:MM:SSZ`) and both `null` until they have a value:
@@ -64,6 +65,10 @@ built against an older server keeps decoding:
   when there is no provider or no visits synced yet.
 - `GET /api/history` → each day carries `visits: { pageviews, visits,
   visitors } | null`.
+- `GET /api/events?window=N` → `{ analytics, windowDays, window, events: [{ name,
+  current, previous, delta }] }`: each custom event over the last N days against
+  the N days before, strongest first, anchored on the Search Console latest
+  date. `events` is empty when there is no provider or nothing is synced yet.
 
 Visits have no finalization lag: the newest stored day is yesterday (UTC), and
 the last two days are re-fetched on each sync.

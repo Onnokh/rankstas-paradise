@@ -74,6 +74,22 @@ struct VisitsDay: Codable, Sendable, Equatable {
     let visitors: Double
 }
 
+/// `/api/events`: the site's custom events over a window, strongest first.
+struct EventsReport: Codable, Sendable {
+    let generatedAt: String
+    let windowDays: Int
+    let events: [EventRow]
+}
+
+struct EventRow: Codable, Sendable, Equatable, Identifiable {
+    let name: String
+    let current: Double
+    let previous: Double
+    let delta: Double
+
+    var id: String { name }
+}
+
 /// `/api/live`: the people on the site right now. The one read that asks the analytics
 /// provider, so it is polled on its own and never cached.
 struct LiveReport: Codable, Sendable {
