@@ -84,7 +84,7 @@ final class LiveTests: XCTestCase {
                   "hours":[{"hour":0,"pageviews":1,"visits":1,"visitors":1}],
                   "pages":[{"date":"2026-09-07","page":"/","pageviews":60,"visits":30}],
                   "events":[{"date":"2026-09-07","name":"purchase","count":2},{"date":"2026-09-07","name":"login","count":5}],
-                  "fetchedAt":"2026-09-07T19:51:20.381Z"}}
+                  "syncedAt":null}}
         """, as: TodayReport.self)
 
         XCTAssertEqual(report.today?.site?.visits, 40)

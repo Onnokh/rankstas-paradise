@@ -90,8 +90,8 @@ struct EventRow: Codable, Sendable, Equatable, Identifiable {
     var id: String { name }
 }
 
-/// `/api/today`: today so far in the site's zone, read live from the provider. Like `/api/live`
-/// it is polled on its own and never cached; the server memoises it for a minute.
+/// `/api/today`: today so far in the site's zone, from the server's ledger, which it refreshes
+/// from the provider every few minutes. Polled with the live count and never cached here.
 struct TodayReport: Codable, Sendable {
     let generatedAt: String
     let analytics: AnalyticsStatus?
@@ -110,7 +110,8 @@ struct TodayVisits: Codable, Sendable, Equatable {
     let hours: [VisitsHour]
     let pages: [TodayPage]
     let events: [TodayEvent]
-    let fetchedAt: String
+    /// When the server last wrote today's rows; nil before its first sync of the day.
+    let syncedAt: String?
 
     var eventCount: Double { events.reduce(0) { $0 + $1.count } }
 }

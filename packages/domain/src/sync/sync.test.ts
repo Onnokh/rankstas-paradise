@@ -143,6 +143,10 @@ const analyticsMock = (recorder: Recorder) =>
         ready: true,
         reason: null,
       }),
+    localDay: () =>
+      Effect.succeed({ date: daysAgo(0), hour: 12, timeZone: "UTC" }),
+    fetchHours: () =>
+      Effect.succeed([{ hour: 9, pageviews: 3, visits: 2, visitors: 2 }]),
     fetchVisits: (dates) =>
       Effect.sync((): VisitsDays => {
         recorder.visitFetches.push(dates)
@@ -167,6 +171,7 @@ const analyticsMock = (recorder: Recorder) =>
 // A site with no analytics configured: status null, and a fetch would be a bug.
 const noAnalyticsMock = Layer.mock(Analytics.Service)({
   status: () => Effect.succeed(null),
+  localDay: () => Effect.succeed(null),
 })
 
 // A configured provider whose every fetch fails (a wrong key, a vendor outage).
@@ -338,6 +343,37 @@ test("an immediate re-sync fetches no visits, then re-fetches only the stale two
 
   expect(recorder.visitFetches).toHaveLength(2)
   expect([...recorder.visitFetches[1]!].sort()).toEqual([daysAgo(2), daysAgo(1)])
+})
+
+test("the today sync writes today's rows and hours, and the daily sync leaves them alone", async () => {
+  const summary = await run(Sync.use.syncToday())
+  expect(summary).toContain(`Today (${daysAgo(0)} UTC) from fake`)
+  expect(recorder.visitFetches).toEqual([[daysAgo(0)]])
+
+  const day = await run(Storage.use.visitsOfDay(daysAgo(0)))
+  expect(day.site).toEqual([{ date: daysAgo(0), pageviews: 20, visits: 10, visitors: 8 }])
+  expect(day.events).toEqual([{ date: daysAgo(0), name: "purchase", count: 1 }])
+  expect(await run(Storage.use.hoursOfDay(daysAgo(0)))).toEqual([
+    { hour: 9, pageviews: 3, visits: 2, visitors: 2 },
+  ])
+  expect(await run(Storage.use.visitsSyncedAt(daysAgo(0)))).not.toBeNull()
+
+  // The daily sync still stops at yesterday: it asks for its 28 days and never
+  // for today, which the today sync owns until the day is over.
+  await run(Sync.use.syncSearchConsole())
+  const asked = recorder.visitFetches[1]!
+  expect(asked).not.toContain(daysAgo(0))
+  expect(asked.at(-1)).toBe(daysAgo(1))
+})
+
+test("a site without analytics has no today to sync", async () => {
+  const quiet = makeRuntime(dir, dbPath, recorder, searchConsoleMock(recorder), noAnalyticsMock)
+  try {
+    expect(await quiet.runPromise(Sync.use.syncToday())).toBeNull()
+    expect(recorder.visitFetches).toHaveLength(0)
+  } finally {
+    await quiet.dispose()
+  }
 })
 
 test("a site without analytics fetches no visits and stamps nothing", async () => {

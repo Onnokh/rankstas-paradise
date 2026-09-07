@@ -12,7 +12,11 @@ import { Reactivity } from "effect/unstable/reactivity"
 import { type SqlError } from "effect/unstable/sql"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 
-import { type SiteVisitsDay, type VisitsDays } from "../analytics/schema.ts"
+import {
+  type SiteVisitsDay,
+  type SiteVisitsHour,
+  type VisitsDays,
+} from "../analytics/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import {
   type DailySnapshot,
@@ -88,6 +92,13 @@ export interface Interface {
   readonly saveVisits: (
     visits: VisitsDays,
     fetchedDates: ReadonlyArray<string>,
+    source: string,
+  ) => Effect.Effect<void, StorageError>
+  // Replace one day's hourly site rows. Written by the today sync only: the
+  // daily sync has no use for hours, and a finished day keeps the last ones.
+  readonly saveHours: (
+    date: string,
+    hours: ReadonlyArray<SiteVisitsHour>,
     source: string,
   ) => Effect.Effect<void, StorageError>
 
@@ -183,6 +194,17 @@ export interface Interface {
   readonly visitsHistory: (
     limit?: number,
   ) => Effect.Effect<ReadonlyArray<SiteVisitsDay>, StorageError>
+  // One day's canonical rows — the site row, its pages, its events — as the
+  // provider gave them. Empty for a day never synced.
+  readonly visitsOfDay: (date: string) => Effect.Effect<VisitsDays, StorageError>
+  // One day's hourly site rows, whatever hours were written, hour ascending.
+  readonly hoursOfDay: (
+    date: string,
+  ) => Effect.Effect<ReadonlyArray<SiteVisitsHour>, StorageError>
+  // When one day was last fetched from the provider, or null if never.
+  readonly visitsSyncedAt: (
+    date: string,
+  ) => Effect.Effect<string | null, StorageError>
   // Per-page visits over a current/previous window. `endDate` anchors the
   // window; callers pass the Search Console latest date so both ledgers
   // describe the same days. Defaults to the newest visits day.
@@ -388,6 +410,19 @@ export const layer = Layer.effect(
         source text not null,
         collected_at text not null default current_timestamp,
         primary key (date, name)
+      )`,
+      // The day in progress by the hour, for the Today view. Only the today
+      // sync writes here, replacing the day's rows each time; nothing reads it
+      // for any other purpose, so a finished day's hours are simply history.
+      `create table if not exists analytics_site_hourly (
+        date text not null,
+        hour integer not null,
+        pageviews integer not null,
+        visits integer not null,
+        visitors integer not null,
+        source text not null,
+        collected_at text not null default current_timestamp,
+        primary key (date, hour)
       )`,
       // The visits twin of synced_day: which dates have been fetched from the
       // provider, and when, so a sync fetches only what is missing or stale.
@@ -1275,6 +1310,54 @@ export const layer = Layer.effect(
         }),
       )
 
+    const saveHoursI = (
+      date: string,
+      hours: ReadonlyArray<SiteVisitsHour>,
+      source: string,
+    ) =>
+      sql.withTransaction(
+        Effect.gen(function* () {
+          yield* sql`delete from analytics_site_hourly where date = ${date}`
+          for (const row of hours)
+            yield* sql`
+              insert into analytics_site_hourly (date, hour, pageviews, visits, visitors, source)
+              values (${date}, ${row.hour}, ${row.pageviews}, ${row.visits}, ${row.visitors}, ${source})
+              on conflict(date, hour) do update set
+                pageviews = excluded.pageviews, visits = excluded.visits,
+                visitors = excluded.visitors, source = excluded.source,
+                collected_at = current_timestamp`
+        }),
+      )
+
+    const visitsOfDayI = (date: string) =>
+      Effect.gen(function* () {
+        const site = yield* sql<SiteVisitsDay>`
+          select date, pageviews, visits, visitors from analytics_site_daily
+          where date = ${date}`
+        const pages = yield* sql<{ date: string; page: string; pageviews: number; visits: number }>`
+          select date, page, pageviews, visits from analytics_page_daily
+          where date = ${date} order by visits desc, pageviews desc, page`
+        const events = yield* sql<{ date: string; name: string; count: number }>`
+          select date, name, occurrences as count from analytics_event_daily
+          where date = ${date} order by occurrences desc, name`
+        return { site, pages, events } as VisitsDays
+      })
+
+    const hoursOfDayI = (date: string) =>
+      sql<SiteVisitsHour>`
+        select hour, pageviews, visits, visitors from analytics_site_hourly
+        where date = ${date} order by hour`.pipe(
+        Effect.map((rows) => rows as ReadonlyArray<SiteVisitsHour>),
+      )
+
+    const visitsSyncedAtI = (date: string) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{ fetched_at: string | null }>`
+          select strftime('%Y-%m-%dT%H:%M:%SZ', fetched_at) as fetched_at
+          from analytics_synced_day where date = ${date}`
+        return rows[0]?.fetched_at ?? null
+      })
+
     const missingVisitDatesI = (dates: ReadonlyArray<string>) =>
       Effect.gen(function* () {
         const rows = yield* sql<{ date: string }>`select date from analytics_synced_day`
@@ -1484,6 +1567,12 @@ export const layer = Layer.effect(
         ),
       saveVisits: (visits, fetchedDates, source) =>
         saveVisitsI(visits, fetchedDates, source).pipe(mapErr("saveVisits")),
+      saveHours: (date, hours, source) =>
+        saveHoursI(date, hours, source).pipe(mapErr("saveHours")),
+      visitsOfDay: (date) => visitsOfDayI(date).pipe(mapErr("visitsOfDay")),
+      hoursOfDay: (date) => hoursOfDayI(date).pipe(mapErr("hoursOfDay")),
+      visitsSyncedAt: (date) =>
+        visitsSyncedAtI(date).pipe(mapErr("visitsSyncedAt")),
       missingVisitDates: (dates) =>
         missingVisitDatesI(dates).pipe(mapErr("missingVisitDates")),
       recentlySyncedVisitDates: (dates, maxAgeHours) =>
