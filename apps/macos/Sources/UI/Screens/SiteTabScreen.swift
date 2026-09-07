@@ -820,9 +820,9 @@ private struct Tooltip: View {
 private let visitsColor = Palette.lilac
 
 /// The last half hour by the minute: one bar per minute, the newest at the right, with the
-/// people online right now beside the title. The wider window's total is a hover away, not
-/// on the card: two counts side by side read as a contradiction. The store behind it asks
-/// again every half minute, so the bars are the screen's one moving part.
+/// people online right now beside the title and the window's total under the bars, where
+/// it reads as the bars' sum rather than as a second "now". The store behind it asks again
+/// every half minute, so the bars are the screen's one moving part.
 private struct RealtimeCard: View {
     let live: LiveVisitors?
 
@@ -847,6 +847,9 @@ private struct RealtimeCard: View {
 
                 HStack {
                     Text("\(live.windowMinutes) minutes ago")
+                    Spacer()
+                    Text("\(live.visitors.formatted(.number.precision(.fractionLength(0)))) in the last \(live.windowMinutes) min")
+                        .monospacedDigit()
                     Spacer()
                     Text("Now")
                 }
