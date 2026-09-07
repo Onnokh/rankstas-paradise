@@ -857,6 +857,8 @@ private struct VisitsCard: View {
 
     @Environment(\.isTabPreview) private var isPreview
     @State private var hovered: HistoryReportDay?
+    /// The hovered day's centre, in the chart's own coordinates, for placing the tooltip.
+    @State private var hoverX: CGFloat = 0
 
     private var points: [HistoryReportDay] {
         days.filter { $0.visits != nil }
@@ -910,43 +912,47 @@ private struct VisitsCard: View {
                 .chartPlotStyle { plot in
                     plot.padding(.top, 8)
                 }
-                // The tooltip is drawn here in the overlay, not as a chart annotation: an
-                // annotation is part of the chart's layout, and one taller than this small
-                // plot made the chart resize and the hover re-fire on every move. Drawn here
-                // it changes nothing below it, and it cannot take the pointer.
+                // The view that tracks the pointer stands alone here and never changes: on
+                // macOS, inserting a sibling beside it rebuilds its tracking area and ends the
+                // hover until the pointer leaves and comes back. The tooltip lives in a
+                // separate overlay below, always present, shown and hidden by opacity only.
                 .chartOverlay { proxy in
                     if !isPreview {
                         GeometryReader { geometry in
-                            ZStack(alignment: .topLeading) {
-                                Rectangle()
-                                    .fill(.clear)
-                                    .contentShape(Rectangle())
-                                    .onContinuousHover { phase in
-                                        switch phase {
-                                        case .active(let location):
-                                            hovered = day(at: location, proxy: proxy, geometry: geometry)
-                                        case .ended:
-                                            hovered = nil
+                            Rectangle()
+                                .fill(.clear)
+                                .contentShape(Rectangle())
+                                .onContinuousHover { phase in
+                                    switch phase {
+                                    case .active(let location):
+                                        hovered = day(at: location, proxy: proxy, geometry: geometry)
+                                        if let hovered,
+                                           let plotFrame = proxy.plotFrame,
+                                           let x = proxy.position(forX: hovered.day) {
+                                            hoverX = geometry[plotFrame].origin.x + x
                                         }
+                                    case .ended:
+                                        hovered = nil
                                     }
-
-                                if let hovered,
-                                   let plotFrame = proxy.plotFrame,
-                                   let x = proxy.position(forX: hovered.day) {
-                                    let centre = geometry[plotFrame].origin.x + x
-                                    VisitsTooltip(day: hovered)
-                                        .fixedSize()
-                                        .alignmentGuide(.leading) { label in
-                                            -min(max(centre - label.width / 2, 0), max(geometry.size.width - label.width, 0))
-                                        }
-                                        .alignmentGuide(.top) { label in label.height + 8 }
-                                        .allowsHitTesting(false)
                                 }
-                            }
                         }
                     }
                 }
                 .frame(height: 96)
+                // Not a chart annotation either: an annotation is part of the chart's layout,
+                // and one taller than this small plot made the chart resize on every move.
+                .overlay(alignment: .topLeading) {
+                    GeometryReader { geometry in
+                        VisitsTooltip(day: hovered ?? points[points.count - 1])
+                            .fixedSize()
+                            .alignmentGuide(.leading) { label in
+                                -min(max(hoverX - label.width / 2, 0), max(geometry.size.width - label.width, 0))
+                            }
+                            .alignmentGuide(.top) { label in label.height + 8 }
+                            .opacity(hovered == nil ? 0 : 1)
+                    }
+                    .allowsHitTesting(false)
+                }
 
                 HStack {
                     Text(points.first!.day, format: .dateTime.day().month(.abbreviated))
@@ -1038,16 +1044,20 @@ private struct MinuteBars: View {
                     hovered = nil
                 }
             }
+            // Always present and toggled by opacity, never inserted: a sibling appearing
+            // beside the tracking view would end the hover (see VisitsCard).
             .overlay(alignment: .topLeading) {
-                if let hovered, hovered < values.count {
+                if !values.isEmpty {
+                    let index = min(hovered ?? 0, values.count - 1)
                     // Above the bar, kept inside the card's width at both ends.
-                    let centre = slot * (CGFloat(hovered) + 0.5)
-                    MinuteLabel(count: values[hovered], minute: minute(hovered))
+                    let centre = slot * (CGFloat(index) + 0.5)
+                    MinuteLabel(count: values[index], minute: minute(index))
                         .fixedSize()
                         .alignmentGuide(.leading) { label in
                             -min(max(centre - label.width / 2, 0), max(geometry.size.width - label.width, 0))
                         }
                         .alignmentGuide(.top) { label in label.height + 8 }
+                        .opacity(hovered == nil ? 0 : 1)
                         .allowsHitTesting(false)
                 }
             }
