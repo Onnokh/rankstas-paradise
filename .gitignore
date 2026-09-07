@@ -1,4 +1,5 @@
 node_modules/
+.DS_Store
 
 # TypeScript project-reference build output (declarations + build info).
 dist/
@@ -15,3 +16,12 @@ client.json
 .env.*
 !.env.example
 data/
+
+# Xcode local build and user state.
+DerivedData/
+.derivedData/
+xcuserdata/
+*.xcuserstate
+
+# Claude Code session files and worktrees
+.claude/

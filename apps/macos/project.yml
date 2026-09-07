@@ -1,0 +1,45 @@
+name: RankstasParadise
+
+options:
+  bundleIdPrefix: com.rankstasparadise
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "26.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+
+targets:
+  RankstasParadise:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rankstasparadise.mac
+        # The bundle, the menu bar and the Dock carry the real name; the module keeps the
+        # identifier so `import RankstasParadise` in the tests stays valid.
+        PRODUCT_NAME: Ranksta's Paradise
+        PRODUCT_MODULE_NAME: RankstasParadise
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Ranksta's Paradise
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+    scheme:
+      testTargets:
+        - RankstasParadiseTests
+
+  RankstasParadiseTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: RankstasParadise
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rankstasparadise.mac.tests
+        GENERATE_INFOPLIST_FILE: YES
