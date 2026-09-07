@@ -55,7 +55,7 @@ const fakeFactory = (
         Effect.sync(() => {
           seen.liveCalls = (seen.liveCalls ?? 0) + 1
           // Three minutes of bars out of thirty: the port pads the rest.
-          return { visitors: 7, perMinute: [1, 0, 2] }
+          return { visitors: 7, online: 2, perMinute: [1, 0, 2] }
         }),
       fetchVisits: (dates) =>
         Effect.sync((): VisitsDays => {
@@ -144,6 +144,8 @@ test("live visitors come from the adapter once per cache window", async () => {
 
   expect(first?.visitors).toBe(7)
   expect(first?.windowMinutes).toBe(30)
+  expect(first?.online).toBe(2)
+  expect(first?.onlineWindowMinutes).toBe(5)
   expect(first?.fetchedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
   // One bar per minute of the window, oldest first, the adapter's three at the
   // end and zeros before them.

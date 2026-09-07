@@ -313,28 +313,43 @@ export const makeWith =
         })
 
       const provider: Provider = {
-        liveVisitors: Effect.fn("Rybbit.liveVisitors")(function* (windowMinutes) {
-          const count = yield* request(
-            LiveCountResponse,
-            "/live-user-count",
-            { minutes: String(windowMinutes) },
-            "live-user-count",
-          )
-          // The trailing window, one bucket per minute. Rybbit fills quiet
-          // minutes with zero rows and orders by time, so the rows are taken
-          // as they come; the port pads or trims to the window's length.
-          const series = yield* request(
-            TimeSeriesResponse,
-            "/overview/time-series",
-            {
-              bucket: "minute",
-              past_minutes_start: String(windowMinutes),
-              past_minutes_end: "0",
-            },
-            "live time-series",
+        liveVisitors: Effect.fn("Rybbit.liveVisitors")(function* (windowMinutes, onlineMinutes) {
+          // Rybbit's live-user-count takes one window per call, so the whole
+          // window and the "online" window are two calls, made together with
+          // the minute series. The series is the trailing window, one bucket
+          // per minute: Rybbit fills quiet minutes with zero rows and orders
+          // by time, so the rows are taken as they come; the port pads or
+          // trims to the window's length.
+          const [count, online, series] = yield* Effect.all(
+            [
+              request(
+                LiveCountResponse,
+                "/live-user-count",
+                { minutes: String(windowMinutes) },
+                "live-user-count",
+              ),
+              request(
+                LiveCountResponse,
+                "/live-user-count",
+                { minutes: String(onlineMinutes) },
+                "live-user-count (online)",
+              ),
+              request(
+                TimeSeriesResponse,
+                "/overview/time-series",
+                {
+                  bucket: "minute",
+                  past_minutes_start: String(windowMinutes),
+                  past_minutes_end: "0",
+                },
+                "live time-series",
+              ),
+            ],
+            { concurrency: 3 },
           )
           return {
             visitors: asCount(count.count),
+            online: asCount(online.count),
             perMinute: [...series.data]
               .sort((left, right) => asText(left["time"]).localeCompare(asText(right["time"])))
               .map((row) => asCount(row["users"])),

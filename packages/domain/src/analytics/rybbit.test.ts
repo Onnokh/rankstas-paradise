@@ -76,7 +76,11 @@ const fetchWith = (
 // and three people on the site right now.
 const healthy: Answer = (url) => {
   if (url.pathname.endsWith("/live-user-count"))
-    return { status: 200, body: { count: "3" } }
+    // Three people over the whole window, one of them in the last few minutes.
+    return {
+      status: 200,
+      body: { count: url.searchParams.get("minutes") === "5" ? "1" : "3" },
+    }
   if (url.searchParams.get("bucket") === "minute")
     return {
       status: 200,
@@ -228,11 +232,11 @@ test("follows totalCount across metric pages", async () => {
   expect(pathnameCalls[0]!.url.searchParams.get("limit")).toBe("2")
 })
 
-test("live visitors ask live-user-count and a minute series for the window", async () => {
+test("live visitors ask live-user-count twice and a minute series for the window", async () => {
   const seen: Seen = { requests: [] }
   const exit = await Effect.runPromiseExit(
     noRetries(source).pipe(
-      Effect.flatMap((provider) => provider.liveVisitors(30)),
+      Effect.flatMap((provider) => provider.liveVisitors(30, 5)),
       Effect.provide(
         Layer.mergeAll(fakeHttp(seen, healthy), configLayer({ RYBBIT_API_KEY: "k" })),
       ),
@@ -241,13 +245,17 @@ test("live visitors ask live-user-count and a minute series for the window", asy
   if (!Exit.isSuccess(exit)) throw new Error("expected success")
 
   expect(exit.value.visitors).toBe(3)
+  expect(exit.value.online).toBe(1)
   // Sorted by time, users per minute.
   expect(exit.value.perMinute).toEqual([1, 0, 2])
-  expect(seen.requests).toHaveLength(2)
-  const count = seen.requests.find((r) => r.url.pathname.endsWith("/live-user-count"))!
-  expect(count.url.pathname).toBe("/api/sites/12/live-user-count")
-  expect(count.url.searchParams.get("minutes")).toBe("30")
-  expect(count.auth).toBe("Bearer k")
+  expect(seen.requests).toHaveLength(3)
+  const counts = seen.requests.filter((r) => r.url.pathname.endsWith("/live-user-count"))
+  expect(counts.map((r) => r.url.pathname)).toEqual([
+    "/api/sites/12/live-user-count",
+    "/api/sites/12/live-user-count",
+  ])
+  expect(counts.map((r) => r.url.searchParams.get("minutes")).sort()).toEqual(["30", "5"])
+  expect(counts.every((r) => r.auth === "Bearer k")).toBe(true)
   const series = seen.requests.find((r) => r.url.pathname.endsWith("/time-series"))!
   expect(series.url.searchParams.get("bucket")).toBe("minute")
   expect(series.url.searchParams.get("past_minutes_start")).toBe("30")

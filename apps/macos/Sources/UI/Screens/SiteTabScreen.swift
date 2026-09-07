@@ -205,20 +205,20 @@ struct SiteTabScreen: View {
                 .lineLimit(1)
 
             // The people on the site right now, beside the name: the one figure on the screen
-            // that moves on its own. Distinct people over the last half hour, the same count
-            // the realtime card below draws by the minute.
+            // that moves on its own. The provider's "online" count, the last five minutes;
+            // the realtime card below draws the wider half hour by the minute.
             if let liveVisitors {
                 HStack(spacing: 6) {
                     Circle()
                         .fill(visitsColor)
                         .frame(width: 7, height: 7)
-                    Text("\(liveVisitors.visitors.formatted(.number.precision(.fractionLength(0)))) online")
+                    Text("\(liveVisitors.onlineNow.formatted(.number.precision(.fractionLength(0)))) online")
                         .monospacedDigit()
                 }
                 .foregroundStyle(.secondary)
                 .padding(.leading, 6)
-                .help("Distinct people on the site in the last \(liveVisitors.windowMinutes) minutes")
-                .accessibilityLabel("\(liveVisitors.visitors.formatted(.number.precision(.fractionLength(0)))) people online")
+                .help("Distinct people on the site in the last \(liveVisitors.onlineMinutes) minutes")
+                .accessibilityLabel("\(liveVisitors.onlineNow.formatted(.number.precision(.fractionLength(0)))) people online")
             }
 
             Spacer()
@@ -803,9 +803,10 @@ private struct Tooltip: View {
 /// the strip's visits dot, the realtime bars and the visits chart.
 private let visitsColor = Palette.lilac
 
-/// The last half hour by the minute: one bar per minute, the newest at the right. The count
-/// itself sits in the header beside the site name; this card is its timeline. The store
-/// behind it asks again every half minute, so the bars are the screen's one moving part.
+/// The last half hour by the minute: one bar per minute, the newest at the right, with the
+/// people online right now beside the title. The wider window's total is a hover away, not
+/// on the card: two counts side by side read as a contradiction. The store behind it asks
+/// again every half minute, so the bars are the screen's one moving part.
 private struct RealtimeCard: View {
     let live: LiveVisitors?
 
@@ -816,10 +817,11 @@ private struct RealtimeCard: View {
                     .font(.headline)
                 Spacer()
                 if let live {
-                    Text("\(live.visitors.formatted(.number.precision(.fractionLength(0)))) in the last \(live.windowMinutes)m")
+                    Text("\(live.onlineNow.formatted(.number.precision(.fractionLength(0)))) online now")
                         .font(.subheadline)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
+                        .help(Self.windowHelp(live))
                 }
             }
 
@@ -844,6 +846,15 @@ private struct RealtimeCard: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .cardSurface(cornerRadius: 12)
         .accessibilityElement(children: .combine)
+    }
+
+    /// "Seen in the last 5 minutes. 20 people in the last 30 minutes." When the server only
+    /// knows the whole window the two would say the same thing, so it is said once.
+    static func windowHelp(_ live: LiveVisitors) -> String {
+        let seen = "Seen in the last \(live.onlineMinutes) minutes."
+        guard live.online != nil else { return seen }
+        let total = live.visitors.formatted(.number.precision(.fractionLength(0)))
+        return "\(seen) \(total) people in the last \(live.windowMinutes) minutes."
     }
 }
 

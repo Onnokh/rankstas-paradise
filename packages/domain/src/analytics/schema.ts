@@ -101,14 +101,23 @@ export interface AnalyticsStatus
 
 // The people active on the site right now, as the provider counts them: one
 // distinct visitor per person seen in the last `windowMinutes`, plus how many
-// were seen in each of those minutes. This is the one number in the domain that
-// is NOT a ledger row — it is fetched on demand, briefly cached, and never
-// stored, because it is stale the moment it lands.
+// were seen in each of those minutes, plus the tighter "online" count. This is
+// the one number in the domain that is NOT a ledger row — it is fetched on
+// demand, briefly cached, and never stored, because it is stale the moment it
+// lands.
 export const liveWindowMinutes = 30
+// "Online" is the last five minutes: what Rybbit and Umami both call online,
+// and the shorter of GA4's two realtime windows. Long enough that a reader
+// between two pages still counts, short enough to mean "right now".
+export const onlineWindowMinutes = 5
 
 export const LiveVisitors = Schema.Struct({
   visitors: Schema.Number,
   windowMinutes: Schema.Number,
+  // Distinct people seen in the last `onlineWindowMinutes`: the ones on the
+  // site right now, as opposed to `visitors`, which is the whole window.
+  online: Schema.Number,
+  onlineWindowMinutes: Schema.Number,
   // One count per minute of the window, oldest first, exactly `windowMinutes`
   // long with zeros for quiet minutes — the bars of a realtime card. Positions,
   // not timestamps: the last entry is the minute that just ended, and a client

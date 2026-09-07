@@ -70,10 +70,12 @@ the last two days are re-fetched on each sync.
 
 `GET /api/live` is the exception to "read endpoints never call out": it asks
 the provider how many distinct people were active in the last 30 minutes and
-answers `{ analytics, live: { visitors, windowMinutes, series, fetchedAt } | null }`.
-`series` is one count per minute of the window, oldest first, zero for quiet
-minutes: the bars of a realtime card. It carries positions, not timestamps; the
-last entry is the minute that just ended before `fetchedAt`.
+answers `{ analytics, live: { visitors, windowMinutes, online, onlineWindowMinutes,
+series, fetchedAt } | null }`. `online` is the same count over the last 5
+minutes: the people on the site right now. `series` is one count per minute of
+the window, oldest first, zero for quiet minutes: the bars of a realtime card.
+It carries positions, not timestamps; the last entry is the minute that just
+ended before `fetchedAt`.
 Answers are memoised for 30 seconds per site, so poll it on its own timer and
 never fold it into the dashboard read, which must stay served from disk.
 
