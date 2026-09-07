@@ -81,6 +81,16 @@ const healthy: Answer = (url) => {
       status: 200,
       body: { count: url.searchParams.get("minutes") === "5" ? "1" : "3" },
     }
+  if (url.searchParams.get("bucket") === "hour")
+    return {
+      status: 200,
+      body: seriesEnvelope([
+        { time: "2026-09-07 00:00:00", users: 0, sessions: 0, pageviews: 0 },
+        { time: "2026-09-07 09:00:00", users: "2", sessions: 2, pageviews: 3 },
+        // A neighbouring day's bucket, which the adapter must drop.
+        { time: "2026-09-06 23:00:00", users: 9, sessions: 9, pageviews: 9 },
+      ]),
+    }
   if (url.searchParams.get("bucket") === "minute")
     return {
       status: 200,
@@ -262,6 +272,29 @@ test("live visitors ask live-user-count twice and a minute series for the window
   expect(series.url.searchParams.get("past_minutes_end")).toBe("0")
   // A trailing window carries no dates: Rybbit takes one form or the other.
   expect(series.url.searchParams.get("start_date")).toBeNull()
+})
+
+test("hours ask one hourly time-series for the day in the site's zone", async () => {
+  const seen: Seen = { requests: [] }
+  const exit = await Effect.runPromiseExit(
+    noRetries(source).pipe(
+      Effect.flatMap((provider) => provider.fetchHours("2026-09-07")),
+      Effect.provide(
+        Layer.mergeAll(fakeHttp(seen, healthy), configLayer({ RYBBIT_API_KEY: "k" })),
+      ),
+    ),
+  )
+  if (!Exit.isSuccess(exit)) throw new Error("expected success")
+  expect(exit.value).toEqual([
+    { hour: 0, pageviews: 0, visits: 0, visitors: 0 },
+    { hour: 9, pageviews: 3, visits: 2, visitors: 2 },
+  ])
+  expect(seen.requests).toHaveLength(1)
+  const params = seen.requests[0]!.url.searchParams
+  expect(params.get("bucket")).toBe("hour")
+  expect(params.get("start_date")).toBe("2026-09-07")
+  expect(params.get("end_date")).toBe("2026-09-07")
+  expect(params.get("time_zone")).toBe("Europe/Amsterdam")
 })
 
 test("an empty date list makes no request", async () => {

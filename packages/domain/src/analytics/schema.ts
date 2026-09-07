@@ -131,6 +131,39 @@ export const LiveVisitors = Schema.Struct({
 export interface LiveVisitors
   extends Schema.Schema.Type<typeof LiveVisitors> {}
 
+// One hour of one day's site visits, in the site's zone. `hour` is 0–23.
+export const SiteVisitsHour = Schema.Struct({
+  hour: Schema.Number,
+  pageviews: Schema.Number,
+  visits: Schema.Number,
+  visitors: Schema.Number,
+}).annotate({ identifier: "SiteVisitsHour" })
+export interface SiteVisitsHour
+  extends Schema.Schema.Type<typeof SiteVisitsHour> {}
+
+// Today so far, in the site's zone, straight from the provider. The ledger
+// stops at yesterday and Search Console lags days, so "today" is the second
+// read (after live visitors) that reaches the provider on demand: fetched,
+// briefly cached, never stored. Tomorrow's sync writes the same day properly.
+export const todayCacheSeconds = 60
+
+export const TodayVisits = Schema.Struct({
+  // The provider's calendar day, YYYY-MM-DD in `timeZone`.
+  date: Schema.String,
+  timeZone: Schema.String,
+  // How many hours of the day have begun (1–24): the bars a client draws.
+  hoursElapsed: Schema.Number,
+  // The day's totals so far, or null when the provider has no row for it yet.
+  site: Schema.NullOr(SiteVisitsDay),
+  // Exactly 24 entries, hour 0 first, zeros for hours still to come.
+  hours: Schema.Array(SiteVisitsHour),
+  pages: Schema.Array(PageVisitsDay),
+  events: Schema.Array(EventCountDay),
+  fetchedAt: Schema.String,
+}).annotate({ identifier: "TodayVisits" })
+export interface TodayVisits
+  extends Schema.Schema.Type<typeof TodayVisits> {}
+
 // Raised when a provider cannot be used or a fetch fails. One class for the
 // whole boundary: an adapter maps its vendor's auth, transport, and decode
 // failures into this, with `message` saying which, so no vendor error type

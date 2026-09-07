@@ -28,12 +28,59 @@ import {
   type LiveVisitors,
   liveWindowMinutes,
   onlineWindowMinutes,
+  type SiteVisitsHour,
+  todayCacheSeconds,
+  type TodayVisits,
   type VisitsDays,
 } from "./schema.ts"
 
 // How long one live answer is served before the provider is asked again. A
 // client polling every few seconds costs the vendor one call per half minute.
 const liveCacheTtl = Duration.seconds(30)
+// Today's figures move by the minute, not the second; one provider round per
+// minute is plenty and keeps a "today" screen from costing four calls a poll.
+const todayCacheTtl = Duration.seconds(todayCacheSeconds)
+
+// The calendar day and hour right now in a zone, as the provider counts them.
+// An unknown zone falls back to UTC rather than failing the read.
+const nowIn = (timeZone: string): { date: string; hour: number } => {
+  const parts = (zone: string) =>
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: zone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date())
+  let fields: Intl.DateTimeFormatPart[]
+  try {
+    fields = parts(timeZone)
+  } catch {
+    fields = parts("UTC")
+  }
+  const get = (type: string) => fields.find((part) => part.type === type)?.value ?? "00"
+  return {
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    hour: Number(get("hour")) % 24,
+  }
+}
+
+// Exactly 24 hours, 0 first, zeros where the adapter had no row.
+const normaliseHours = (
+  hours: ReadonlyArray<SiteVisitsHour>,
+): ReadonlyArray<SiteVisitsHour> => {
+  const byHour = new Map(hours.map((row) => [row.hour, row]))
+  return Array.from({ length: 24 }, (_, hour) => {
+    const row = byHour.get(hour)
+    return {
+      hour,
+      pageviews: row?.pageviews ?? 0,
+      visits: row?.visits ?? 0,
+      visitors: row?.visitors ?? 0,
+    }
+  })
+}
 
 // Exactly `length` minutes, oldest first: an adapter's series is trimmed to its
 // newest `length` entries or padded with leading zeros, so a client can draw
@@ -64,6 +111,11 @@ export interface Interface {
   // a read, unlike every other read in the domain, so it has its own report
   // and its own endpoint and is never part of the dashboard snapshot.
   readonly liveVisitors: () => Effect.Effect<LiveVisitors | null, AnalyticsError>
+  // Today so far in the site's zone — totals, hours, pages, events — fetched
+  // from the provider and cached for a minute. Null for a site with no
+  // analytics. Reaches the network on a read, like liveVisitors, and for the
+  // same reason has its own report and endpoint.
+  readonly today: () => Effect.Effect<TodayVisits | null, AnalyticsError>
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -78,6 +130,7 @@ const none: Interface = {
   status: () => Effect.succeed(null),
   fetchVisits: () => Effect.succeed(emptyVisitsDays),
   liveVisitors: () => Effect.succeed(null),
+  today: () => Effect.succeed(null),
 }
 
 const notReady = (source: AnalyticsSource, reason: string): Interface => ({
@@ -90,6 +143,7 @@ const notReady = (source: AnalyticsSource, reason: string): Interface => ({
     }),
   fetchVisits: () => Effect.fail(new AnalyticsError({ message: reason })),
   liveVisitors: () => Effect.fail(new AnalyticsError({ message: reason })),
+  today: () => Effect.fail(new AnalyticsError({ message: reason })),
 })
 
 const ready = (source: AnalyticsSource, provider: Provider) =>
@@ -111,6 +165,28 @@ const ready = (source: AnalyticsSource, provider: Provider) =>
           })),
         ),
     })
+    const today = yield* Cache.make<"today", TodayVisits, AnalyticsError>({
+      capacity: 1,
+      timeToLive: todayCacheTtl,
+      lookup: () =>
+        Effect.gen(function* () {
+          const now = nowIn(source.timeZone)
+          const [days, hours] = yield* Effect.all(
+            [provider.fetchVisits([now.date]), provider.fetchHours(now.date)],
+            { concurrency: 2 },
+          )
+          return {
+            date: now.date,
+            timeZone: source.timeZone,
+            hoursElapsed: now.hour + 1,
+            site: days.site.find((day) => day.date === now.date) ?? null,
+            hours: normaliseHours(hours),
+            pages: days.pages.filter((row) => row.date === now.date),
+            events: days.events.filter((row) => row.date === now.date),
+            fetchedAt: new Date().toISOString(),
+          }
+        }),
+    })
     const impl: Interface = {
       status: () =>
         Effect.succeed({
@@ -125,6 +201,9 @@ const ready = (source: AnalyticsSource, provider: Provider) =>
       }),
       liveVisitors: Effect.fn("Analytics.liveVisitors")(function* () {
         return yield* Cache.get(live, "live")
+      }),
+      today: Effect.fn("Analytics.today")(function* () {
+        return yield* Cache.get(today, "today")
       }),
     }
     return impl

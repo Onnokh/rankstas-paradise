@@ -22,6 +22,7 @@ import {
   HistoryReport,
   EventsReport,
   LiveReport,
+  TodayReport,
   LogAddInput,
   LogAddResult,
   LogListResult,
@@ -131,6 +132,12 @@ export const apiGroup = HttpApiGroup.make("api")
     HttpApiEndpoint.get("live", "/api/live", {
       query: { site: S },
       success: enveloped(LiveReport.fields),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("today", "/api/today", {
+      query: { site: S },
+      success: enveloped(TodayReport.fields),
     }),
   )
   .add(

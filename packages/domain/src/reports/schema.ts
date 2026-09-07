@@ -6,6 +6,7 @@ import { Schema } from "effect"
 import {
   AnalyticsStatus,
   LiveVisitors,
+  TodayVisits,
   SiteVisitsDay,
 } from "../analytics/schema.ts"
 import { DomainRating, DomainRatingDay } from "../domain-rating/schema.ts"
@@ -529,6 +530,15 @@ export const LiveReport = Schema.Struct({
   live: Schema.NullOr(LiveVisitors),
 }).annotate({ identifier: "LiveReport" })
 export interface LiveReport extends Schema.Schema.Type<typeof LiveReport> {}
+
+// Today so far, the other report that reaches the provider (cached a minute).
+// `today` is null when the site has no provider; `analytics` says why when a
+// provider is configured but not ready.
+export const TodayReport = Schema.Struct({
+  analytics: Schema.NullOr(AnalyticsStatus),
+  today: Schema.NullOr(TodayVisits),
+}).annotate({ identifier: "TodayReport" })
+export interface TodayReport extends Schema.Schema.Type<typeof TodayReport> {}
 
 // Raised when a report cannot be produced (wraps an underlying Storage /
 // Registry / Sitemap failure, or an invalid argument such as a bad path/kind).

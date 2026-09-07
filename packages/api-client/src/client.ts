@@ -35,6 +35,7 @@ import {
   EventsReport,
   HistoryReport,
   LiveReport,
+  TodayReport,
   JobResponse,
   JobsResponse,
   LogAddResult,
@@ -91,6 +92,9 @@ export interface Interface {
   // Visitors on the site right now (GET /api/live). Reaches the provider, so
   // poll it on its own timer, not with the dashboard.
   readonly live: (site?: SiteId) => Effect.Effect<LiveReport, ApiError>
+  // Today so far from the provider (GET /api/today). Reaches the provider too;
+  // memoised a minute server-side.
+  readonly today: (site?: SiteId) => Effect.Effect<TodayReport, ApiError>
   // Custom events over `window` days against the window before (GET /api/events).
   readonly events: (
     window?: number,
@@ -311,6 +315,10 @@ export const layer = Layer.effect(
 
       live: Effect.fn("ApiClient.live")(function* (site?: SiteId) {
         return yield* send("GET", "/api/live", LiveReport, { query: { site } })
+      }),
+
+      today: Effect.fn("ApiClient.today")(function* (site?: SiteId) {
+        return yield* send("GET", "/api/today", TodayReport, { query: { site } })
       }),
 
       events: Effect.fn("ApiClient.events")(function* (

@@ -44,6 +44,11 @@ struct APIClient: Sendable {
         )
     }
 
+    /// Today so far, from the provider. Polled with the live count; see `LiveStore`.
+    func today(siteID: String) async throws -> TodayReport {
+        try await get(path: "/api/today", query: [URLQueryItem(name: "site", value: siteID)])
+    }
+
     /// The site's custom events over `windowDays` against the window before.
     func events(siteID: String, windowDays: Int) async throws -> EventsReport {
         try await get(

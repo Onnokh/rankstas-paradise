@@ -106,8 +106,9 @@ const asText = (value: unknown): string =>
   typeof value === "string" ? value : value == null ? "" : String(value)
 
 // A bucket's `time` is "YYYY-MM-DD HH:MM:SS" in the requested zone; the date
-// is its first ten characters.
+// is its first ten characters, the hour the two after the space.
 const dayOf = (time: unknown): string => asText(time).slice(0, 10)
+const hourOf = (time: unknown): number => asCount(asText(time).slice(11, 13))
 
 // A failure worth retrying: no answer at all, or a 429/5xx. Internal to this
 // file — the port's one error class is what leaves it.
@@ -313,6 +314,29 @@ export const makeWith =
         })
 
       const provider: Provider = {
+        fetchHours: Effect.fn("Rybbit.fetchHours")(function* (date) {
+          // One day, one bucket per hour, in the site's zone. Rybbit fills the
+          // day's 24 buckets; the port pads whatever is missing.
+          const body = yield* request(
+            TimeSeriesResponse,
+            "/overview/time-series",
+            {
+              bucket: "hour",
+              start_date: date,
+              end_date: date,
+              time_zone: source.timeZone,
+            },
+            "hourly time-series",
+          )
+          return body.data
+            .filter((row) => dayOf(row["time"]) === date)
+            .map((row) => ({
+              hour: hourOf(row["time"]),
+              pageviews: asCount(row["pageviews"]),
+              visits: asCount(row["sessions"]),
+              visitors: asCount(row["users"]),
+            }))
+        }),
         liveVisitors: Effect.fn("Rybbit.liveVisitors")(function* (windowMinutes, onlineMinutes) {
           // Rybbit's live-user-count takes one window per call, so the whole
           // window and the "online" window are two calls, made together with

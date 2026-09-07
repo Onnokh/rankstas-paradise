@@ -127,6 +127,14 @@ describe("JSON routes", () => {
     expect(envelope.live).toBeNull()
   })
 
+  test("GET /api/today → 200 with both halves null for a site without analytics", async () => {
+    const { status, body } = await requestJson(server, `/api/today${site}`)
+    expect(status).toBe(200)
+    const envelope = body as Record<string, unknown>
+    expect(envelope.analytics).toBeNull()
+    expect(envelope.today).toBeNull()
+  })
+
   test("GET /api/events → 200 with an empty list for a site without analytics", async () => {
     const { status, body } = await requestJson(server, `/api/events${site}&window=7`)
     expect(status).toBe(200)

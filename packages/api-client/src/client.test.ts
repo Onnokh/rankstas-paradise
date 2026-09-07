@@ -204,6 +204,15 @@ test("queries: options map to the wire query params", async () => {
   expect(params.get("site")).toBe("sleevy")
 })
 
+test("today: decodes a site without a provider", async () => {
+  const http = fakeHttp(() => ({ status: 200, body: { analytics: null, today: null } }))
+  const result = await ApiClient.use
+    .today(siteId)
+    .pipe(Effect.provide(buildLayer(http.layer)), Effect.runPromise)
+  expect(result.today).toBeNull()
+  expect(http.calls[0]!.url.pathname).toBe("/api/today")
+})
+
 test("events: window maps to the wire query param", async () => {
   const http = fakeHttp(() => ({
     status: 200,

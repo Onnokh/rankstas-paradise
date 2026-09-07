@@ -51,6 +51,8 @@ const fakeFactory = (
 ): ProviderFactory =>
   () =>
     Effect.succeed({
+      fetchHours: () =>
+        Effect.succeed([{ hour: 9, pageviews: 3, visits: 2, visitors: 2 }]),
       liveVisitors: () =>
         Effect.sync(() => {
           seen.liveCalls = (seen.liveCalls ?? 0) + 1
@@ -166,6 +168,34 @@ test("live visitors come from the adapter once per cache window", async () => {
   const third = await Effect.runPromise(program)
   expect(third?.visitors).toBe(7)
   expect(memo.liveCalls).toBe(1)
+})
+
+test("today is the provider's day in the site's zone, padded to 24 hours", async () => {
+  const seen: { dates?: ReadonlyArray<string> } = {}
+  const layer = buildLayer(withAnalytics, new Map([["fake", fakeFactory(seen)]]))
+  const today = await Effect.runPromise(
+    Analytics.use.today().pipe(Effect.provide(layer)),
+  )
+  expect(today?.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  expect(today?.timeZone).toBe("UTC")
+  // The adapter was asked for exactly today.
+  expect(seen.dates).toEqual([today!.date])
+  expect(today?.site?.date).toBe(today!.date)
+  expect(today?.hoursElapsed).toBeGreaterThanOrEqual(1)
+  expect(today?.hoursElapsed).toBeLessThanOrEqual(24)
+  // One entry per hour, the adapter's 09:00 in place and zeros elsewhere.
+  expect(today?.hours).toHaveLength(24)
+  expect(today?.hours[9]).toEqual({ hour: 9, pageviews: 3, visits: 2, visitors: 2 })
+  expect(today?.hours[8]).toEqual({ hour: 8, pageviews: 0, visits: 0, visitors: 0 })
+  expect(today?.pages).toEqual([])
+  expect(today?.events).toEqual([])
+})
+
+test("a site without analytics has no today", async () => {
+  const layer = buildLayer(withoutAnalytics, new Map())
+  expect(
+    await Effect.runPromise(Analytics.use.today().pipe(Effect.provide(layer))),
+  ).toBeNull()
 })
 
 test("a site without analytics has no live visitors", async () => {

@@ -267,6 +267,9 @@ export const makeApiGroup = (ctx: ServerContext) => {
       .handle("live", ({ query }) =>
         Effect.promise(() => siteJson(query.site, Reports.use.liveReport())),
       )
+      .handle("today", ({ query }) =>
+        Effect.promise(() => siteJson(query.site, Reports.use.todayReport())),
+      )
       .handle("events", ({ query }) =>
         Effect.promise(async () => {
           let windowDays: number | undefined
