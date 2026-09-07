@@ -13,6 +13,7 @@
 // implementations land in later tickets.
 import { Layer, ManagedRuntime } from "effect"
 
+import { Analytics } from "./analytics/analytics.ts"
 import { Config } from "./config/config.ts"
 import { CurrentSite } from "./sites/current-site.ts"
 import { DomainRating } from "./domain-rating/domain-rating.ts"
@@ -29,6 +30,7 @@ export const AppLayer = Layer.mergeAll(
   CurrentSite.defaultLayer,
   Sites.defaultLayer,
   SearchConsole.defaultLayer,
+  Analytics.defaultLayer,
   Storage.defaultLayer,
   Registry.defaultLayer,
   Sitemap.defaultLayer,

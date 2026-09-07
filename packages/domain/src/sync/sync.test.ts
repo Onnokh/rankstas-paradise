@@ -12,6 +12,8 @@ import { join } from "node:path"
 import { Database } from "bun:sqlite"
 import { Effect, Exit, Layer, ManagedRuntime } from "effect"
 
+import { Analytics } from "../analytics/analytics.ts"
+import { AnalyticsError, type VisitsDays } from "../analytics/schema.ts"
 import { Config } from "../config/config.ts"
 import {
   type DailySnapshot,
@@ -68,6 +70,7 @@ interface Recorder {
   snapshotFetches: Array<ReadonlyArray<string>>
   totalFetches: Array<ReadonlyArray<string>>
   inspectFetches: Array<ReadonlyArray<string>>
+  visitFetches: Array<ReadonlyArray<string>>
 }
 
 const searchConsoleMock = (recorder: Recorder) =>
@@ -129,6 +132,51 @@ const failingSearchConsole = Layer.mock(SearchConsole.Service)({
     ),
 })
 
+// --- mock Analytics: a ready "fake" provider that records the dates asked ---
+
+const analyticsMock = (recorder: Recorder) =>
+  Layer.mock(Analytics.Service)({
+    status: () =>
+      Effect.succeed({
+        provider: "fake",
+        siteId: "1",
+        ready: true,
+        reason: null,
+      }),
+    fetchVisits: (dates) =>
+      Effect.sync((): VisitsDays => {
+        recorder.visitFetches.push(dates)
+        return {
+          site: dates.map((date) => ({
+            date,
+            pageviews: 20,
+            visits: 10,
+            visitors: 8,
+          })),
+          pages: dates.map((date) => ({
+            date,
+            page: "/widgets",
+            pageviews: 12,
+            visits: 6,
+          })),
+          events: dates.map((date) => ({ date, name: "purchase", count: 1 })),
+        }
+      }),
+  })
+
+// A site with no analytics configured: status null, and a fetch would be a bug.
+const noAnalyticsMock = Layer.mock(Analytics.Service)({
+  status: () => Effect.succeed(null),
+})
+
+// A configured provider whose every fetch fails (a wrong key, a vendor outage).
+const failingAnalyticsMock = Layer.mock(Analytics.Service)({
+  status: () =>
+    Effect.succeed({ provider: "fake", siteId: "1", ready: true, reason: null }),
+  fetchVisits: () =>
+    Effect.fail(new AnalyticsError({ message: "The provider refused the key." })),
+})
+
 const registryMock = Layer.mock(Registry.Service)({
   loadRegistry: () => Effect.succeed([registryEntry]),
 })
@@ -164,10 +212,12 @@ const makeRuntime = (
   dbPath: string,
   recorder: Recorder,
   searchConsole: Layer.Layer<SearchConsole.Service> = searchConsoleMock(recorder),
+  analytics: Layer.Layer<Analytics.Service> = analyticsMock(recorder),
 ) => {
   const currentSite = currentSiteLayer(dir, dbPath)
   const deps = Layer.mergeAll(
     searchConsole,
+    analytics,
     Storage.layer.pipe(Layer.provide(currentSite)),
     registryMock,
     sitemapMock,
@@ -186,7 +236,12 @@ let runtime: ReturnType<typeof makeRuntime>
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "rp-sync-"))
   dbPath = join(dir, "search-console.sqlite")
-  recorder = { snapshotFetches: [], totalFetches: [], inspectFetches: [] }
+  recorder = {
+    snapshotFetches: [],
+    totalFetches: [],
+    inspectFetches: [],
+    visitFetches: [],
+  }
   runtime = makeRuntime(dir, dbPath, recorder)
 })
 
@@ -245,6 +300,72 @@ test("a stale reconciliation window is re-fetched as a unit", async () => {
   // Exactly the newest-5-days window, fetched as one call.
   expect(recorder.snapshotFetches).toHaveLength(2)
   expect([...recorder.snapshotFetches[1]!].sort()).toEqual([...reconWindow].sort())
+})
+
+// --- visits: the analytics provider rides along on the sync -----------------
+
+test("a first sync fetches the last 28 whole days of visits and saves them", async () => {
+  const summary = await run(Sync.use.syncSearchConsole())
+
+  // One fetch of 28 dates ending yesterday: visits have no finalization lag.
+  expect(recorder.visitFetches).toHaveLength(1)
+  const asked = [...recorder.visitFetches[0]!].sort()
+  expect(asked).toHaveLength(28)
+  expect(asked.at(-1)).toBe(daysAgo(1))
+  expect(asked[0]).toBe(daysAgo(28))
+  const stored = await run(Storage.use.visitsSummary())
+  expect(stored).toEqual({
+    days: 28,
+    firstDate: daysAgo(28),
+    lastDate: daysAgo(1),
+    source: "fake",
+  })
+  expect(summary).toContain("Visits: 28 days from fake.")
+})
+
+test("an immediate re-sync fetches no visits, then re-fetches only the stale two days", async () => {
+  await run(Sync.use.syncSearchConsole())
+  await run(Sync.use.syncSearchConsole())
+  // Every day is present and fresh, so the second run asks for nothing.
+  expect(recorder.visitFetches).toHaveLength(1)
+
+  // Age every fetched day past the TTL: only the two-day reconcile window
+  // should go back to the provider, as one call.
+  const db = new Database(dbPath)
+  db.run("update analytics_synced_day set fetched_at = datetime('now', '-10 hours')")
+  db.close()
+  await run(Sync.use.syncSearchConsole())
+
+  expect(recorder.visitFetches).toHaveLength(2)
+  expect([...recorder.visitFetches[1]!].sort()).toEqual([daysAgo(2), daysAgo(1)])
+})
+
+test("a site without analytics fetches no visits and stamps nothing", async () => {
+  const quiet = makeRuntime(dir, dbPath, recorder, searchConsoleMock(recorder), noAnalyticsMock)
+  try {
+    const summary = await quiet.runPromise(Sync.use.syncSearchConsole())
+    expect(recorder.visitFetches).toHaveLength(0)
+    expect(summary).not.toContain("Visits:")
+    const stored = await quiet.runPromise(Storage.use.visitsSummary())
+    expect(stored.days).toBe(0)
+  } finally {
+    await quiet.dispose()
+  }
+})
+
+test("a failing analytics provider does not fail the Search Console sync", async () => {
+  const broken = makeRuntime(dir, dbPath, recorder, searchConsoleMock(recorder), failingAnalyticsMock)
+  try {
+    const summary = await broken.runPromise(Sync.use.syncSearchConsole())
+    // The Search Console work landed and the run stamped itself as complete…
+    expect(summary).toContain("Saved 28 Search Console rows")
+    expect(await broken.runPromise(Storage.use.latestCheckedAt())).not.toBeNull()
+    // …while the visits side reports nothing rather than a wrong number.
+    expect(summary).not.toContain("Visits:")
+    expect((await broken.runPromise(Storage.use.visitsSummary())).days).toBe(0)
+  } finally {
+    await broken.dispose()
+  }
 })
 
 // --- lastCheckedAt: "it ran" recorded apart from "the data changed" ----------

@@ -93,6 +93,30 @@ The launch stage of a keyword target, in lifecycle order: **NEW** (the site has 
 **Indexed**:
 Whether Google's URL Inspection reports a target URL as in its index. Un-indexed targets are dimmed in the interface.
 
+### Visits (analytics)
+
+The second ledger. Search Console says how a site is *found*; the analytics provider says what happens once people *arrive*. Both series are keyed by page and day so a report can set them side by side.
+
+**Analytics provider**:
+The web-analytics product a site sends its visits to — Rybbit, Umami, GA4, or another. One per site, named in the site's config; Ranksta only reads from it. Every provider's data is stored in the same canonical form, so a site can change provider and keep its history.
+_Avoid_: naming the product where the concept is meant ("the Rybbit numbers").
+
+**Pageview**:
+One load of a page, as the analytics provider counts it.
+
+**Visit**:
+One session on the site, as the analytics provider counts it. Counts sum across days.
+_Avoid_: "session".
+
+**Visitor**:
+One distinct person on one day, as the analytics provider counts it. Does not sum across days, so it is only shown per day.
+
+**Event**:
+A named custom action the site reports to its analytics provider (`purchase`, `download_shader`), counted per day. Observed, like a Query. Not an Action — an Action is a change *we* made to a page; an Event is something a *visitor* did.
+
+**Traffic**:
+Loosely, both. When a number is meant, say which: clicks (Search Console) or visits (analytics).
+
 ### Work record
 
 **Log**:

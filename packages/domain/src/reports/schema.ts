@@ -3,9 +3,11 @@
 // and are the contract downstream frontends and the HTTP server code against.
 import { Schema } from "effect"
 
+import { AnalyticsStatus, SiteVisitsDay } from "../analytics/schema.ts"
 import { DomainRating, DomainRatingDay } from "../domain-rating/schema.ts"
 
 import {
+  EventWindowRow,
   HistoryDay,
   IndexStatus,
   LogEntry,
@@ -15,6 +17,7 @@ import {
   ProgressState,
   RegistryPerformance,
   RegistryTargetProgress,
+  Visits,
 } from "../storage/schema.ts"
 import { RegistryEntry, RegistryPatch } from "../registry/schema.ts"
 import { SitemapPage } from "../sitemap/schema.ts"
@@ -36,6 +39,27 @@ export const TidyWindow = Schema.Struct({
   deltaClicks: Schema.Number,
 }).annotate({ identifier: "TidyWindow" })
 export interface TidyWindow extends Schema.Schema.Type<typeof TidyWindow> {}
+
+// A current-vs-previous window of visits with its deltas: the visits twin of
+// TidyWindow. Counts are whole numbers already, so there is nothing to round.
+export const VisitsWindowReport = Schema.Struct({
+  current: Visits,
+  previous: Visits,
+  deltaPageviews: Schema.Number,
+  deltaVisits: Schema.Number,
+}).annotate({ identifier: "VisitsWindowReport" })
+export interface VisitsWindowReport
+  extends Schema.Schema.Type<typeof VisitsWindowReport> {}
+
+// One day of site visits for the history report: the analytics twin of the
+// Search Console day it sits beside.
+export const VisitsDayReport = Schema.Struct({
+  pageviews: Schema.Number,
+  visits: Schema.Number,
+  visitors: Schema.Number,
+}).annotate({ identifier: "VisitsDayReport" })
+export interface VisitsDayReport
+  extends Schema.Schema.Type<typeof VisitsDayReport> {}
 
 // A registry entry summarized for display (entrySummary()).
 export const EntrySummary = Schema.Struct({
@@ -180,6 +204,12 @@ export const DashboardSnapshot = Schema.Struct({
   // present value on the free tier, so this starts empty and grows one day per
   // sync — it can never be backfilled.
   domainRatingHistory: Schema.optional(Schema.Array(DomainRatingDay)),
+  // The site's analytics provider (null when it has none), its daily site
+  // visits, and its event counts over the window — all served from the ledger,
+  // never from the provider. Optional keys for the same reason as domainRating.
+  analytics: Schema.optional(Schema.NullOr(AnalyticsStatus)),
+  visitsHistory: Schema.optional(Schema.Array(SiteVisitsDay)),
+  events: Schema.optional(Schema.Array(EventWindowRow)),
 }).annotate({ identifier: "DashboardSnapshot" })
 export interface DashboardSnapshot
   extends Schema.Schema.Type<typeof DashboardSnapshot> {}
@@ -218,6 +248,22 @@ export const StatusReport = Schema.Struct({
     unmapped: Schema.Array(Schema.String),
   }),
   actions: Schema.Number,
+  // The site's analytics provider and how much of its visits series is in the
+  // ledger; null when the site has none. `ready: false` with a `reason` means a
+  // provider is configured that this deployment cannot read — a missing adapter
+  // or key — which is why visits stop moving. Optional key: older servers omit
+  // it, and the clients must keep decoding.
+  analytics: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        ...AnalyticsStatus.fields,
+        days: Schema.Number,
+        firstDate: Schema.NullOr(Schema.String),
+        lastDate: Schema.NullOr(Schema.String),
+        lastSyncedAt: Schema.NullOr(Schema.String),
+      }),
+    ),
+  ),
 }).annotate({ identifier: "StatusReport" })
 export interface StatusReport extends Schema.Schema.Type<typeof StatusReport> {}
 
@@ -247,6 +293,11 @@ export const PageReportRow = Schema.Struct({
   signals: Schema.Array(OpportunityKind),
   verdict: Verdict.fields.verdict,
   reasons: Verdict.fields.reasons,
+  // Pageviews and visits from the site's analytics provider over the same two
+  // windows as the Search Console numbers above; null when the site has no
+  // provider or no visits synced yet. Beside trueTotals.clicks this says how
+  // much of a page's traffic is organic search.
+  visits: Schema.optional(Schema.NullOr(VisitsWindowReport)),
 }).annotate({ identifier: "PageReportRow" })
 export interface PageReportRow
   extends Schema.Schema.Type<typeof PageReportRow> {}
@@ -306,6 +357,8 @@ export const PageReport = Schema.Struct({
   ),
   signals: Schema.Array(SignalSummary),
   actions: Schema.Array(LogEntry),
+  // As on PageReportRow.
+  visits: Schema.optional(Schema.NullOr(VisitsWindowReport)),
 }).annotate({ identifier: "PageReport" })
 export interface PageReport extends Schema.Schema.Type<typeof PageReport> {}
 
@@ -421,6 +474,9 @@ export const HistoryReport = Schema.Struct({
       clicks: Schema.Number,
       ctr: Schema.Number,
       position: Schema.Number,
+      // The same day's site visits from the analytics provider, or null when
+      // the site has none or that day is not synced yet.
+      visits: Schema.optional(Schema.NullOr(VisitsDayReport)),
     }),
   ),
 }).annotate({ identifier: "HistoryReport" })

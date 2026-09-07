@@ -12,6 +12,7 @@ import { Effect, Exit, Layer, ManagedRuntime } from "effect"
 import { CurrentSite } from "../sites/current-site.ts"
 import { type Site } from "../sites/schema.ts"
 import { type StorageError } from "./schema.ts"
+import { type VisitsDays } from "../analytics/schema.ts"
 import { Storage } from "./storage.ts"
 
 const site: Site = {
@@ -433,4 +434,89 @@ test("saveSnapshots rolls back the delete-then-insert atomically on failure", as
   // Original row survived the rolled-back delete.
   expect((await run(Storage.use.snapshotSummary())).rows).toBe(1)
   expect(await run(Storage.use.latestSnapshotDate())).toBe("2024-02-01")
+})
+
+// --- visits: the analytics provider's canonical rows ------------------------
+
+const visitsFor = (dates: ReadonlyArray<string>, pages: ReadonlyArray<string> = ["/a"]): VisitsDays => ({
+  site: dates.map((date) => ({ date, pageviews: 10, visits: 6, visitors: 5 })),
+  pages: dates.flatMap((date) =>
+    pages.map((page) => ({ date, page, pageviews: 4, visits: 3 })),
+  ),
+  events: dates.map((date) => ({ date, name: "purchase", count: 1 })),
+})
+
+test("saveVisits round-trips the rows and stamps every fetched date", async () => {
+  // Three dates fetched, the provider answered for two: the third is stored as
+  // a day of zero visits so it never reads as missing again.
+  await run(
+    Storage.use.saveVisits(
+      visitsFor(["2024-01-10", "2024-01-11"]),
+      ["2024-01-10", "2024-01-11", "2024-01-12"],
+      "fake",
+    ),
+  )
+
+  expect(await run(Storage.use.visitsSummary())).toEqual({
+    days: 3,
+    firstDate: "2024-01-10",
+    lastDate: "2024-01-12",
+    source: "fake",
+  })
+  const history = await run(Storage.use.visitsHistory())
+  expect(history.map((day) => day.pageviews)).toEqual([10, 10, 0])
+  expect(await run(Storage.use.missingVisitDates(["2024-01-09", "2024-01-10"]))).toEqual([
+    "2024-01-09",
+  ])
+  expect(
+    await run(Storage.use.recentlySyncedVisitDates(["2024-01-10", "2024-01-13"], 1)),
+  ).toEqual(["2024-01-10"])
+  expect(await run(Storage.use.latestVisitsSyncedAt())).toMatch(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/,
+  )
+})
+
+test("pageVisitsOverview and eventWindow anchor on the end date given", async () => {
+  const days = ["2024-01-10", "2024-01-11", "2024-01-12", "2024-01-13"]
+  await run(Storage.use.saveVisits(visitsFor(days, ["/a", "/b"]), days, "fake"))
+
+  // A two-day window ending on the 13th: current = 12th+13th, previous = 10th+11th.
+  const overview = await run(Storage.use.pageVisitsOverview(2, "2024-01-13"))
+  expect(overview.currentStart).toBe("2024-01-12")
+  expect(overview.previousStart).toBe("2024-01-10")
+  expect(overview.previousEnd).toBe("2024-01-11")
+  expect(overview.rows).toEqual([
+    { page: "/a", current: { pageviews: 8, visits: 6 }, previous: { pageviews: 8, visits: 6 } },
+    { page: "/b", current: { pageviews: 8, visits: 6 }, previous: { pageviews: 8, visits: 6 } },
+  ])
+  expect(await run(Storage.use.eventWindow(2, "2024-01-13"))).toEqual([
+    { name: "purchase", current: 2, previous: 2 },
+  ])
+
+  // Without an end date the window ends on the newest visits day.
+  const latest = await run(Storage.use.pageVisitsOverview(2))
+  expect(latest.latestDate).toBe("2024-01-13")
+})
+
+test("re-fetching a day replaces its page and event rows", async () => {
+  await run(Storage.use.saveVisits(visitsFor(["2024-01-10"], ["/a", "/b"]), ["2024-01-10"], "fake"))
+  await run(Storage.use.saveVisits(visitsFor(["2024-01-10"], ["/a"]), ["2024-01-10"], "other"))
+
+  const overview = await run(Storage.use.pageVisitsOverview(1, "2024-01-10"))
+  expect(overview.rows.map((row) => row.page)).toEqual(["/a"])
+  // The newest fetch names the provider that wrote it.
+  expect((await run(Storage.use.visitsSummary())).source).toBe("other")
+})
+
+test("visits reads are empty, not failures, for a site with no visits", async () => {
+  expect(await run(Storage.use.visitsSummary())).toEqual({
+    days: 0,
+    firstDate: null,
+    lastDate: null,
+    source: null,
+  })
+  expect(await run(Storage.use.visitsHistory())).toEqual([])
+  expect((await run(Storage.use.pageVisitsOverview())).latestDate).toBeNull()
+  expect(await run(Storage.use.eventWindow())).toEqual([])
+  expect(await run(Storage.use.latestVisitsSyncedAt())).toBeNull()
 })

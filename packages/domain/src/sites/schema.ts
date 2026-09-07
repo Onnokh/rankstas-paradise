@@ -1,6 +1,8 @@
 // Frozen data shapes and errors for the Sites domain.
 import { Schema } from "effect"
 
+import { AnalyticsSource } from "../analytics/schema.ts"
+
 // Stable per-site identifier used in URLs (?site=<id>) and on-disk paths
 // (data/sites/<id>/). Branded so a bare string can't be passed where a resolved
 // site id is required.
@@ -18,6 +20,10 @@ export const Site = Schema.Struct({
   origin: Schema.String,
   sitemapUrl: Schema.String,
   brandTerms: Schema.Array(Schema.String),
+  // The resolved analytics source, when the site has one. Optional rather than
+  // nullable so every existing Site value (fixtures, the api-client's decode of
+  // GET /api/sites against an older server) stays valid as it is.
+  analytics: Schema.optional(AnalyticsSource),
 }).annotate({ identifier: "Site" })
 export interface Site extends Schema.Schema.Type<typeof Site> {}
 

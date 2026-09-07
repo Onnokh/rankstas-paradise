@@ -6,7 +6,13 @@
       "name": "Example",
       "siteUrl": "sc-domain:example.com",
       "origin": "https://example.com",
-      "brandTerms": ["example"]
+      "brandTerms": ["example"],
+      "analytics": {
+        "provider": "rybbit",
+        "siteId": "1",
+        "baseUrl": "https://rybbit.example.com",
+        "timeZone": "UTC"
+      }
     }
   ]
 }

@@ -12,6 +12,7 @@ import { Reactivity } from "effect/unstable/reactivity"
 import { type SqlError } from "effect/unstable/sql"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 
+import { type SiteVisitsDay, type VisitsDays } from "../analytics/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import {
   type DailySnapshot,
@@ -23,6 +24,7 @@ import { serviceUse } from "../service-use.ts"
 import {
   type BaselineCapture,
   type DomainRatingDay,
+  type EventWindowRow,
   type HistoryDay,
   type LogEntry,
   type LogEntryInput,
@@ -31,6 +33,7 @@ import {
   type OpportunityDigest,
   type OpportunitySignal,
   type PagesWindowOverview,
+  type PageVisitsOverview,
   type RegistryDay,
   type RegistryPerformance,
   type RegistryProgress,
@@ -40,6 +43,7 @@ import {
   type SnapshotSummary,
   type TopQueriesOptions,
   type TopQueriesResult,
+  type VisitsSummary,
 } from "./schema.ts"
 
 export interface Interface {
@@ -76,6 +80,16 @@ export interface Interface {
     fetchedAt: string,
     license: string,
   ) => Effect.Effect<void, StorageError>
+  // Record one fetch of canonical visit rows from the site's analytics provider:
+  // every fetched date's page and event rows are replaced, site rows upserted,
+  // and the dates stamped in `analytics_synced_day` with the provider they came
+  // from. `source` is the provider name, kept so a switch of provider halfway
+  // through the series stays visible; nothing queries by it.
+  readonly saveVisits: (
+    visits: VisitsDays,
+    fetchedDates: ReadonlyArray<string>,
+    source: string,
+  ) => Effect.Effect<void, StorageError>
 
   // --- freshness / coverage queries ---
   readonly missingDailyTotalDates: (
@@ -95,6 +109,16 @@ export interface Interface {
     targetUrls: ReadonlyArray<string>,
     maxAgeHours: number,
   ) => Effect.Effect<ReadonlyArray<string>, StorageError>
+  // The visits twins of missingSnapshotDates / recentlySyncedDates /
+  // latestSyncedAt, over `analytics_synced_day`.
+  readonly missingVisitDates: (
+    dates: ReadonlyArray<string>,
+  ) => Effect.Effect<ReadonlyArray<string>, StorageError>
+  readonly recentlySyncedVisitDates: (
+    dates: ReadonlyArray<string>,
+    maxAgeHours: number,
+  ) => Effect.Effect<ReadonlyArray<string>, StorageError>
+  readonly latestVisitsSyncedAt: () => Effect.Effect<string | null, StorageError>
   readonly snapshotDateRange: () => Effect.Effect<
     SnapshotDateRange,
     StorageError
@@ -152,6 +176,25 @@ export interface Interface {
     end: string,
     includeBrand?: boolean,
   ) => Effect.Effect<Metrics, StorageError>
+  // --- visits reads (empty, never failing on absence, for a site without a
+  // provider: the tables exist for every site) ---
+  readonly visitsSummary: () => Effect.Effect<VisitsSummary, StorageError>
+  // Daily site visits, oldest first, the newest `limit` days.
+  readonly visitsHistory: (
+    limit?: number,
+  ) => Effect.Effect<ReadonlyArray<SiteVisitsDay>, StorageError>
+  // Per-page visits over a current/previous window. `endDate` anchors the
+  // window; callers pass the Search Console latest date so both ledgers
+  // describe the same days. Defaults to the newest visits day.
+  readonly pageVisitsOverview: (
+    windowDays?: number,
+    endDate?: string,
+  ) => Effect.Effect<PageVisitsOverview, StorageError>
+  // Per-event counts over the same kind of window.
+  readonly eventWindow: (
+    windowDays?: number,
+    endDate?: string,
+  ) => Effect.Effect<ReadonlyArray<EventWindowRow>, StorageError>
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -313,6 +356,45 @@ export const layer = Layer.effect(
         rating real not null,
         fetched_at text not null,
         license text not null default ''
+      )`,
+      // The analytics provider's series in canonical form (see
+      // ../analytics/schema.ts). Vendor-neutral on purpose: no table or column
+      // is named after a product, so a site can move from one provider to
+      // another and keep its history. `source` records which provider wrote a
+      // row, so such a move stays visible; nothing queries by it. `page` is a
+      // path, unlike page_daily's full URL, because that is what analytics
+      // vendors report and what the registry keys targets by.
+      `create table if not exists analytics_site_daily (
+        date text primary key,
+        pageviews integer not null,
+        visits integer not null,
+        visitors integer not null,
+        source text not null,
+        collected_at text not null default current_timestamp
+      )`,
+      `create table if not exists analytics_page_daily (
+        date text not null,
+        page text not null,
+        pageviews integer not null,
+        visits integer not null,
+        source text not null,
+        collected_at text not null default current_timestamp,
+        primary key (date, page)
+      )`,
+      `create table if not exists analytics_event_daily (
+        date text not null,
+        name text not null,
+        occurrences integer not null,
+        source text not null,
+        collected_at text not null default current_timestamp,
+        primary key (date, name)
+      )`,
+      // The visits twin of synced_day: which dates have been fetched from the
+      // provider, and when, so a sync fetches only what is missing or stale.
+      `create table if not exists analytics_synced_day (
+        date text primary key,
+        source text not null,
+        fetched_at text not null default current_timestamp
       )`,
     ]
     yield* Effect.forEach(ddl, (statement) => sql.unsafe(statement)).pipe(
@@ -1140,6 +1222,200 @@ export const layer = Layer.effect(
       return rows[0] ?? { rows: 0, dates: 0 }
     })
 
+    // --- visits (canonical analytics rows; see ../analytics/schema.ts) ---
+
+    const saveVisitsI = (
+      visits: VisitsDays,
+      fetchedDates: ReadonlyArray<string>,
+      source: string,
+    ) =>
+      sql.withTransaction(
+        Effect.gen(function* () {
+          for (const date of fetchedDates) {
+            yield* sql`delete from analytics_page_daily where date = ${date}`
+            yield* sql`delete from analytics_event_daily where date = ${date}`
+          }
+          // A fetched day the provider returned no site row for is a day with
+          // no visits, and it is recorded as such — otherwise the date reads as
+          // missing on every later sync (the trap saveDailyTotals also avoids).
+          const returned = new Set(visits.site.map((row) => row.date))
+          for (const date of fetchedDates)
+            if (!returned.has(date))
+              yield* sql`
+                insert into analytics_site_daily (date, pageviews, visits, visitors, source)
+                values (${date}, 0, 0, 0, ${source})
+                on conflict(date) do nothing`
+          for (const row of visits.site)
+            yield* sql`
+              insert into analytics_site_daily (date, pageviews, visits, visitors, source)
+              values (${row.date}, ${row.pageviews}, ${row.visits}, ${row.visitors}, ${source})
+              on conflict(date) do update set
+                pageviews = excluded.pageviews, visits = excluded.visits,
+                visitors = excluded.visitors, source = excluded.source,
+                collected_at = current_timestamp`
+          for (const row of visits.pages)
+            yield* sql`
+              insert into analytics_page_daily (date, page, pageviews, visits, source)
+              values (${row.date}, ${row.page}, ${row.pageviews}, ${row.visits}, ${source})
+              on conflict(date, page) do update set
+                pageviews = excluded.pageviews, visits = excluded.visits,
+                source = excluded.source, collected_at = current_timestamp`
+          for (const row of visits.events)
+            yield* sql`
+              insert into analytics_event_daily (date, name, occurrences, source)
+              values (${row.date}, ${row.name}, ${row.count}, ${source})
+              on conflict(date, name) do update set
+                occurrences = excluded.occurrences, source = excluded.source,
+                collected_at = current_timestamp`
+          for (const date of fetchedDates)
+            yield* sql`
+              insert into analytics_synced_day (date, source) values (${date}, ${source})
+              on conflict(date) do update set
+                source = excluded.source, fetched_at = current_timestamp`
+        }),
+      )
+
+    const missingVisitDatesI = (dates: ReadonlyArray<string>) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{ date: string }>`select date from analytics_synced_day`
+        const fetched = new Set(rows.map((row) => row.date))
+        return [...new Set(dates)].filter((date) => !fetched.has(date))
+      })
+
+    const recentlySyncedVisitDatesI = (
+      dates: ReadonlyArray<string>,
+      maxAgeHours: number,
+    ) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{ date: string }>`
+          select date from analytics_synced_day
+          where fetched_at > datetime('now', ${`-${maxAgeHours} hours`})`
+        const fresh = new Set(rows.map((row) => row.date))
+        return [...new Set(dates)].filter((date) => fresh.has(date))
+      })
+
+    const latestVisitsSyncedAtI = Effect.gen(function* () {
+      const rows = yield* sql<{ fetched_at: string | null }>`
+        select strftime('%Y-%m-%dT%H:%M:%SZ', max(fetched_at)) as fetched_at
+        from analytics_synced_day`
+      return rows[0]?.fetched_at ?? null
+    })
+
+    const visitsSummaryI = Effect.gen(function* () {
+      const rows = yield* sql<VisitsSummary>`
+        select count(*) as days, min(date) as firstDate, max(date) as lastDate,
+               (select source from analytics_synced_day
+                order by fetched_at desc, date desc limit 1) as source
+        from analytics_synced_day`
+      return rows[0] ?? { days: 0, firstDate: null, lastDate: null, source: null }
+    })
+
+    const visitsHistoryI = (limit = 28) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<SiteVisitsDay>`
+          select date, pageviews, visits, visitors from analytics_site_daily order by date`
+        return rows.slice(-limit) as ReadonlyArray<SiteVisitsDay>
+      })
+
+    const latestVisitsDateI = Effect.gen(function* () {
+      const rows = yield* sql<{ date: string | null }>`
+        select max(date) as date from analytics_site_daily`
+      return rows[0]?.date ?? null
+    })
+
+    // The two window bounds every visits window read shares: anchored on the
+    // caller's end date when given, else on the newest visits day.
+    const visitsWindowBounds = (windowDays: number, endDate?: string) =>
+      Effect.gen(function* () {
+        const latestDate = endDate ?? (yield* latestVisitsDateI)
+        if (!latestDate) return null
+        const currentStart = dateDaysBefore(latestDate, windowDays - 1)
+        const previousEnd = dateDaysBefore(currentStart, 1)
+        const previousStart = dateDaysBefore(previousEnd, windowDays - 1)
+        return { latestDate, currentStart, previousEnd, previousStart }
+      })
+
+    const zeroVisits = { pageviews: 0, visits: 0 }
+
+    const pageVisitsOverviewI = (windowDays = 28, endDate?: string) =>
+      Effect.gen(function* () {
+        const bounds = yield* visitsWindowBounds(windowDays, endDate)
+        if (!bounds) {
+          return {
+            latestDate: null,
+            currentStart: null,
+            previousStart: null,
+            previousEnd: null,
+            rows: [],
+          }
+        }
+        const window = (start: string, end: string) =>
+          sql<{ page: string; pageviews: number; visits: number }>`
+            select page, sum(pageviews) as pageviews, sum(visits) as visits
+            from analytics_page_daily
+            where date between ${start} and ${end}
+            group by page`
+        const asMap = (
+          rows: ReadonlyArray<{ page: string; pageviews: number; visits: number }>,
+        ) =>
+          new Map(
+            rows.map(({ page, ...visits }) => [page, visits as typeof zeroVisits]),
+          )
+        const current = asMap(
+          yield* window(bounds.currentStart, bounds.latestDate),
+        )
+        const previous = asMap(
+          yield* window(bounds.previousStart, bounds.previousEnd),
+        )
+        const pages = [...new Set([...current.keys(), ...previous.keys()])]
+        const rows = pages
+          .map((page) => ({
+            page,
+            current: current.get(page) ?? zeroVisits,
+            previous: previous.get(page) ?? zeroVisits,
+          }))
+          .sort((left, right) => right.current.pageviews - left.current.pageviews)
+        return {
+          latestDate: bounds.latestDate,
+          currentStart: bounds.currentStart,
+          previousStart: bounds.previousStart,
+          previousEnd: bounds.previousEnd,
+          rows,
+        }
+      })
+
+    const eventWindowI = (windowDays = 28, endDate?: string) =>
+      Effect.gen(function* () {
+        const bounds = yield* visitsWindowBounds(windowDays, endDate)
+        if (!bounds) return [] as ReadonlyArray<EventWindowRow>
+        const window = (start: string, end: string) =>
+          sql<{ name: string; count: number }>`
+            select name, sum(occurrences) as count
+            from analytics_event_daily
+            where date between ${start} and ${end}
+            group by name`
+        const current = new Map(
+          (yield* window(bounds.currentStart, bounds.latestDate)).map((row) => [
+            row.name,
+            row.count,
+          ]),
+        )
+        const previous = new Map(
+          (yield* window(bounds.previousStart, bounds.previousEnd)).map((row) => [
+            row.name,
+            row.count,
+          ]),
+        )
+        const names = [...new Set([...current.keys(), ...previous.keys()])]
+        return names
+          .map((name) => ({
+            name,
+            current: current.get(name) ?? 0,
+            previous: previous.get(name) ?? 0,
+          }))
+          .sort((left, right) => right.current - left.current) as ReadonlyArray<EventWindowRow>
+      })
+
     return {
       saveSnapshots: (snapshots, fetchedDates) =>
         saveSnapshotsI(snapshots, fetchedDates).pipe(mapErr("saveSnapshots")),
@@ -1206,6 +1482,25 @@ export const layer = Layer.effect(
         metricsBetweenI(targetUrl, start, end, includeBrand).pipe(
           mapErr("metricsBetween"),
         ),
+      saveVisits: (visits, fetchedDates, source) =>
+        saveVisitsI(visits, fetchedDates, source).pipe(mapErr("saveVisits")),
+      missingVisitDates: (dates) =>
+        missingVisitDatesI(dates).pipe(mapErr("missingVisitDates")),
+      recentlySyncedVisitDates: (dates, maxAgeHours) =>
+        recentlySyncedVisitDatesI(dates, maxAgeHours).pipe(
+          mapErr("recentlySyncedVisitDates"),
+        ),
+      latestVisitsSyncedAt: () =>
+        latestVisitsSyncedAtI.pipe(mapErr("latestVisitsSyncedAt")),
+      visitsSummary: () => visitsSummaryI.pipe(mapErr("visitsSummary")),
+      visitsHistory: (limit) =>
+        visitsHistoryI(limit).pipe(mapErr("visitsHistory")),
+      pageVisitsOverview: (windowDays, endDate) =>
+        pageVisitsOverviewI(windowDays, endDate).pipe(
+          mapErr("pageVisitsOverview"),
+        ),
+      eventWindow: (windowDays, endDate) =>
+        eventWindowI(windowDays, endDate).pipe(mapErr("eventWindow")),
     } satisfies Interface
   }),
 )

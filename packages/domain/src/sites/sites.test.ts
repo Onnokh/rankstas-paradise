@@ -232,3 +232,46 @@ describe("CurrentSite", () => {
     expect(error).toBeInstanceOf(UnknownSiteError)
   })
 })
+
+describe("Sites.loadSites analytics", () => {
+  test("fills the analytics defaults and trims the base URL", async () => {
+    const layer = Sites.layer.pipe(
+      Layer.provide(
+        fakeConfig({
+          sites: [
+            {
+              id: "example",
+              siteUrl: "sc-domain:example.com",
+              analytics: {
+                provider: "rybbit",
+                siteId: "12",
+                baseUrl: "https://rybbit.example.com/",
+              },
+            },
+          ],
+        }),
+      ),
+    )
+    const exit = await run(Sites.use.loadSites().pipe(Effect.provide(layer)))
+    const sites = Exit.isSuccess(exit) ? exit.value : undefined
+    expect(sites?.[0]?.analytics).toEqual({
+      provider: "rybbit",
+      siteId: "12",
+      baseUrl: "https://rybbit.example.com",
+      timeZone: "UTC",
+    })
+  })
+
+  test("a site without an analytics block has none", async () => {
+    const layer = Sites.layer.pipe(
+      Layer.provide(
+        fakeConfig({
+          sites: [{ id: "example", siteUrl: "sc-domain:example.com" }],
+        }),
+      ),
+    )
+    const exit = await run(Sites.use.loadSites().pipe(Effect.provide(layer)))
+    const sites = Exit.isSuccess(exit) ? exit.value : undefined
+    expect(sites?.[0]?.analytics).toBeUndefined()
+  })
+})
