@@ -630,6 +630,8 @@ private struct TrendChart: View {
 
     /// Area and line for both metrics over one run of days. The suffix keeps provisional runs
     /// as separate series so they are drawn on their own, without adding legend entries.
+    /// The curve is monotone, so a day is a soft crest rather than a corner. Monotone never
+    /// overshoots the data: Catmull-Rom dipped below the baseline between two empty days.
     @ChartContentBuilder
     private func series(_ run: [HistoryReportDay], suffix: String, opacity: Double) -> some ChartContent {
         ForEach(run) { point in
@@ -686,6 +688,7 @@ private struct TrendChart: View {
                 .lineStyle(StrokeStyle(lineWidth: 1.5, lineJoin: .round))
             }
         }
+        .interpolationMethod(.monotone)
     }
 
     /// Days between ticks: one per day up to a month, then thinned so the dots stay dots.
