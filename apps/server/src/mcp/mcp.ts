@@ -309,6 +309,23 @@ export const buildMcpServer = (run: RunTool): McpServer => {
   )
 
   server.registerTool(
+    "today",
+    {
+      description:
+        "Today so far in the site's time zone, from its analytics provider: totals " +
+        "(pageviews, visits, visitors), 24 hourly rows, pages and events. The ledger " +
+        "stops at yesterday, so this is the second read that asks the provider " +
+        "(answers are memoised for a minute). today is null when the site has no " +
+        "provider; analytics.ready false with a reason means it cannot be read.",
+      inputSchema: { site },
+    },
+    async ({ site }) => {
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.todayReport(), id))
+    },
+  )
+
+  server.registerTool(
     "live",
     {
       description:

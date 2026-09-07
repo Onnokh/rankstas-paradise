@@ -14,6 +14,7 @@ import {
   type AnalyticsError,
   type AnalyticsSource,
   type VisitsDays,
+  type SiteVisitsHour,
 } from "./schema.ts"
 
 // What an adapter must produce: canonical rows for exactly the dates asked. How
@@ -35,6 +36,13 @@ export interface Provider {
     windowMinutes: number,
     onlineMinutes: number,
   ) => Effect.Effect<LiveSample, AnalyticsError>
+
+  // One day's site totals by the hour, in the site's zone: the shape of a
+  // "today" view. Rybbit buckets its time-series by hour, Umami has
+  // unit=hour, GA4 has the hour dimension. Hours the provider omits are quiet.
+  readonly fetchHours: (
+    date: string,
+  ) => Effect.Effect<ReadonlyArray<SiteVisitsHour>, AnalyticsError>
 }
 
 export interface LiveSample {

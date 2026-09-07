@@ -120,6 +120,9 @@ The distinct people active on the site in the last thirty minutes, as the analyt
 **Online**:
 The distinct people active on the site in the last five minutes: the ones there right now. The figure beside a site's name. The five minutes are what Rybbit and Umami call online; Live visitors is the wider window the realtime bars cover.
 
+**Today**:
+The provider's current calendar day in the site's time zone, so far: totals, one row per hour, pages and events. Asked on demand and shown at most a minute old; never stored. The ledger stops at yesterday and Search Console lags days, so Today has no Search Console figures and its numbers change until the day ends.
+
 **Traffic**:
 Loosely, both. When a number is meant, say which: clicks (Search Console) or visits (analytics).
 

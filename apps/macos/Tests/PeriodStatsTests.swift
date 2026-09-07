@@ -7,8 +7,8 @@ final class PeriodStatsTests: XCTestCase {
     }
 
     func testPeriodsCoverTheSketchAndNeedTwiceTheLongestSpan() {
-        XCTAssertEqual(Period.allCases.map(\.label), ["7d", "14d", "28d", "3m", "6m"])
-        XCTAssertEqual(Period.allCases.map(\.days), [7, 14, 28, 90, 180])
+        XCTAssertEqual(Period.allCases.map(\.label), ["Today", "7d", "14d", "28d", "3m", "6m"])
+        XCTAssertEqual(Period.allCases.map(\.days), [1, 7, 14, 28, 90, 180])
         XCTAssertEqual(Period.historyLimit, 360)
     }
 

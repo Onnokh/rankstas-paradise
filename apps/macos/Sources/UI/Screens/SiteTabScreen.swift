@@ -60,7 +60,8 @@ struct SiteTabScreen: View {
             await history.load(overview.id)
         }
         .task(id: RankingStore.KeywordsKey(siteID: overview.id, period: state.period)) {
-            guard !isPreview else { return }
+            // Today has no Search Console window to rank by; its lists come with the live poll.
+            guard !isPreview, state.period != .today else { return }
             await rankings.load(overview.id, period: state.period)
         }
     }
@@ -93,6 +94,10 @@ struct SiteTabScreen: View {
         live.reports[overview.id]?.live
     }
 
+    private var todayVisits: TodayVisits? {
+        live.todays[overview.id]?.today
+    }
+
     /// Whether the site has an analytics provider with anything to show: a live count, or
     /// at least one day of visits in the series.
     private var hasAnalytics: Bool {
@@ -123,36 +128,11 @@ struct SiteTabScreen: View {
                     .padding(.top, Self.columnInset)
                     .padding(.bottom, 40)
 
-                MetricStrip(comparison: comparison, visits: visitsComparison, rating: ratingMove)
-                    .column()
-
-                TrendChart(days: Array(days.suffix(state.period.days)))
-                    .padding(.top, 36)
-
-                // The analytics provider's two views, side by side under the Search Console
-                // chart and apart from it: the people on the site this half hour, and the
-                // period's visits. A site without a provider has neither and gets no row.
-                if hasAnalytics {
-                    HStack(alignment: .top, spacing: 20) {
-                        RealtimeCard(live: liveVisitors)
-                        VisitsCard(days: Array(days.suffix(state.period.days)), comparison: visitsComparison)
-                    }
-                    .column()
-                    .padding(.top, 36)
-
-                    // What visitors did, over the same period: the provider's third view,
-                    // the full column wide because event names run long.
-                    EventsCard(
-                        rows: rankings.events[RankingStore.KeywordsKey(siteID: overview.id, period: state.period)] ?? [],
-                        loading: rankings.loading.contains(overview.id)
-                    )
-                    .column()
-                    .padding(.top, 20)
+                if state.period == .today {
+                    todayBody
+                } else {
+                    periodBody
                 }
-
-                rankingCards
-                    .column()
-                    .padding(.top, 36)
 
                 footer
                     .column()
@@ -161,6 +141,80 @@ struct SiteTabScreen: View {
             }
         }
         .scrollDisabled(isPreview)
+    }
+
+    /// A stored period: Search Console figures and chart, then the provider's cards.
+    @ViewBuilder
+    private var periodBody: some View {
+        MetricStrip(comparison: comparison, visits: visitsComparison, rating: ratingMove)
+            .column()
+
+        TrendChart(days: Array(days.suffix(state.period.days)))
+            .padding(.top, 36)
+
+        // The analytics provider's two views, side by side under the Search Console
+        // chart and apart from it: the people on the site this half hour, and the
+        // period's visits. A site without a provider has neither and gets no row.
+        if hasAnalytics {
+            HStack(alignment: .top, spacing: 20) {
+                RealtimeCard(live: liveVisitors)
+                VisitsCard(days: Array(days.suffix(state.period.days)), comparison: visitsComparison)
+            }
+            .column()
+            .padding(.top, 36)
+
+            // What visitors did, over the same period: the provider's third view,
+            // the full column wide because event names run long.
+            EventsCard(
+                rows: rankings.events[RankingStore.KeywordsKey(siteID: overview.id, period: state.period)] ?? [],
+                loading: rankings.loading.contains(overview.id)
+            )
+            .column()
+            .padding(.top, 20)
+        }
+
+        rankingCards
+            .column()
+            .padding(.top, 36)
+    }
+
+    /// Today: nothing is stored yet, so everything here is the provider's, read live. Search
+    /// Console has no figures for today at all, so its strip, chart and lists are not shown
+    /// rather than shown empty.
+    @ViewBuilder
+    private var todayBody: some View {
+        if let today = todayVisits {
+            TodayStrip(today: today, rating: ratingMove)
+                .column()
+
+            HoursChart(today: today)
+                .padding(.top, 36)
+
+            HStack(alignment: .top, spacing: 20) {
+                RealtimeCard(live: liveVisitors)
+                PagesTodayCard(pages: today.pages)
+            }
+            .column()
+            .padding(.top, 36)
+
+            EventsCard(
+                rows: today.events.map { EventRow(name: $0.name, current: $0.count, previous: 0, delta: 0) },
+                loading: false
+            )
+            .column()
+            .padding(.top, 20)
+        } else if let report = live.todays[overview.id] {
+            ContentUnavailableView(
+                report.analytics == nil ? "No analytics provider" : "Analytics not ready",
+                systemImage: "chart.bar.xaxis",
+                description: Text(report.analytics?.reason ?? "Today is read live from the site's analytics provider, and \(overview.site.name) has none configured.")
+            )
+            .frame(minHeight: 320)
+        } else {
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, minHeight: 320)
+        }
     }
 
     /// Keywords and registry targets side by side, each ranked by clicks.
@@ -244,7 +298,10 @@ struct SiteTabScreen: View {
                     Button("Refresh", systemImage: "arrow.clockwise") {
                         onRefresh()
                         Task { await history.refresh(overview.id) }
-                        Task { await rankings.refresh(overview.id, period: state.period) }
+                        Task { await live.refresh(overview.id) }
+                        if state.period != .today {
+                            Task { await rankings.refresh(overview.id, period: state.period) }
+                        }
                     }
                     .labelStyle(.iconOnly)
                     .disabled(isRefreshing || history.refreshing.contains(overview.id))
@@ -464,6 +521,221 @@ private struct Metric: View {
         }
         .fixedSize()
         .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: - Today
+
+/// Today's numbers in the metric strip's place: the provider's four, then the Domain Rating
+/// beyond the hairline as on every other period. No moves: there is no "previous today".
+private struct TodayStrip: View {
+    let today: TodayVisits
+    let rating: RatingMove?
+
+    var body: some View {
+        let count = { (value: Double?) in value.map { $0.formatted(.number.precision(.fractionLength(0))) } ?? "0" }
+        HStack(alignment: .top, spacing: 0) {
+            Metric(title: "Visits", value: count(today.site?.visits), dot: visitsColor)
+            gap
+            Metric(title: "Pageviews", value: count(today.site?.pageviews))
+            gap
+            Metric(title: "Visitors", value: count(today.site?.visitors))
+            gap
+            Metric(title: "Events", value: count(today.eventCount))
+            gap
+            Rectangle()
+                .fill(Palette.line)
+                .frame(width: 1, height: 48)
+            gap
+            Metric(
+                title: "Domain Rating",
+                value: rating.map { $0.current.formatted(.number.precision(.fractionLength(1))) } ?? "—",
+                footnote: rating == nil ? "No reading yet" : nil
+            )
+        }
+    }
+
+    private var gap: some View {
+        Spacer(minLength: 28)
+    }
+}
+
+/// Today by the hour, in the big chart's place: one bar per hour that has begun, the hours
+/// to come left as room so the day keeps its width as it fills. Same hover as the Visits card.
+private struct HoursChart: View {
+    let today: TodayVisits
+
+    @Environment(\.isTabPreview) private var isPreview
+    @State private var hovered: VisitsHour?
+    @State private var hoverX: CGFloat = 0
+
+    private var elapsed: [VisitsHour] {
+        Array(today.hours.prefix(max(1, min(24, today.hoursElapsed))))
+    }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            chart
+            HStack {
+                Text("00:00")
+                Spacer()
+                Text("Now")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, SiteTabScreen.columnInset)
+        }
+    }
+
+    private var chart: some View {
+        Chart {
+            RuleMark(y: .value("Visits", 0))
+                .foregroundStyle(Palette.line)
+                .lineStyle(StrokeStyle(lineWidth: 1))
+
+            ForEach(elapsed) { hour in
+                BarMark(x: .value("Hour", hour.hour), y: .value("Visits", hour.visits), width: .ratio(0.6))
+                    .foregroundStyle(visitsColor.opacity(hovered == nil || hovered == hour ? 1 : 0.4))
+                    .cornerRadius(2)
+            }
+
+            if let hovered {
+                RuleMark(x: .value("Hour", hovered.hour))
+                    .foregroundStyle(.secondary.opacity(0.6))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            }
+        }
+        .chartXScale(domain: -0.5...23.5)
+        .chartYScale(domain: .automatic(includesZero: true))
+        .chartYAxis(.hidden)
+        .chartXAxis {
+            AxisMarks(values: Array(stride(from: 0, through: 23, by: 1))) { _ in
+                AxisTick(centered: false, length: 2, stroke: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .foregroundStyle(Palette.line)
+            }
+        }
+        .chartPlotStyle { plot in
+            plot.padding(.top, 8)
+        }
+        .chartOverlay { proxy in
+            if !isPreview {
+                GeometryReader { geometry in
+                    Rectangle()
+                        .fill(.clear)
+                        .contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            switch phase {
+                            case .active(let location):
+                                hovered = hour(at: location, proxy: proxy, geometry: geometry)
+                                if let hovered,
+                                   let plotFrame = proxy.plotFrame,
+                                   let x = proxy.position(forX: hovered.hour) {
+                                    hoverX = geometry[plotFrame].origin.x + x
+                                }
+                            case .ended:
+                                hovered = nil
+                            }
+                        }
+                }
+            }
+        }
+        .frame(height: 220)
+        .overlay(alignment: .topLeading) {
+            GeometryReader { geometry in
+                HourTooltip(hour: hovered ?? elapsed[elapsed.count - 1])
+                    .fixedSize()
+                    .alignmentGuide(.leading) { label in
+                        -min(max(hoverX - label.width / 2, 0), max(geometry.size.width - label.width, 0))
+                    }
+                    .alignmentGuide(.top) { label in label.height + 8 }
+                    .opacity(hovered == nil ? 0 : 1)
+            }
+            .allowsHitTesting(false)
+        }
+    }
+
+    private func hour(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) -> VisitsHour? {
+        guard let plotFrame = proxy.plotFrame else { return nil }
+        let origin = geometry[plotFrame].origin
+        guard let value: Double = proxy.value(atX: location.x - origin.x) else { return nil }
+        let index = Int(value.rounded())
+        guard elapsed.indices.contains(index) else { return nil }
+        return elapsed[index]
+    }
+}
+
+private struct HourTooltip: View {
+    let hour: VisitsHour
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(String(format: "%02d:00 – %02d:00", hour.hour, (hour.hour + 1) % 24))
+                .font(.callout.weight(.semibold))
+            Text("Visits : \(hour.visits.formatted(.number.precision(.fractionLength(0))))")
+            Text("Visitors : \(hour.visitors.formatted(.number.precision(.fractionLength(0))))")
+            Text("Pageviews : \(hour.pageviews.formatted(.number.precision(.fractionLength(0))))")
+        }
+        .font(.callout)
+        .monospacedDigit()
+        .padding(12)
+        .background(.regularMaterial, in: .rect(cornerRadius: 8))
+    }
+}
+
+/// Today's pages by visits, in the Visits card's place: the list-as-chart of the ranking
+/// cards, lilac like every visits figure.
+private struct PagesTodayCard: View {
+    let pages: [TodayPage]
+
+    private var ranked: [TodayPage] {
+        Array(pages.sorted { $0.visits > $1.visits }.prefix(RankingStore.rowLimit))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Pages today")
+                    .font(.headline)
+                Spacer()
+                Text("Visits")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            if ranked.isEmpty {
+                Text("No visits yet today.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
+            } else {
+                let strongest = max(ranked.map(\.visits).max() ?? 1, 1)
+                VStack(spacing: 6) {
+                    ForEach(ranked) { page in
+                        HStack(spacing: 12) {
+                            Text(page.page)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: 0)
+                            Text(page.visits.formatted(.number.precision(.fractionLength(0))))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(alignment: .leading) {
+                            GeometryReader { geometry in
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(visitsColor.opacity(0.16))
+                                    .frame(width: max(geometry.size.width * (page.visits / strongest), 6))
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .cardSurface(cornerRadius: 12)
     }
 }
 

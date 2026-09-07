@@ -75,6 +75,29 @@ final class LiveTests: XCTestCase {
         XCTAssertNil(targets[2].visits)
     }
 
+    func testTodayReportDecodes() throws {
+        let report = try decode("""
+        {"generatedAt":"2026-09-07T19:51:20.381Z","mode":"live",
+         "analytics":{"provider":"rybbit","siteId":"x","ready":true,"reason":null},
+         "today":{"date":"2026-09-07","timeZone":"Europe/Amsterdam","hoursElapsed":22,
+                  "site":{"date":"2026-09-07","pageviews":120,"visits":40,"visitors":33},
+                  "hours":[{"hour":0,"pageviews":1,"visits":1,"visitors":1}],
+                  "pages":[{"date":"2026-09-07","page":"/","pageviews":60,"visits":30}],
+                  "events":[{"date":"2026-09-07","name":"purchase","count":2},{"date":"2026-09-07","name":"login","count":5}],
+                  "fetchedAt":"2026-09-07T19:51:20.381Z"}}
+        """, as: TodayReport.self)
+
+        XCTAssertEqual(report.today?.site?.visits, 40)
+        XCTAssertEqual(report.today?.hoursElapsed, 22)
+        XCTAssertEqual(report.today?.pages.first?.page, "/")
+        XCTAssertEqual(report.today?.eventCount, 7)
+
+        let none = try decode("""
+        {"generatedAt":"2026-09-07T19:51:20.381Z","mode":"debug","analytics":null,"today":null}
+        """, as: TodayReport.self)
+        XCTAssertNil(none.today)
+    }
+
     func testEventsReportDecodes() throws {
         let report = try decode("""
         {"generatedAt":"2026-09-07T19:51:20.381Z","mode":"live",

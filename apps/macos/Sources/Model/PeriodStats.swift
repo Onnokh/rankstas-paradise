@@ -1,13 +1,15 @@
 import Foundation
 
-/// The spans a site screen can show. Each is compared with the span of equal length before it.
+/// The spans a site screen can show. Each is compared with the span of equal length before it,
+/// except Today, which has nothing stored to compare and is read live from the provider.
 enum Period: String, CaseIterable, Identifiable, Sendable {
-    case d7, d14, d28, m3, m6
+    case today, d7, d14, d28, m3, m6
 
     var id: String { rawValue }
 
     var days: Int {
         switch self {
+        case .today: 1
         case .d7: 7
         case .d14: 14
         case .d28: 28
@@ -18,6 +20,7 @@ enum Period: String, CaseIterable, Identifiable, Sendable {
 
     var label: String {
         switch self {
+        case .today: "Today"
         case .d7: "7d"
         case .d14: "14d"
         case .d28: "28d"

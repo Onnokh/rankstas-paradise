@@ -90,6 +90,55 @@ struct EventRow: Codable, Sendable, Equatable, Identifiable {
     var id: String { name }
 }
 
+/// `/api/today`: today so far in the site's zone, read live from the provider. Like `/api/live`
+/// it is polled on its own and never cached; the server memoises it for a minute.
+struct TodayReport: Codable, Sendable {
+    let generatedAt: String
+    let analytics: AnalyticsStatus?
+    /// Nil when the site has no provider, or its provider is not ready.
+    let today: TodayVisits?
+}
+
+struct TodayVisits: Codable, Sendable, Equatable {
+    let date: String
+    let timeZone: String
+    /// Hours of the day that have begun, 1–24: how many of `hours` are real.
+    let hoursElapsed: Int
+    /// The day's totals so far; nil before the first visit.
+    let site: VisitsDay?
+    /// Exactly 24 rows, hour 0 first, zeros for hours still to come.
+    let hours: [VisitsHour]
+    let pages: [TodayPage]
+    let events: [TodayEvent]
+    let fetchedAt: String
+
+    var eventCount: Double { events.reduce(0) { $0 + $1.count } }
+}
+
+struct VisitsHour: Codable, Sendable, Equatable, Identifiable {
+    let hour: Int
+    let pageviews: Double
+    let visits: Double
+    let visitors: Double
+
+    var id: Int { hour }
+}
+
+struct TodayPage: Codable, Sendable, Equatable, Identifiable {
+    let page: String
+    let pageviews: Double
+    let visits: Double
+
+    var id: String { page }
+}
+
+struct TodayEvent: Codable, Sendable, Equatable, Identifiable {
+    let name: String
+    let count: Double
+
+    var id: String { name }
+}
+
 /// `/api/live`: the people on the site right now. The one read that asks the analytics
 /// provider, so it is polled on its own and never cached.
 struct LiveReport: Codable, Sendable {

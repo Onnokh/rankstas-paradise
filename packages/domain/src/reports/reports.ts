@@ -36,6 +36,7 @@ import {
   type HistoryReport,
   type EventsReport,
   type LiveReport,
+  type TodayReport,
   type LogAddInput,
   type LogAddResult,
   type LogFeedEntry,
@@ -108,6 +109,7 @@ export interface Interface {
   readonly eventsReport: (
     windowDays?: number,
   ) => Effect.Effect<EventsReport, ReportsError>
+  readonly todayReport: () => Effect.Effect<TodayReport, ReportsError>
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -829,6 +831,19 @@ export const layer = Layer.effect(
                 delta: row.current - row.previous,
               })),
             }
+          }),
+        ),
+
+      todayReport: () =>
+        wrap(
+          Effect.gen(function* () {
+            const analyticsStatus = yield* analytics.status()
+            // As for liveReport: a not-ready provider is reported, not thrown.
+            const today =
+              analyticsStatus && analyticsStatus.ready
+                ? yield* analytics.today()
+                : null
+            return { analytics: analyticsStatus, today }
           }),
         ),
 
