@@ -15,6 +15,7 @@
 | `GET /api/registry` | `registry` |
 | `GET /api/log?path=` | `log list` |
 | `GET /api/history?limit=N` | — (TUI history view) |
+| `GET /api/live` | — (visitors on the site right now; the one read that asks the analytics provider) |
 
 `GET /api/status` reports two instants in `data`, both ISO 8601
 (`YYYY-MM-DDTHH:MM:SSZ`) and both `null` until they have a value:
@@ -43,6 +44,35 @@ matter how many syncs run. Only `lastCheckedAt` moves on such a run. So:
 nothing, and `POST /api/jobs/backfill` does not stamp it either: the field
 answers "when was the daily refresh last attempted", and a one-off historical
 fetch would make it read fresher than the truth.
+
+### Visits from the site's analytics provider
+
+A site may name a web-analytics provider in its `config.json` entry
+(`analytics: { provider, siteId, baseUrl?, timeZone? }`, see
+[adr/0004-analytics-provider-port.md](adr/0004-analytics-provider-port.md)).
+When it does, the daily sync also fetches the provider's visits and the reports
+carry them as **optional keys** beside the Search Console numbers, so a client
+built against an older server keeps decoding:
+
+- `GET /api/status` → `analytics`: the provider, whether this deployment can
+  read it (`ready`, with a `reason` when not), and how many days of visits are
+  stored (`days`, `firstDate`, `lastDate`, `lastSyncedAt`). `null` when the
+  site has no provider.
+- `GET /api/pages` and `GET /api/page` → `visits`: `{ current, previous,
+  deltaPageviews, deltaVisits }` of pageviews and visits over the same two
+  windows as the Search Console metrics. `null` when there is no provider or no
+  visits synced yet.
+- `GET /api/history` → each day carries `visits: { pageviews, visits,
+  visitors } | null`.
+
+Visits have no finalization lag: the newest stored day is yesterday (UTC), and
+the last two days are re-fetched on each sync.
+
+`GET /api/live` is the exception to "read endpoints never call out": it asks
+the provider how many distinct people were active in the last 5 minutes and
+answers `{ analytics, live: { visitors, windowMinutes, fetchedAt } | null }`.
+Answers are memoised for 30 seconds per site, so poll it on its own timer and
+never fold it into the dashboard read, which must stay served from disk.
 
 All site-scoped endpoints accept `?site=<id>`. The default is the first configured site. For example:
 

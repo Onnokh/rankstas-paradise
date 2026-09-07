@@ -7,6 +7,8 @@
 // identically.
 import { Context, Effect, Layer } from "effect"
 
+import { Analytics } from "../analytics/analytics.ts"
+import { type AnalyticsError } from "../analytics/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { DomainRating } from "../domain-rating/domain-rating.ts"
 import { type RegistryEntry, type RegistryPatch } from "../registry/schema.ts"
@@ -23,13 +25,16 @@ import {
   type Metrics,
   type OpportunityKind,
   type OpportunitySignal,
+  type PageVisitsRow,
   type RegistryTargetProgress,
   type StorageError,
+  type Visits,
 } from "../storage/schema.ts"
 import {
   type DashboardSnapshot,
   type EntrySummary,
   type HistoryReport,
+  type LiveReport,
   type LogAddInput,
   type LogAddResult,
   type LogFeedEntry,
@@ -50,6 +55,7 @@ import {
   type TidyMetrics,
   type TidyWindow,
   type Verdict,
+  type VisitsWindowReport,
 } from "./schema.ts"
 
 export interface Interface {
@@ -95,6 +101,9 @@ export interface Interface {
     DashboardSnapshot,
     ReportsError
   >
+  // The visitors active right now. Reaches the analytics provider (through a
+  // 30-second memo); every other read here is served from the ledger.
+  readonly liveReport: () => Effect.Effect<LiveReport, ReportsError>
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -110,6 +119,7 @@ export const layer = Layer.effect(
     const registry = yield* Registry.Service
     const sitemap = yield* Sitemap.Service
     const domainRatingService = yield* DomainRating.Service
+    const analytics = yield* Analytics.Service
     const site = yield* CurrentSite.Service
     const resolved = yield* site.current()
     const origin = resolved.origin
@@ -118,13 +128,18 @@ export const layer = Layer.effect(
     // Map the dependencies' typed errors to a ReportsError; the guard failures
     // raised inside the report gens are already ReportsError and pass through.
     const wrap = <A>(
-      effect: Effect.Effect<A, StorageError | RegistryError | ReportsError>,
+      effect: Effect.Effect<
+        A,
+        StorageError | RegistryError | AnalyticsError | ReportsError
+      >,
     ): Effect.Effect<A, ReportsError> =>
       effect.pipe(
         Effect.catchTags({
           StorageError: (cause) =>
             Effect.fail(new ReportsError({ message: cause.message, cause })),
           RegistryError: (cause) =>
+            Effect.fail(new ReportsError({ message: cause.message, cause })),
+          AnalyticsError: (cause) =>
             Effect.fail(new ReportsError({ message: cause.message, cause })),
         }),
       )
@@ -212,6 +227,14 @@ export const layer = Layer.effect(
             )
             const actions = yield* storage.listLog()
             const keywords = entries.filter((entry) => entry.keyword.trim())
+            // Served from the ledger: the provider is never asked on a read.
+            const analyticsStatus = yield* analytics.status()
+            const visitsSummary = analyticsStatus
+              ? yield* storage.visitsSummary()
+              : null
+            const visitsSyncedAt = analyticsStatus
+              ? yield* storage.latestVisitsSyncedAt()
+              : null
             return {
               data: {
                 firstDate: range.first,
@@ -233,6 +256,16 @@ export const layer = Layer.effect(
                 unmapped: unmapped.map((page) => page.path),
               },
               actions: actions.length,
+              analytics:
+                analyticsStatus && visitsSummary
+                  ? {
+                      ...analyticsStatus,
+                      days: visitsSummary.days,
+                      firstDate: visitsSummary.firstDate,
+                      lastDate: visitsSummary.lastDate,
+                      lastSyncedAt: visitsSyncedAt,
+                    }
+                  : null,
             }
           }),
         ),
@@ -242,6 +275,21 @@ export const layer = Layer.effect(
           Effect.gen(function* () {
             const entries = yield* registry.loadRegistry()
             const overview = yield* storage.pagesWindowOverview(windowDays)
+            // Visits over the SAME two windows, anchored on the Search Console
+            // latest date, so clicks and visits on a row describe the same days.
+            const analyticsStatus = yield* analytics.status()
+            const visitsOverview = analyticsStatus
+              ? yield* storage.pageVisitsOverview(
+                  windowDays,
+                  overview.latestDate ?? undefined,
+                )
+              : null
+            const visitsByPath = new Map(
+              (visitsOverview?.rows ?? []).map((row) => [row.page, row]),
+            )
+            // A provider that is configured but has synced nothing yet shows
+            // null, not a column of zeros pretending to be a measurement.
+            const hasVisits = visitsByPath.size > 0
             const digest = yield* storage.opportunityDigest(entries)
             const progressList =
               yield* storage.registryTargetProgress(entries)
@@ -252,6 +300,7 @@ export const layer = Layer.effect(
               ...new Set([
                 ...overview.rows.map((row) => pathOf(row.page, origin)),
                 ...targets.keys(),
+                ...visitsByPath.keys(),
               ]),
             ]
             const overviewByPath = new Map(
@@ -300,6 +349,9 @@ export const layer = Layer.effect(
                   baseline: progress?.baseline ? tidy(progress.baseline) : null,
                   signals: pageSignals.map((signal) => signal.kind),
                   ...verdict,
+                  visits: hasVisits
+                    ? visitsWindow(visitsByPath.get(path))
+                    : null,
                 }
               })
               .sort(
@@ -356,6 +408,19 @@ export const layer = Layer.effect(
             const overviewRow = overview.rows.find(
               (row) => pathOf(row.page, origin) === path,
             )
+            const analyticsStatus = yield* analytics.status()
+            const visitsOverview = analyticsStatus
+              ? yield* storage.pageVisitsOverview(
+                  28,
+                  overview.latestDate ?? undefined,
+                )
+              : null
+            const visits =
+              visitsOverview && visitsOverview.rows.length > 0
+                ? visitsWindow(
+                    visitsOverview.rows.find((row) => row.page === path),
+                  )
+                : null
             const queries = yield* storage.topQueries({
               page: `${origin}${path}`,
               includeBrand: true,
@@ -415,6 +480,7 @@ export const layer = Layer.effect(
               })),
               signals: pageSignals.map((signal) => signalSummary(signal, origin)),
               actions,
+              visits,
             }
           }),
         ),
@@ -676,13 +742,42 @@ export const layer = Layer.effect(
         wrap(
           Effect.gen(function* () {
             const days = yield* storage.historyWithPending(limit)
+            const analyticsStatus = yield* analytics.status()
+            const visitDays = analyticsStatus
+              ? yield* storage.visitsHistory(limit)
+              : []
+            const visitsByDate = new Map(
+              visitDays.map((day) => [
+                day.date,
+                {
+                  pageviews: day.pageviews,
+                  visits: day.visits,
+                  visitors: day.visitors,
+                },
+              ]),
+            )
             return {
               days: days.map((day) => ({
                 date: day.date,
                 provisional: day.provisional ?? false,
                 ...tidy(day),
+                visits: visitsByDate.get(day.date) ?? null,
               })),
             }
+          }),
+        ),
+
+      liveReport: () =>
+        wrap(
+          Effect.gen(function* () {
+            const analyticsStatus = yield* analytics.status()
+            // A configured-but-not-ready provider fails the fetch with its
+            // reason; that reason is already on the status, so the report
+            // carries the status and a null count instead of an error.
+            const live = analyticsStatus?.ready
+              ? yield* analytics.liveVisitors()
+              : null
+            return { analytics: analyticsStatus, live }
           }),
         ),
 
@@ -705,6 +800,13 @@ export const layer = Layer.effect(
             // Read from the volume, never from Ahrefs: Sync owns the refresh.
             const domainRating = yield* domainRatingService.cached()
             const domainRatingHistory = yield* storage.domainRatingHistory()
+            const analyticsStatus = yield* analytics.status()
+            const visitsHistory = analyticsStatus
+              ? yield* storage.visitsHistory()
+              : []
+            const events = analyticsStatus
+              ? yield* storage.eventWindow(28, digest.latestDate ?? undefined)
+              : []
             const recentActions = rawLog
               .filter((entry) => entry.kind !== "note")
               .slice(0, 3)
@@ -736,6 +838,9 @@ export const layer = Layer.effect(
               performances,
               domainRating,
               domainRatingHistory,
+              analytics: analyticsStatus,
+              visitsHistory,
+              events,
             }
           }),
         ),
@@ -745,6 +850,7 @@ export const layer = Layer.effect(
 
 export const defaultLayer = layer.pipe(
   Layer.provide(DomainRating.defaultLayer),
+  Layer.provide(Analytics.defaultLayer),
   Layer.provide(Storage.defaultLayer),
   Layer.provide(Registry.defaultLayer),
   Layer.provide(Sitemap.defaultLayer),
@@ -754,6 +860,21 @@ export const defaultLayer = layer.pipe(
 // --- pure presentation helpers (no service, no site) ---
 
 const zeroMetrics: Metrics = { impressions: 0, clicks: 0, ctr: 0, position: 0 }
+
+const zeroVisits: Visits = { pageviews: 0, visits: 0 }
+
+// The visits twin of tidyWindow(): a current/previous pair with its deltas. A
+// page the provider has no row for, in a site that does have visits, is zero.
+const visitsWindow = (row: PageVisitsRow | undefined): VisitsWindowReport => {
+  const current = row?.current ?? zeroVisits
+  const previous = row?.previous ?? zeroVisits
+  return {
+    current,
+    previous,
+    deltaPageviews: current.pageviews - previous.pageviews,
+    deltaVisits: current.visits - previous.visits,
+  }
+}
 
 // Subtract `days` (UTC) from an ISO date; negative days move forward.
 const dateDaysBefore = (date: string, days: number): string => {

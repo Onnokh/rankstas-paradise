@@ -16,6 +16,7 @@
 import { Layer, ManagedRuntime } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 
+import { Analytics } from "@rp/domain/analytics/analytics"
 import { Config } from "@rp/domain/config/config"
 import { CurrentSite } from "@rp/domain/sites/current-site"
 import { DomainRating } from "@rp/domain/domain-rating/domain-rating"
@@ -39,6 +40,7 @@ const siteLayer = (site: Site) =>
     Layer.provideMerge(Sync.layer),
     Layer.provideMerge(Sites.layer),
     Layer.provideMerge(SearchConsole.layer),
+    Layer.provideMerge(Analytics.layer),
     // Above Storage: DomainRating reads the ledger, and in a provideMerge chain
     // a layer's own requirements are satisfied by the entries below it.
     Layer.provideMerge(DomainRating.layer),
@@ -56,6 +58,7 @@ export type SiteRuntime = ManagedRuntime.ManagedRuntime<
   | Sync.Service
   | Sites.Service
   | SearchConsole.Service
+  | Analytics.Service
   | Storage.Service
   | Registry.Service
   | Sitemap.Service

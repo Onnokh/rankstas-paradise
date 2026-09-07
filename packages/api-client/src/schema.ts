@@ -15,6 +15,7 @@ import { Site } from "@rp/domain/sites/schema"
 import {
   DashboardSnapshot,
   HistoryReport,
+  LiveReport,
   LogAddResult,
   LogListResult,
   OpportunitiesReport,
@@ -32,6 +33,7 @@ import {
 export {
   DashboardSnapshot,
   HistoryReport,
+  LiveReport,
   LogAddResult,
   LogListResult,
   OpportunitiesReport,

@@ -259,6 +259,58 @@ export const BaselineCapture = Schema.Struct({
 export interface BaselineCapture
   extends Schema.Schema.Type<typeof BaselineCapture> {}
 
+// --- visits: the analytics provider's series (see ../analytics/schema.ts) ---
+
+// Pageviews and visits summed over some window. No visitors here: a day's
+// distinct-person count does not sum across days, so it is only shown per day.
+export const Visits = Schema.Struct({
+  pageviews: Schema.Number,
+  visits: Schema.Number,
+}).annotate({ identifier: "Visits" })
+export interface Visits extends Schema.Schema.Type<typeof Visits> {}
+
+// One page's visits over the current and previous window. `page` is a PATH.
+export const PageVisitsRow = Schema.Struct({
+  page: Schema.String,
+  current: Visits,
+  previous: Visits,
+}).annotate({ identifier: "PageVisitsRow" })
+export interface PageVisitsRow
+  extends Schema.Schema.Type<typeof PageVisitsRow> {}
+
+// Every page with visits in either window, strongest first. The window bounds
+// are whatever the caller anchored on (normally the Search Console latest date,
+// so visits and clicks describe the same days) or the newest visits day.
+export const PageVisitsOverview = Schema.Struct({
+  latestDate: Schema.NullOr(Schema.String),
+  currentStart: Schema.NullOr(Schema.String),
+  previousStart: Schema.NullOr(Schema.String),
+  previousEnd: Schema.NullOr(Schema.String),
+  rows: Schema.Array(PageVisitsRow),
+}).annotate({ identifier: "PageVisitsOverview" })
+export interface PageVisitsOverview
+  extends Schema.Schema.Type<typeof PageVisitsOverview> {}
+
+// How often one named event fired in the current and previous window.
+export const EventWindowRow = Schema.Struct({
+  name: Schema.String,
+  current: Schema.Number,
+  previous: Schema.Number,
+}).annotate({ identifier: "EventWindowRow" })
+export interface EventWindowRow
+  extends Schema.Schema.Type<typeof EventWindowRow> {}
+
+// How much of the visits series is in the ledger, and which provider wrote the
+// newest fetch — the visits counterpart of SnapshotSummary + SnapshotDateRange.
+export const VisitsSummary = Schema.Struct({
+  days: Schema.Number,
+  firstDate: Schema.NullOr(Schema.String),
+  lastDate: Schema.NullOr(Schema.String),
+  source: Schema.NullOr(Schema.String),
+}).annotate({ identifier: "VisitsSummary" })
+export interface VisitsSummary
+  extends Schema.Schema.Type<typeof VisitsSummary> {}
+
 // Raised for any failure reading from or writing to the per-site database.
 export class StorageError extends Schema.TaggedErrorClass<StorageError>()(
   "StorageError",

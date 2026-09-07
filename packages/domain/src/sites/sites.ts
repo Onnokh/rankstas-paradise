@@ -3,6 +3,11 @@
 // separate per-scope concern — see CurrentSite.
 import { Context, Effect, Layer } from "effect"
 
+import {
+  type AnalyticsSource,
+  type ConfigAnalytics,
+  defaultTimeZone,
+} from "../analytics/schema.ts"
 import { Config } from "../config/config.ts"
 import { type ConfigSite } from "../config/schema.ts"
 import { serviceUse } from "../service-use.ts"
@@ -27,8 +32,18 @@ const originFor = (siteUrl: string, explicitOrigin?: string): string =>
     ? `https://${siteUrl.slice("sc-domain:".length)}`
     : siteUrl)
 
+// The analytics block with its defaults filled: no base URL means the vendor's
+// cloud origin (the adapter knows it), no time zone means UTC.
+const analyticsFor = (analytics: ConfigAnalytics): AnalyticsSource => ({
+  provider: analytics.provider,
+  siteId: analytics.siteId,
+  baseUrl: analytics.baseUrl?.replace(/\/$/, "") ?? null,
+  timeZone: analytics.timeZone ?? defaultTimeZone,
+})
+
 // Fill in every derived field: origin (no trailing slash), sitemapUrl
-// (defaults to https://<hostname>/sitemap.xml), brandTerms (defaults to [id]).
+// (defaults to https://<hostname>/sitemap.xml), brandTerms (defaults to [id]),
+// and the analytics source when the entry has one.
 const normalize = (site: ConfigSite): Site => {
   const origin = originFor(site.siteUrl, site.origin)
   const hostname = new URL(origin).hostname
@@ -39,6 +54,7 @@ const normalize = (site: ConfigSite): Site => {
     origin: origin.replace(/\/$/, ""),
     sitemapUrl: site.sitemapUrl ?? `https://${hostname}/sitemap.xml`,
     brandTerms: site.brandTerms ?? [site.id],
+    ...(site.analytics ? { analytics: analyticsFor(site.analytics) } : {}),
   }
 }
 

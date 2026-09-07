@@ -11,6 +11,8 @@ import { join } from "node:path"
 
 import { Effect, Layer, ManagedRuntime } from "effect"
 
+import { Analytics } from "../analytics/analytics.ts"
+import { type VisitsDays } from "../analytics/schema.ts"
 import { Registry } from "../registry/registry.ts"
 import { type RegistryEntry } from "../registry/schema.ts"
 import {
@@ -335,11 +337,29 @@ beforeAll(async () => {
   const domainRatingLayer = Layer.mock(DomainRating.Service)({
     cached: () => Effect.succeed(null),
   })
+  // Reports only ask which provider is configured; the visits themselves are
+  // read from the ledger, seeded below. A ready "fake" provider stands in.
+  const analyticsLayer = Layer.mock(Analytics.Service)({
+    status: () =>
+      Effect.succeed({
+        provider: "fake",
+        siteId: "1",
+        ready: true,
+        reason: null,
+      }),
+    liveVisitors: () =>
+      Effect.succeed({
+        visitors: 4,
+        windowMinutes: 5,
+        fetchedAt: "2026-07-12T12:00:00.000Z",
+      }),
+  })
   const base = Layer.mergeAll(
     storageLayer,
     registryLayer,
     sitemapLayer,
     domainRatingLayer,
+    analyticsLayer,
     currentSiteLayer,
   )
   runtime = ManagedRuntime.make(Reports.layer.pipe(Layer.provideMerge(base)))
@@ -364,6 +384,7 @@ beforeAll(async () => {
         kind: "content-update",
         note: "Expanded the comparison table.",
       })
+      yield* storage.saveVisits(debugVisits, [...dates], "fake")
     }),
   )
 }, 60_000)
@@ -375,6 +396,20 @@ afterAll(async () => {
 
 const run = <A, E>(effect: Effect.Effect<A, E, Reports.Service>) =>
   runtime.runPromise(effect)
+
+// Flat visits over the whole 56-day fixture: 100 pageviews a day site-wide, 40
+// on /chrome-extension, 30 on /, 5 on a page Search Console never saw, and two
+// purchases a day. Flat so both 28-day windows sum to the same number and a
+// delta of zero proves the windows line up with the Search Console ones.
+const debugVisits: VisitsDays = {
+  site: dates.map((date) => ({ date, pageviews: 100, visits: 60, visitors: 50 })),
+  pages: dates.flatMap((date) => [
+    { date, page: "/chrome-extension", pageviews: 40, visits: 25 },
+    { date, page: "/", pageviews: 30, visits: 20 },
+    { date, page: "/visits-only", pageviews: 5, visits: 4 },
+  ]),
+  events: dates.map((date) => ({ date, name: "purchase", count: 2 })),
+}
 
 test("statusReport counts registry targets/keywords and sitemap pages", async () => {
   const report = await run(Reports.use.statusReport())
@@ -564,4 +599,67 @@ test("dashboardSnapshot returns RAW internal shapes", async () => {
   // Per-target series are the raw 28-day RegistryPerformance (metrics not tidied).
   const perf = snapshot.performances[0]?.performance
   expect(perf?.days.length).toBe(28)
+})
+
+// --- visits: the analytics provider's series beside the Search Console one ---
+
+test("statusReport names the analytics provider and how much is stored", async () => {
+  const report = await run(Reports.use.statusReport())
+  expect(report.analytics).toEqual({
+    provider: "fake",
+    siteId: "1",
+    ready: true,
+    reason: null,
+    days: 56,
+    firstDate: "2026-05-18",
+    lastDate: "2026-07-12",
+    lastSyncedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/),
+  })
+})
+
+test("pagesReport carries visits over the Search Console windows", async () => {
+  const report = await run(Reports.use.pagesReport())
+  const top = report.pages.find((page) => page.path === "/chrome-extension")
+  // 28 days × 40 pageviews in each window: the visits window is anchored on the
+  // Search Console latest date (2026-07-12), so a flat series has no delta.
+  expect(top?.visits).toEqual({
+    current: { pageviews: 1120, visits: 700 },
+    previous: { pageviews: 1120, visits: 700 },
+    deltaPageviews: 0,
+    deltaVisits: 0,
+  })
+  // A page only the provider knows still gets a row — unmapped, no clicks.
+  const visitsOnly = report.pages.find((page) => page.path === "/visits-only")
+  expect(visitsOnly?.mapped).toBe(false)
+  expect(visitsOnly?.visits?.current.pageviews).toBe(140)
+  expect(visitsOnly?.allQueries?.current.impressions ?? 0).toBe(0)
+})
+
+test("pageReport carries the page's visits", async () => {
+  const report = await run(Reports.use.pageReport("/chrome-extension"))
+  expect(report.visits?.current).toEqual({ pageviews: 1120, visits: 700 })
+})
+
+test("historyReport puts each day's visits beside its totals", async () => {
+  const report = await run(Reports.use.historyReport())
+  expect(report.days).toHaveLength(28)
+  for (const day of report.days)
+    expect(day.visits).toEqual({ pageviews: 100, visits: 60, visitors: 50 })
+})
+
+test("dashboardSnapshot carries the provider, its history, and event counts", async () => {
+  const snapshot = await run(Reports.use.dashboardSnapshot())
+  expect(snapshot.analytics?.provider).toBe("fake")
+  expect(snapshot.visitsHistory).toHaveLength(28)
+  expect(snapshot.events).toEqual([{ name: "purchase", current: 56, previous: 56 }])
+})
+
+test("liveReport carries the provider status and the live count", async () => {
+  const report = await run(Reports.use.liveReport())
+  expect(report.analytics?.provider).toBe("fake")
+  expect(report.live).toEqual({
+    visitors: 4,
+    windowMinutes: 5,
+    fetchedAt: "2026-07-12T12:00:00.000Z",
+  })
 })

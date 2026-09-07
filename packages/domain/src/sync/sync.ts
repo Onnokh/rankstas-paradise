@@ -2,8 +2,9 @@
 // (fetch), Storage (persist + freshness), Registry (targets), and Sitemap
 // (refresh). Site-scoped. FROZEN CONTRACT — Interface/Service/use/defaultLayer
 // are frozen; this is the real `layer`, ported from the legacy `src/automation.ts`.
-import { Context, Effect, Fiber, Layer, Semaphore } from "effect"
+import { Cause, Context, Effect, Fiber, Layer, Semaphore } from "effect"
 
+import { Analytics } from "../analytics/analytics.ts"
 import { Config } from "../config/config.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { DomainRating } from "../domain-rating/domain-rating.ts"
@@ -66,6 +67,18 @@ const datesBetween = (start: string, end: string) => {
 
 const reconciliationDates = () => datesBeforeToday(5)
 
+// Visits have no finalization lag — a day is complete at its midnight — so the
+// newest whole day is yesterday (UTC, the zone every date in the ledger is
+// keyed in), and only the last two days are reconciled, for events a vendor
+// batches in late. Read fresh per call, for the reason datesBeforeToday is.
+const newestVisitsDate = () => {
+  const date = new Date()
+  date.setUTCDate(date.getUTCDate() - 1)
+  return date.toISOString().slice(0, 10)
+}
+const visitsReconcileDays = 2
+const visitsFirstRunDays = 28
+
 // Backfill fetches in 30-day chunks (Google's practical query span). The chunk
 // fetches run with bounded concurrency; writes are serialized (one SQLite
 // connection, one transaction at a time).
@@ -87,6 +100,7 @@ export const layer = Layer.effect(
     const registry = yield* Registry.Service
     const sitemap = yield* Sitemap.Service
     const domainRating = yield* DomainRating.Service
+    const analytics = yield* Analytics.Service
     const config = yield* Config.Service
     const currentSite = yield* CurrentSite.Service
 
@@ -109,6 +123,39 @@ export const layer = Layer.effect(
       return { dates: [...missing, ...recent], missing, recent }
     })
 
+    // The visits refresh: the missing days of the tracked range plus the stale
+    // part of the reconcile window, fetched from the site's analytics provider
+    // and saved in canonical form. The range starts at the first day ever
+    // fetched, so a gap left by a failed run fills on the next one, or 28 days
+    // back on the first run. Null for a site with no analytics — no fetch, no
+    // stamp, nothing.
+    const syncVisits = Effect.fnUntraced(function* () {
+      const status = yield* analytics.status()
+      if (!status) return null
+      const newest = newestVisitsDate()
+      const summary = yield* storage.visitsSummary()
+      const start = summary.firstDate ?? dateDaysBefore(newest, visitsFirstRunDays - 1)
+      const range = datesBetween(start, newest)
+      const missing = yield* storage.missingVisitDates(range)
+      const missingSet = new Set(missing)
+      const recent = datesBetween(
+        dateDaysBefore(newest, visitsReconcileDays - 1),
+        newest,
+      )
+      const fresh = new Set(
+        yield* storage.recentlySyncedVisitDates(recent, reconciliationTtlHours),
+      )
+      const stale = recent.filter(
+        (date) => !missingSet.has(date) && !fresh.has(date),
+      )
+      const dates = [...missing, ...stale]
+      if (dates.length > 0) {
+        const visits = yield* analytics.fetchVisits(dates)
+        yield* storage.saveVisits(visits, dates, status.provider)
+      }
+      return { provider: status.provider, days: dates.length }
+    })
+
     const runSync = Effect.fn("Sync.syncSearchConsole")(function* () {
       // The sitemap refresh runs alongside the Search Console work; a failure
       // is non-fatal — legacy swallowed it and reported the cached page count.
@@ -128,6 +175,20 @@ export const layer = Layer.effect(
       // stays on the volume when a refresh does not land.
       const domainRatingFiber = yield* Effect.forkChild(
         domainRating.refresh().pipe(Effect.catchCause(() => Effect.succeed(null))),
+      )
+
+      // Visits ride along on the same terms: a provider that is down, slow, or
+      // missing its key must not fail the Search Console sync. Unlike the
+      // rating, the failure is logged — a wrong key would otherwise show only
+      // as visits that quietly stop moving.
+      const visitsFiber = yield* Effect.forkChild(
+        syncVisits().pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning(
+              `The analytics sync failed: ${Cause.pretty(cause)}`,
+            ).pipe(Effect.as(null)),
+          ),
+        ),
       )
 
       const finalizedThrough = yield* storage.finalizationCutoff()
@@ -179,6 +240,7 @@ export const layer = Layer.effect(
 
       const sitemapPages = yield* Fiber.join(sitemapFiber)
       const rating = yield* Fiber.join(domainRatingFiber)
+      const visits = yield* Fiber.join(visitsFiber)
 
       // Record that this run happened, last, so only a run that got all the way
       // here claims to have asked Google. A run that found every day present and
@@ -197,7 +259,7 @@ export const layer = Layer.effect(
         inspection.failed > 0
           ? `${inspection.inspections.length} indexed-status checks saved (${freshUrls.size} cached); ${inspection.failed} unavailable`
           : `${inspection.inspections.length} indexed-status checks saved (${freshUrls.size} cached)`
-      return `Saved ${snapshots.length} Search Console rows across ${plan.dates.length} finalized days (${plan.missing.length} missing, ${plan.recent.length} reconciled); daily totals for ${totalDates.length} days; ${inspectionSummary}; finalized through ${finalizedThrough}, provisional to ${freshestThrough}. Sitemap: ${sitemapPages.length || "cached"} pages.${rating ? ` Domain Rating: ${rating.rating}.` : ""}`
+      return `Saved ${snapshots.length} Search Console rows across ${plan.dates.length} finalized days (${plan.missing.length} missing, ${plan.recent.length} reconciled); daily totals for ${totalDates.length} days; ${inspectionSummary}; finalized through ${finalizedThrough}, provisional to ${freshestThrough}. Sitemap: ${sitemapPages.length || "cached"} pages.${rating ? ` Domain Rating: ${rating.rating}.` : ""}${visits ? ` Visits: ${visits.days} days from ${visits.provider}.` : ""}`
     })
 
     const runBackfill = Effect.fn("Sync.backfillSearchConsole")(function* (
@@ -274,6 +336,7 @@ export const layer = Layer.effect(
 
 export const defaultLayer = layer.pipe(
   Layer.provide(SearchConsole.defaultLayer),
+  Layer.provide(Analytics.defaultLayer),
   Layer.provide(Storage.defaultLayer),
   Layer.provide(Registry.defaultLayer),
   Layer.provide(Sitemap.defaultLayer),

@@ -111,7 +111,10 @@ export const buildMcpServer = (run: RunTool): McpServer => {
         "Data range, row counts, and registry/sitemap coverage for the site. " +
         "data.lastSyncedAt is when the site's data last CHANGED; " +
         "data.lastCheckedAt is when Ranksta last ASKED Google. A lastCheckedAt " +
-        "newer than lastSyncedAt means the sync ran and Google had nothing new.",
+        "newer than lastSyncedAt means the sync ran and Google had nothing new. " +
+        "analytics names the site's web-analytics provider and how many days of " +
+        "visits are stored (null when the site has none); ready=false with a " +
+        "reason means visits cannot be fetched.",
       inputSchema: { site },
     },
     async ({ site }) => {
@@ -124,7 +127,10 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     "pages",
     {
       description:
-        "Per-page metrics for the current and previous window, with verdicts and signals.",
+        "Per-page metrics for the current and previous window, with verdicts and signals. " +
+        "visits (pageviews and visits from the site's analytics provider, same windows) " +
+        "is present when the site has one; beside trueTotals.clicks it says how much of " +
+        "a page's traffic is organic search.",
       inputSchema: {
         site,
         window: z
@@ -145,7 +151,8 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     "page",
     {
       description:
-        "Full report for one page: daily series, top queries, plan, baseline, and action log.",
+        "Full report for one page: daily series, top queries, plan, baseline, action log, " +
+        "and visits from the site's analytics provider when it has one.",
       inputSchema: {
         site,
         path: z.string().describe('Page path starting with "/", e.g. "/pricing".'),
@@ -256,7 +263,9 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     "history",
     {
       description:
-        "Daily true site totals (clicks, impressions, ctr, position) for the last N days.",
+        "Daily true site totals (clicks, impressions, ctr, position) for the last N days. " +
+        "Each day also carries visits (pageviews, visits, visitors) from the site's " +
+        "analytics provider, or null when it has none.",
       inputSchema: {
         site,
         limit: z
@@ -270,6 +279,22 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     async ({ site, limit }) => {
       const id = toSiteId(site)
       return run(id, scoped(Reports.use.historyReport(limit ?? 28), id))
+    },
+  )
+
+  server.registerTool(
+    "live",
+    {
+      description:
+        "Visitors active on the site in the last 5 minutes, from its analytics " +
+        "provider. The one read that asks the provider (answers are memoised for " +
+        "30 seconds). live is null when the site has no provider; analytics.ready " +
+        "false with a reason means the provider is configured but cannot be read.",
+      inputSchema: { site },
+    },
+    async ({ site }) => {
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.liveReport(), id))
     },
   )
 

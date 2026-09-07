@@ -28,6 +28,7 @@ Without the volume the key and history are lost on every redeploy.
 | `SITE_URL` | no | Overrides `siteUrl` from `config.json`. |
 | `SEO_PORT` | no | Defaults to 8790. |
 | `AHREFS_API_KEY` | no (secret) | Enables Ahrefs Domain Rating. Without it every site simply has no rating; nothing else changes. A free key covers the endpoint used ([domain-rating-free](https://docs.ahrefs.com/en/api/reference/public/get-domain-rating-free)). |
+| `RYBBIT_API_KEY` | no (secret) | Reads visits for sites whose `config.json` entry names `analytics.provider: "rybbit"` (see [adr/0004](adr/0004-analytics-provider-port.md)). An organisation key from the Rybbit instance the site's `analytics.baseUrl` points at. Without it such a site shows `ready: false` under `analytics` on `GET /api/status` and has no visits; Search Console is unaffected. |
 
 No Google credentials go in env: the only one is the service-account key file on the volume (next step). See [packages/domain/src/config/config.ts](../packages/domain/src/config/config.ts) — env takes precedence, `config.json` is the fallback.
 
