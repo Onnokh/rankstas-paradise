@@ -99,6 +99,22 @@ export const AnalyticsStatus = Schema.Struct({
 export interface AnalyticsStatus
   extends Schema.Schema.Type<typeof AnalyticsStatus> {}
 
+// The people active on the site right now, as the provider counts them: one
+// distinct visitor per person seen in the last `windowMinutes`. This is the one
+// number in the domain that is NOT a ledger row — it is fetched on demand,
+// briefly cached, and never stored, because it is stale the moment it lands.
+export const liveWindowMinutes = 5
+
+export const LiveVisitors = Schema.Struct({
+  visitors: Schema.Number,
+  windowMinutes: Schema.Number,
+  // When the provider was asked, as an ISO 8601 instant, so a client can show
+  // how old a cached answer is.
+  fetchedAt: Schema.String,
+}).annotate({ identifier: "LiveVisitors" })
+export interface LiveVisitors
+  extends Schema.Schema.Type<typeof LiveVisitors> {}
+
 // Raised when a provider cannot be used or a fetch fails. One class for the
 // whole boundary: an adapter maps its vendor's auth, transport, and decode
 // failures into this, with `message` saying which, so no vendor error type

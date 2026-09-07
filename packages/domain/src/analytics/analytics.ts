@@ -10,7 +10,7 @@
 // still gets a working runtime: `status` says why it is not ready, and only
 // `fetchVisits` fails — which Sync forks and swallows, so a bad key can never
 // cost a site its Search Console refresh.
-import { Context, Effect, Layer } from "effect"
+import { Cache, Context, Duration, Effect, Layer } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 
 import { CurrentSite } from "../sites/current-site.ts"
@@ -25,8 +25,14 @@ import {
   type AnalyticsSource,
   type AnalyticsStatus,
   emptyVisitsDays,
+  type LiveVisitors,
+  liveWindowMinutes,
   type VisitsDays,
 } from "./schema.ts"
+
+// How long one live answer is served before the provider is asked again. A
+// client polling every few seconds costs the vendor one call per half minute.
+const liveCacheTtl = Duration.seconds(30)
 
 export interface Interface {
   // The site's configured analytics, or null when it has none. Never fails and
@@ -38,6 +44,11 @@ export interface Interface {
   readonly fetchVisits: (
     dates: ReadonlyArray<string>,
   ) => Effect.Effect<VisitsDays, AnalyticsError>
+  // The visitors active right now, fetched from the provider and cached for 30
+  // seconds. Null for a site with no analytics. This DOES reach the network on
+  // a read, unlike every other read in the domain, so it has its own report
+  // and its own endpoint and is never part of the dashboard snapshot.
+  readonly liveVisitors: () => Effect.Effect<LiveVisitors | null, AnalyticsError>
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -51,6 +62,7 @@ export const use = serviceUse(Service)
 const none: Interface = {
   status: () => Effect.succeed(null),
   fetchVisits: () => Effect.succeed(emptyVisitsDays),
+  liveVisitors: () => Effect.succeed(null),
 }
 
 const notReady = (source: AnalyticsSource, reason: string): Interface => ({
@@ -62,21 +74,43 @@ const notReady = (source: AnalyticsSource, reason: string): Interface => ({
       reason,
     }),
   fetchVisits: () => Effect.fail(new AnalyticsError({ message: reason })),
+  liveVisitors: () => Effect.fail(new AnalyticsError({ message: reason })),
 })
 
-const ready = (source: AnalyticsSource, provider: Provider): Interface => ({
-  status: () =>
-    Effect.succeed({
-      provider: source.provider,
-      siteId: source.siteId,
-      ready: true,
-      reason: null,
-    }),
-  fetchVisits: Effect.fn("Analytics.fetchVisits")(function* (dates) {
-    if (dates.length === 0) return emptyVisitsDays
-    return yield* provider.fetchVisits(dates)
-  }),
-})
+const ready = (source: AnalyticsSource, provider: Provider) =>
+  Effect.gen(function* () {
+    // One entry, one key: the cache is only a 30-second memo of the last live
+    // answer, so several clients polling at once cost the vendor one call.
+    const live = yield* Cache.make<"live", LiveVisitors, AnalyticsError>({
+      capacity: 1,
+      timeToLive: liveCacheTtl,
+      lookup: () =>
+        provider.liveVisitors(liveWindowMinutes).pipe(
+          Effect.map((visitors) => ({
+            visitors,
+            windowMinutes: liveWindowMinutes,
+            fetchedAt: new Date().toISOString(),
+          })),
+        ),
+    })
+    const impl: Interface = {
+      status: () =>
+        Effect.succeed({
+          provider: source.provider,
+          siteId: source.siteId,
+          ready: true,
+          reason: null,
+        }),
+      fetchVisits: Effect.fn("Analytics.fetchVisits")(function* (dates) {
+        if (dates.length === 0) return emptyVisitsDays
+        return yield* provider.fetchVisits(dates)
+      }),
+      liveVisitors: Effect.fn("Analytics.liveVisitors")(function* () {
+        return yield* Cache.get(live, "live")
+      }),
+    }
+    return impl
+  })
 
 // The layer over an explicit registry. Production uses `layer` (the real
 // registry); tests hand in a fake adapter to exercise the port without a vendor.
@@ -104,7 +138,7 @@ export const layerWith = (registry: ReadonlyMap<string, ProviderFactory>) =>
       // whole site runtime; it makes the site not-ready with its own message.
       return yield* factory(source).pipe(
         Effect.provideService(HttpClient.HttpClient, httpClient),
-        Effect.map((provider) => ready(source, provider)),
+        Effect.flatMap((provider) => ready(source, provider)),
         Effect.catchTag("AnalyticsError", (error) =>
           Effect.succeed(notReady(source, error.message)),
         ),

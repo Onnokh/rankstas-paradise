@@ -10,7 +10,8 @@
 //     PER DAY (start_date = end_date), paginated, because the metric endpoint
 //     sums over its range and has no day dimension;
 //   - `GET /metric?parameter=event_name` for event counts, the same way. For
-//     this parameter Rybbit's `count` is the number of occurrences, not sessions.
+//     this parameter Rybbit's `count` is the number of occurrences, not sessions;
+//   - `GET /live-user-count?minutes=N` for the people active right now.
 //
 // Everything Rybbit-specific ends at this file: its envelope (`{ data }` around
 // the series, `{ data: { data, totalCount } }` around a metric page), its column
@@ -85,6 +86,7 @@ const MetricResponse = Schema.Struct({
     totalCount: Schema.Unknown,
   }),
 })
+const LiveCountResponse = Schema.Struct({ count: Schema.Unknown })
 
 // A count as Rybbit sends it — a number, or a numeric string when ClickHouse
 // quotes a 64-bit integer. Anything else is zero rather than NaN in the ledger.
@@ -309,6 +311,15 @@ export const makeWith =
         })
 
       const provider: Provider = {
+        liveVisitors: Effect.fn("Rybbit.liveVisitors")(function* (windowMinutes) {
+          const body = yield* request(
+            LiveCountResponse,
+            "/live-user-count",
+            { minutes: String(windowMinutes) },
+            "live-user-count",
+          )
+          return asCount(body.count)
+        }),
         fetchVisits: Effect.fn("Rybbit.fetchVisits")(function* (dates) {
           const sorted = [...new Set(dates)].sort()
           if (sorted.length === 0) return { site: [], pages: [], events: [] }

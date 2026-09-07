@@ -8,6 +8,7 @@
 import { Context, Effect, Layer } from "effect"
 
 import { Analytics } from "../analytics/analytics.ts"
+import { type AnalyticsError } from "../analytics/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { DomainRating } from "../domain-rating/domain-rating.ts"
 import { type RegistryEntry, type RegistryPatch } from "../registry/schema.ts"
@@ -33,6 +34,7 @@ import {
   type DashboardSnapshot,
   type EntrySummary,
   type HistoryReport,
+  type LiveReport,
   type LogAddInput,
   type LogAddResult,
   type LogFeedEntry,
@@ -99,6 +101,9 @@ export interface Interface {
     DashboardSnapshot,
     ReportsError
   >
+  // The visitors active right now. Reaches the analytics provider (through a
+  // 30-second memo); every other read here is served from the ledger.
+  readonly liveReport: () => Effect.Effect<LiveReport, ReportsError>
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -123,13 +128,18 @@ export const layer = Layer.effect(
     // Map the dependencies' typed errors to a ReportsError; the guard failures
     // raised inside the report gens are already ReportsError and pass through.
     const wrap = <A>(
-      effect: Effect.Effect<A, StorageError | RegistryError | ReportsError>,
+      effect: Effect.Effect<
+        A,
+        StorageError | RegistryError | AnalyticsError | ReportsError
+      >,
     ): Effect.Effect<A, ReportsError> =>
       effect.pipe(
         Effect.catchTags({
           StorageError: (cause) =>
             Effect.fail(new ReportsError({ message: cause.message, cause })),
           RegistryError: (cause) =>
+            Effect.fail(new ReportsError({ message: cause.message, cause })),
+          AnalyticsError: (cause) =>
             Effect.fail(new ReportsError({ message: cause.message, cause })),
         }),
       )
@@ -754,6 +764,20 @@ export const layer = Layer.effect(
                 visits: visitsByDate.get(day.date) ?? null,
               })),
             }
+          }),
+        ),
+
+      liveReport: () =>
+        wrap(
+          Effect.gen(function* () {
+            const analyticsStatus = yield* analytics.status()
+            // A configured-but-not-ready provider fails the fetch with its
+            // reason; that reason is already on the status, so the report
+            // carries the status and a null count instead of an error.
+            const live = analyticsStatus?.ready
+              ? yield* analytics.liveVisitors()
+              : null
+            return { analytics: analyticsStatus, live }
           }),
         ),
 

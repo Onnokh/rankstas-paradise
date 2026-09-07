@@ -114,6 +114,9 @@ One distinct person on one day, as the analytics provider counts it. Does not su
 **Event**:
 A named custom action the site reports to its analytics provider (`purchase`, `download_shader`), counted per day. Observed, like a Query. Not an Action — an Action is a change *we* made to a page; an Event is something a *visitor* did.
 
+**Live visitors**:
+The distinct people active on the site in the last five minutes, as the analytics provider counts them. Asked on demand and shown at most thirty seconds old; never stored, never on the dashboard.
+
 **Traffic**:
 Loosely, both. When a number is meant, say which: clicks (Search Console) or visits (analytics).
 

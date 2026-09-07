@@ -347,6 +347,12 @@ beforeAll(async () => {
         ready: true,
         reason: null,
       }),
+    liveVisitors: () =>
+      Effect.succeed({
+        visitors: 4,
+        windowMinutes: 5,
+        fetchedAt: "2026-07-12T12:00:00.000Z",
+      }),
   })
   const base = Layer.mergeAll(
     storageLayer,
@@ -646,4 +652,14 @@ test("dashboardSnapshot carries the provider, its history, and event counts", as
   expect(snapshot.analytics?.provider).toBe("fake")
   expect(snapshot.visitsHistory).toHaveLength(28)
   expect(snapshot.events).toEqual([{ name: "purchase", current: 56, previous: 56 }])
+})
+
+test("liveReport carries the provider status and the live count", async () => {
+  const report = await run(Reports.use.liveReport())
+  expect(report.analytics?.provider).toBe("fake")
+  expect(report.live).toEqual({
+    visitors: 4,
+    windowMinutes: 5,
+    fetchedAt: "2026-07-12T12:00:00.000Z",
+  })
 })

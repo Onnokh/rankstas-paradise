@@ -101,6 +101,15 @@ so a vendor outage or a wrong key can never cost a site its Search Console
 refresh — but unlike the rating it is **logged**, because otherwise a bad key
 shows only as visits that quietly stop moving.
 
+### Live visitors are the one read that reaches the provider
+
+The people on the site right now is a number that is stale the moment it
+lands, so it is not a ledger row. `Analytics.liveVisitors` asks the provider
+on demand and memoises the answer for 30 seconds; `Reports.liveReport`,
+`GET /api/live` and the `live` MCP tool expose it **on their own**. It is
+deliberately absent from the dashboard snapshot: a slow vendor must never
+stall a screen whose other numbers are on disk (the Domain Rating rule).
+
 ### Reports carry visits as optional keys
 
 `status.analytics`, `pages[].visits`, `page.visits`, `history.days[].visits`,

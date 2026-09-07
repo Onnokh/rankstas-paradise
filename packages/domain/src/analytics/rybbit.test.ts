@@ -72,8 +72,11 @@ const fetchWith = (
     ),
   )
 
-// A healthy instance: a flat day of visits, two pages, one event, for any date.
+// A healthy instance: a flat day of visits, two pages, one event, for any date,
+// and three people on the site right now.
 const healthy: Answer = (url) => {
+  if (url.pathname.endsWith("/live-user-count"))
+    return { status: 200, body: { count: "3" } }
   if (url.pathname.endsWith("/overview/time-series")) {
     const start = url.searchParams.get("start_date")!
     const end = url.searchParams.get("end_date")!
@@ -213,6 +216,26 @@ test("follows totalCount across metric pages", async () => {
   )
   expect(pathnameCalls.map((r) => r.url.searchParams.get("page"))).toEqual(["1", "2"])
   expect(pathnameCalls[0]!.url.searchParams.get("limit")).toBe("2")
+})
+
+test("live visitors ask live-user-count for the window and read count", async () => {
+  const seen: Seen = { requests: [] }
+  const exit = await Effect.runPromiseExit(
+    noRetries(source).pipe(
+      Effect.flatMap((provider) => provider.liveVisitors(5)),
+      Effect.provide(
+        Layer.mergeAll(fakeHttp(seen, healthy), configLayer({ RYBBIT_API_KEY: "k" })),
+      ),
+    ),
+  )
+  if (!Exit.isSuccess(exit)) throw new Error("expected success")
+
+  expect(exit.value).toBe(3)
+  expect(seen.requests).toHaveLength(1)
+  const { url, auth } = seen.requests[0]!
+  expect(url.pathname).toBe("/api/sites/12/live-user-count")
+  expect(url.searchParams.get("minutes")).toBe("5")
+  expect(auth).toBe("Bearer k")
 })
 
 test("an empty date list makes no request", async () => {

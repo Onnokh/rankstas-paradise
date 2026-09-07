@@ -45,10 +45,17 @@ const httpStub = Layer.succeed(
 )
 
 // A fake adapter that records the dates it is asked for and answers one site
-// row per date.
-const fakeFactory = (seen: { dates?: ReadonlyArray<string> }): ProviderFactory =>
+// row per date, and counts how often it is asked for live visitors.
+const fakeFactory = (
+  seen: { dates?: ReadonlyArray<string>; liveCalls?: number },
+): ProviderFactory =>
   () =>
     Effect.succeed({
+      liveVisitors: () =>
+        Effect.sync(() => {
+          seen.liveCalls = (seen.liveCalls ?? 0) + 1
+          return 7
+        }),
       fetchVisits: (dates) =>
         Effect.sync((): VisitsDays => {
           seen.dates = dates
@@ -118,6 +125,47 @@ test("a ready adapter is asked for exactly the dates given", async () => {
     "2026-01-02",
     "2026-01-01",
   ])
+})
+
+test("live visitors come from the adapter once per cache window", async () => {
+  const seen: { liveCalls?: number } = {}
+  const layer = buildLayer(
+    withAnalytics,
+    new Map([["fake", fakeFactory(seen)]]),
+  )
+
+  const first = await Effect.runPromise(
+    Analytics.use.liveVisitors().pipe(Effect.provide(layer)),
+  )
+  const second = await Effect.runPromise(
+    Analytics.use.liveVisitors().pipe(Effect.provide(layer)),
+  )
+
+  expect(first?.visitors).toBe(7)
+  expect(first?.windowMinutes).toBe(5)
+  expect(first?.fetchedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+  // Two separate layers here, so two lookups; within one layer the second read
+  // is served from the 30-second memo — see the next assertion.
+  expect(seen.liveCalls).toBe(2)
+  expect(second?.visitors).toBe(7)
+
+  const memo: { liveCalls?: number } = {}
+  const program = Effect.gen(function* () {
+    yield* Analytics.use.liveVisitors()
+    yield* Analytics.use.liveVisitors()
+    return yield* Analytics.use.liveVisitors()
+  }).pipe(Effect.provide(buildLayer(withAnalytics, new Map([["fake", fakeFactory(memo)]]))))
+  const third = await Effect.runPromise(program)
+  expect(third?.visitors).toBe(7)
+  expect(memo.liveCalls).toBe(1)
+})
+
+test("a site without analytics has no live visitors", async () => {
+  const layer = buildLayer(withoutAnalytics, new Map())
+  const live = await Effect.runPromise(
+    Analytics.use.liveVisitors().pipe(Effect.provide(layer)),
+  )
+  expect(live).toBeNull()
 })
 
 test("an empty date list never reaches the adapter", async () => {

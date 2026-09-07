@@ -264,6 +264,9 @@ export const makeApiGroup = (ctx: ServerContext) => {
           return siteJson(query.site, Reports.use.historyReport(limit ?? 28))
         }),
       )
+      .handle("live", ({ query }) =>
+        Effect.promise(() => siteJson(query.site, Reports.use.liveReport())),
+      )
       // Without ?site= this falls back to the first configured site, which is
       // what the desktop app's bare polling relies on. With it, every site's job
       // history becomes readable — until this existed, the sync each per-site

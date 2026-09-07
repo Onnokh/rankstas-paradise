@@ -116,6 +116,17 @@ describe("JSON routes", () => {
     expect(Array.isArray((scoped.body as { jobs: unknown }).jobs)).toBe(true)
   })
 
+  // The debug fixture names no analytics provider, so the live read answers
+  // with both halves null — and, crucially, with 200: a site without a
+  // provider is the ordinary case, not an error.
+  test("GET /api/live → 200 with null provider and count for a site without analytics", async () => {
+    const { status, body } = await requestJson(server, `/api/live${site}`)
+    expect(status).toBe(200)
+    const envelope = body as Record<string, unknown>
+    expect(envelope.analytics).toBeNull()
+    expect(envelope.live).toBeNull()
+  })
+
   test("GET /api/jobs with an unknown ?site= → 400", async () => {
     const { status } = await requestJson(server, "/api/jobs?site=nope")
     expect(status).toBe(400)

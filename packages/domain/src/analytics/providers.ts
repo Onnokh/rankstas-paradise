@@ -24,6 +24,12 @@ export interface Provider {
   readonly fetchVisits: (
     dates: ReadonlyArray<string>,
   ) => Effect.Effect<VisitsDays, AnalyticsError>
+  // Distinct visitors active in the last `windowMinutes`. Every vendor in scope
+  // answers this in one call (Rybbit live-user-count, Umami active, GA4
+  // realtime), so it is part of the contract rather than an optional extra.
+  readonly liveVisitors: (
+    windowMinutes: number,
+  ) => Effect.Effect<number, AnalyticsError>
 }
 
 // Builds the adapter for one site's source. Runs once per site runtime, so this

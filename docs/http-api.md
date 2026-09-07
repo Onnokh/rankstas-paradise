@@ -15,6 +15,7 @@
 | `GET /api/registry` | `registry` |
 | `GET /api/log?path=` | `log list` |
 | `GET /api/history?limit=N` | — (TUI history view) |
+| `GET /api/live` | — (visitors on the site right now; the one read that asks the analytics provider) |
 
 `GET /api/status` reports two instants in `data`, both ISO 8601
 (`YYYY-MM-DDTHH:MM:SSZ`) and both `null` until they have a value:
@@ -66,6 +67,12 @@ built against an older server keeps decoding:
 
 Visits have no finalization lag: the newest stored day is yesterday (UTC), and
 the last two days are re-fetched on each sync.
+
+`GET /api/live` is the exception to "read endpoints never call out": it asks
+the provider how many distinct people were active in the last 5 minutes and
+answers `{ analytics, live: { visitors, windowMinutes, fetchedAt } | null }`.
+Answers are memoised for 30 seconds per site, so poll it on its own timer and
+never fold it into the dashboard read, which must stay served from disk.
 
 All site-scoped endpoints accept `?site=<id>`. The default is the first configured site. For example:
 

@@ -20,6 +20,7 @@ import {
 import {
   DashboardSnapshot,
   HistoryReport,
+  LiveReport,
   LogAddInput,
   LogAddResult,
   LogListResult,
@@ -121,6 +122,14 @@ export const apiGroup = HttpApiGroup.make("api")
     HttpApiEndpoint.get("history", "/api/history", {
       query: { site: S, limit: S },
       success: enveloped(HistoryReport.fields),
+    }),
+  )
+  .add(
+    // The one read that reaches the analytics provider (memoised 30 s). Its
+    // own route so a slow vendor can never stall the ledger-backed reads.
+    HttpApiEndpoint.get("live", "/api/live", {
+      query: { site: S },
+      success: enveloped(LiveReport.fields),
     }),
   )
   .add(

@@ -3,7 +3,11 @@
 // and are the contract downstream frontends and the HTTP server code against.
 import { Schema } from "effect"
 
-import { AnalyticsStatus, SiteVisitsDay } from "../analytics/schema.ts"
+import {
+  AnalyticsStatus,
+  LiveVisitors,
+  SiteVisitsDay,
+} from "../analytics/schema.ts"
 import { DomainRating, DomainRatingDay } from "../domain-rating/schema.ts"
 
 import {
@@ -482,6 +486,18 @@ export const HistoryReport = Schema.Struct({
 }).annotate({ identifier: "HistoryReport" })
 export interface HistoryReport
   extends Schema.Schema.Type<typeof HistoryReport> {}
+
+// The people on the site right now. The ONE report that reaches the provider
+// on a read (cached 30 seconds in the Analytics service), which is why it is
+// its own document with its own endpoint and never rides on the dashboard
+// snapshot: a slow vendor must not stall a screen whose other numbers are on
+// disk. `live` is null when the site has no provider; `analytics` says why
+// when a provider is configured but not ready.
+export const LiveReport = Schema.Struct({
+  analytics: Schema.NullOr(AnalyticsStatus),
+  live: Schema.NullOr(LiveVisitors),
+}).annotate({ identifier: "LiveReport" })
+export interface LiveReport extends Schema.Schema.Type<typeof LiveReport> {}
 
 // Raised when a report cannot be produced (wraps an underlying Storage /
 // Registry / Sitemap failure, or an invalid argument such as a bad path/kind).
