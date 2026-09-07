@@ -13,6 +13,7 @@ struct RootView: View {
     @State private var favicons = FaviconStore()
     @State private var history = HistoryStore()
     @State private var rankings = RankingStore()
+    @State private var live = LiveStore()
     @State private var drag: DragSession?
 
     /// One live three-finger gesture.
@@ -73,6 +74,7 @@ struct RootView: View {
                     model: model,
                     history: history,
                     rankings: rankings,
+                    live: live,
                     favicons: favicons,
                     actions: actions,
                     height: pane.height
@@ -99,6 +101,7 @@ struct RootView: View {
                     model: model,
                     history: history,
                     rankings: rankings,
+                    live: live,
                     favicons: favicons,
                     showsShortcuts: isCommandHeld,
                     onSelect: select

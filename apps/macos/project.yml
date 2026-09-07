@@ -43,3 +43,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.rankstasparadise.mac.tests
         GENERATE_INFOPLIST_FILE: YES
+        # The app's product is named "Ranksta's Paradise", not after its target, so the
+        # host path XcodeGen derives from the target name points at nothing. Spell it out.
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Ranksta's Paradise.app/Contents/MacOS/Ranksta's Paradise"
+        BUNDLE_LOADER: "$(TEST_HOST)"

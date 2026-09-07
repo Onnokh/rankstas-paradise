@@ -50,6 +50,9 @@ struct HistoryReportDay: Codable, Sendable, Equatable, Identifiable {
     let clicks: Double
     let ctr: Double
     let position: Double
+    /// The same day as the site's analytics provider counted it. Nil when the site has no
+    /// provider, the day is not synced yet, or the series came from an older server or cache.
+    var visits: VisitsDay? = nil
 
     var id: String { date }
 
@@ -60,6 +63,48 @@ struct HistoryReportDay: Codable, Sendable, Equatable, Identifiable {
 
     var asHistoryDay: HistoryDay {
         HistoryDay(date: date, impressions: impressions, clicks: clicks, ctr: ctr, position: position)
+    }
+}
+
+/// One day of the analytics provider's series. Visits (sessions) sum across days; visitors
+/// are the day's distinct people and do not.
+struct VisitsDay: Codable, Sendable, Equatable {
+    let pageviews: Double
+    let visits: Double
+    let visitors: Double
+}
+
+/// `/api/live`: the people on the site right now. The one read that asks the analytics
+/// provider, so it is polled on its own and never cached.
+struct LiveReport: Codable, Sendable {
+    let generatedAt: String
+    let mode: String
+    /// Nil when the site has no analytics provider.
+    let analytics: AnalyticsStatus?
+    /// Nil when the site has no provider, or its provider is configured but not ready.
+    let live: LiveVisitors?
+}
+
+struct AnalyticsStatus: Codable, Sendable, Equatable {
+    let provider: String
+    let siteId: String
+    let ready: Bool
+    let reason: String?
+}
+
+struct LiveVisitors: Codable, Sendable, Equatable {
+    /// Distinct people seen in the last `windowMinutes`.
+    let visitors: Double
+    let windowMinutes: Int
+    /// People seen per minute of the window, oldest first. Optional: an older server omits it.
+    var series: [Double]? = nil
+    let fetchedAt: String
+
+    /// One bar per minute of the window, oldest first: the series trimmed to its newest
+    /// `windowMinutes` entries or padded with leading zeros, so the card always draws a full row.
+    var bars: [Double] {
+        let newest = Array((series ?? []).suffix(windowMinutes))
+        return Array(repeating: 0, count: max(0, windowMinutes - newest.count)) + newest
     }
 }
 

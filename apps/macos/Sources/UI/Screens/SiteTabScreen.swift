@@ -6,6 +6,7 @@ struct SiteTabScreen: View {
     @Bindable var state: SiteTabState
     let history: HistoryStore
     let rankings: RankingStore
+    let live: LiveStore
     let icon: Image?
     let isRefreshing: Bool
     let onRefresh: () -> Void
@@ -48,6 +49,11 @@ struct SiteTabScreen: View {
         }
         .clipped()
         .animation(.snappy(duration: 0.3), value: state.path)
+        // The live count polls only while the real screen is shown: a preview is a still.
+        .task(id: overview.id) {
+            guard !isPreview else { return }
+            await live.poll(overview.id)
+        }
         .task(id: overview.id) {
             // Previews share the stores with the live screen; only the live screen loads.
             guard !isPreview else { return }
@@ -79,6 +85,20 @@ struct SiteTabScreen: View {
         PeriodComparison(days: days.map(\.asHistoryDay), window: state.period.days)
     }
 
+    private var visitsComparison: VisitsComparison? {
+        VisitsComparison(days: days, window: state.period.days)
+    }
+
+    private var liveVisitors: LiveVisitors? {
+        live.reports[overview.id]?.live
+    }
+
+    /// Whether the site has an analytics provider with anything to show: a live count, or
+    /// at least one day of visits in the series.
+    private var hasAnalytics: Bool {
+        liveVisitors != nil || visitsComparison != nil
+    }
+
     private var ratingMove: RatingMove? {
         guard let dashboard = overview.dashboard else { return nil }
         var series = dashboard.domainRatingHistory ?? []
@@ -103,11 +123,23 @@ struct SiteTabScreen: View {
                     .padding(.top, Self.columnInset)
                     .padding(.bottom, 40)
 
-                MetricStrip(comparison: comparison, rating: ratingMove)
+                MetricStrip(comparison: comparison, visits: visitsComparison, rating: ratingMove)
                     .column()
 
                 TrendChart(days: Array(days.suffix(state.period.days)))
                     .padding(.top, 36)
+
+                // The analytics provider's two views, side by side under the Search Console
+                // chart and apart from it: the people on the site this half hour, and the
+                // period's visits. A site without a provider has neither and gets no row.
+                if hasAnalytics {
+                    HStack(alignment: .top, spacing: 20) {
+                        RealtimeCard(live: liveVisitors)
+                        VisitsCard(days: Array(days.suffix(state.period.days)), comparison: visitsComparison)
+                    }
+                    .column()
+                    .padding(.top, 36)
+                }
 
                 rankingCards
                     .column()
@@ -171,6 +203,23 @@ struct SiteTabScreen: View {
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .lineLimit(1)
+
+            // The people on the site right now, beside the name: the one figure on the screen
+            // that moves on its own. Distinct people over the last half hour, the same count
+            // the realtime card below draws by the minute.
+            if let liveVisitors {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(visitsColor)
+                        .frame(width: 7, height: 7)
+                    Text("\(liveVisitors.visitors.formatted(.number.precision(.fractionLength(0)))) online")
+                        .monospacedDigit()
+                }
+                .foregroundStyle(.secondary)
+                .padding(.leading, 6)
+                .help("Distinct people on the site in the last \(liveVisitors.windowMinutes) minutes")
+                .accessibilityLabel("\(liveVisitors.visitors.formatted(.number.precision(.fractionLength(0)))) people online")
+            }
 
             Spacer()
 
@@ -296,6 +345,7 @@ private struct PeriodSwitch: View {
 /// Console figures from the Domain Rating, which comes from another source.
 private struct MetricStrip: View {
     let comparison: PeriodComparison
+    let visits: VisitsComparison?
     let rating: RatingMove?
 
     var body: some View {
@@ -337,6 +387,17 @@ private struct MetricStrip: View {
             Rectangle()
                 .fill(Palette.line)
                 .frame(width: 1, height: 48)
+            gap
+            // Visits (sessions) rather than visitors: visits sum over a period, distinct
+            // people do not. The chart's tooltip shows both for a single day.
+            Metric(
+                title: "Visits",
+                value: visits.map { $0.current.formatted(.number.precision(.fractionLength(0))) } ?? "—",
+                change: visits?.trend.map { Trend.signed($0.delta, fractionDigits: 0) },
+                tint: visits?.trend.map { $0.delta >= 0 ? Palette.mint : Palette.coral },
+                dot: visits == nil ? nil : visitsColor,
+                footnote: visits == nil ? "No analytics" : nil
+            )
             gap
             Metric(
                 title: "Domain Rating",
@@ -736,6 +797,152 @@ private struct Tooltip: View {
     }
 }
 
+// MARK: - Analytics cards
+
+/// The colour of everything that comes from the analytics provider: the header's live dot,
+/// the strip's visits dot, the realtime bars and the visits chart.
+private let visitsColor = Palette.lilac
+
+/// The last half hour by the minute: one bar per minute, the newest at the right. The count
+/// itself sits in the header beside the site name; this card is its timeline. The store
+/// behind it asks again every half minute, so the bars are the screen's one moving part.
+private struct RealtimeCard: View {
+    let live: LiveVisitors?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Realtime")
+                    .font(.headline)
+                Spacer()
+                if let live {
+                    Text("\(live.visitors.formatted(.number.precision(.fractionLength(0)))) in the last \(live.windowMinutes)m")
+                        .font(.subheadline)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let live {
+                MinuteBars(values: live.bars)
+                    .frame(height: 96)
+
+                HStack {
+                    Text("\(live.windowMinutes) minutes ago")
+                    Spacer()
+                    Text("Now")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+                Text("Waiting for the provider…")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .cardSurface(cornerRadius: 12)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The period's visits, one bar per day, with the period total and its move in the title
+/// row. Visits (sessions) sum over the period; a day the provider has not synced yet is
+/// left empty rather than drawn as zero, so a series that started recently reads as short,
+/// not as a flat start.
+private struct VisitsCard: View {
+    let days: [HistoryReportDay]
+    let comparison: VisitsComparison?
+
+    private var points: [HistoryReportDay] {
+        days.filter { $0.visits != nil }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Visits")
+                    .font(.headline)
+                Spacer()
+                if let comparison {
+                    Text(comparison.current.formatted(.number.precision(.fractionLength(0))))
+                        .font(.subheadline.weight(.semibold))
+                        .monospacedDigit()
+                    if let trend = comparison.trend {
+                        Text(Trend.signed(trend.delta, fractionDigits: 0))
+                            .font(.caption.weight(.medium))
+                            .monospacedDigit()
+                            .foregroundStyle(trend.delta >= 0 ? Palette.mint : Palette.coral)
+                    }
+                }
+            }
+
+            if points.count >= 2 {
+                Chart(points) { point in
+                    BarMark(
+                        x: .value("Date", point.day, unit: .day),
+                        y: .value("Visits", point.visits?.visits ?? 0)
+                    )
+                    .foregroundStyle(visitsColor)
+                    .cornerRadius(2)
+                }
+                .chartYScale(domain: .automatic(includesZero: true))
+                .chartYAxis {
+                    AxisMarks(values: [0]) { _ in
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 1))
+                            .foregroundStyle(Palette.line)
+                    }
+                }
+                .chartXAxis(.hidden)
+                .frame(height: 96)
+
+                HStack {
+                    Text(points.first!.day, format: .dateTime.day().month(.abbreviated))
+                    Spacer()
+                    Text(points.last!.day, format: .dateTime.day().month(.abbreviated))
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+                Text("Not enough days of visits yet.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .cardSurface(cornerRadius: 12)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// One rounded bar per minute, oldest on the left. A quiet minute keeps a stub in the line
+/// colour, so the row always reads as the whole window and not as however many minutes had
+/// someone on the site.
+private struct MinuteBars: View {
+    let values: [Double]
+
+    private static let stub: CGFloat = 6
+
+    var body: some View {
+        GeometryReader { geometry in
+            let peak = max(values.max() ?? 0, 1)
+            HStack(alignment: .bottom, spacing: 3) {
+                ForEach(values.indices, id: \.self) { index in
+                    let value = values[index]
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(value > 0 ? visitsColor : Palette.line)
+                        .frame(height: value > 0 ? max(Self.stub, geometry.size.height * value / peak) : Self.stub)
+                }
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .bottom)
+        }
+        .animation(.snappy(duration: 0.3), value: values)
+        .accessibilityHidden(true)
+    }
+}
+
 // MARK: - Sub-screens
 
 /// Sub-screen listing every opportunity signal of a site.
@@ -810,6 +1017,7 @@ private struct PlaceholderScreen: View {
         state: SiteTabState(siteID: "sleevy"),
         history: HistoryStore(),
         rankings: RankingStore(),
+        live: LiveStore(),
         icon: nil,
         isRefreshing: false,
         onRefresh: {}

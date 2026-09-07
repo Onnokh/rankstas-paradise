@@ -9,6 +9,7 @@ struct TabContentStack: View {
     let model: OverviewModel
     let history: HistoryStore
     let rankings: RankingStore
+    let live: LiveStore
     let favicons: FaviconStore
     let actions: TabActions
     let height: CGFloat
@@ -18,7 +19,7 @@ struct TabContentStack: View {
             ForEach(workspace.mountedTabIDs, id: \.self) { tab in
                 let isActive = tab == workspace.activeTabID
 
-                TabScreen(tab: tab, workspace: workspace, model: model, history: history, rankings: rankings, favicons: favicons, actions: actions)
+                TabScreen(tab: tab, workspace: workspace, model: model, history: history, rankings: rankings, live: live, favicons: favicons, actions: actions)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .background(Palette.panel)
                     .allowsHitTesting(isActive)

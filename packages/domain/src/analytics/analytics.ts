@@ -34,6 +34,20 @@ import {
 // client polling every few seconds costs the vendor one call per half minute.
 const liveCacheTtl = Duration.seconds(30)
 
+// Exactly `length` minutes, oldest first: an adapter's series is trimmed to its
+// newest `length` entries or padded with leading zeros, so a client can draw
+// one bar per minute without counting. Negative or non-finite counts read as 0.
+const normaliseSeries = (
+  perMinute: ReadonlyArray<number>,
+  length: number,
+): ReadonlyArray<number> => {
+  const clean = perMinute.map((value) =>
+    Number.isFinite(value) && value > 0 ? value : 0,
+  )
+  const newest = clean.slice(-length)
+  return [...Array<number>(length - newest.length).fill(0), ...newest]
+}
+
 export interface Interface {
   // The site's configured analytics, or null when it has none. Never fails and
   // never reaches the network: this is what report reads call.
@@ -86,9 +100,10 @@ const ready = (source: AnalyticsSource, provider: Provider) =>
       timeToLive: liveCacheTtl,
       lookup: () =>
         provider.liveVisitors(liveWindowMinutes).pipe(
-          Effect.map((visitors) => ({
-            visitors,
+          Effect.map((sample) => ({
+            visitors: sample.visitors,
             windowMinutes: liveWindowMinutes,
+            series: normaliseSeries(sample.perMinute, liveWindowMinutes),
             fetchedAt: new Date().toISOString(),
           })),
         ),

@@ -100,14 +100,21 @@ export interface AnalyticsStatus
   extends Schema.Schema.Type<typeof AnalyticsStatus> {}
 
 // The people active on the site right now, as the provider counts them: one
-// distinct visitor per person seen in the last `windowMinutes`. This is the one
-// number in the domain that is NOT a ledger row — it is fetched on demand,
-// briefly cached, and never stored, because it is stale the moment it lands.
-export const liveWindowMinutes = 5
+// distinct visitor per person seen in the last `windowMinutes`, plus how many
+// were seen in each of those minutes. This is the one number in the domain that
+// is NOT a ledger row — it is fetched on demand, briefly cached, and never
+// stored, because it is stale the moment it lands.
+export const liveWindowMinutes = 30
 
 export const LiveVisitors = Schema.Struct({
   visitors: Schema.Number,
   windowMinutes: Schema.Number,
+  // One count per minute of the window, oldest first, exactly `windowMinutes`
+  // long with zeros for quiet minutes — the bars of a realtime card. Positions,
+  // not timestamps: the last entry is the minute that just ended, and a client
+  // derives the rest from `fetchedAt`. Optional on the wire so a client built
+  // against this shape still decodes an older server's answer.
+  series: Schema.optional(Schema.Array(Schema.Number)),
   // When the provider was asked, as an ISO 8601 instant, so a client can show
   // how old a cached answer is.
   fetchedAt: Schema.String,

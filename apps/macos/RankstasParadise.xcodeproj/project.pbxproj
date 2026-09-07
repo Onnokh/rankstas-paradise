@@ -11,28 +11,32 @@
 		02687AB5F8D41B2177FA01A4 /* PeekOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 321E61A9553942809C755B5E /* PeekOverlay.swift */; };
 		02B3FFF58C30DFEEE592780D /* ThreeFingerDragRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 808292EC68DF3F3F1372857D /* ThreeFingerDragRecognizer.swift */; };
 		03B5AB4CBEA4DE2907E88D3E /* OverviewScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDBE29CE70B5A9DA353D559F /* OverviewScreen.swift */; };
+		053F52BB4172591F3B89ED51 /* VisitsComparisonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF3CCE903967EA97F88CF96F /* VisitsComparisonTests.swift */; };
 		0886B2DB9CA4455C65865FFC /* FaviconStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7A8C3726C45B7E051EC676 /* FaviconStore.swift */; };
 		209A04C43E5D10AFBDD28CFD /* TabScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B221BE06A0C0C969C69E053 /* TabScreen.swift */; };
 		20E8747A62A7D8ACACA52BD7 /* PeekLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1BE634789533BFD60C75EA7 /* PeekLayoutTests.swift */; };
 		307A850E88309D9EC5DDB2D4 /* PeekLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C34C86ED39F2F1CBD090FCBD /* PeekLayout.swift */; };
-		307A850E88309D9EC5DDB2E1 /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = C34C86ED39F2F1CBD090FCC1 /* Palette.swift */; };
-		307A850E88309D9EC5DDB2E2 /* Headband.swift in Sources */ = {isa = PBXBuildFile; fileRef = C34C86ED39F2F1CBD090FCC2 /* Headband.swift */; };
 		352E6FE572675ADA948CB390 /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9315B96CB87D84C07606E52 /* Workspace.swift */; };
 		35C1A65569E692C36E498150 /* HistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52071A75DDC18E04824A43A2 /* HistoryStore.swift */; };
-		35C1A65569E692C36E498151 /* RankingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52071A75DDC18E04824A43A3 /* RankingStore.swift */; };
 		3B385BA04A4F926DB22F8A6D /* FaviconFetcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99C05C79BE3B70FF6B960794 /* FaviconFetcherTests.swift */; };
 		4EB19731C7D64342D90C3020 /* CommandKeyMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8D78F25509D227C0557EB01 /* CommandKeyMonitor.swift */; };
 		4FC046F39092489938767509 /* WindowChromeReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02EB9D6D72519239BBF7226 /* WindowChromeReader.swift */; };
+		558BA52213440023D16C0D9F /* LiveStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B526F19FE23F5E62A81B79B2 /* LiveStore.swift */; };
 		5D5175994B1AD981AA0DDFC2 /* OverviewRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61874C20B6B2BCAFB1667A61 /* OverviewRepository.swift */; };
 		71DC2713A7582A5BDB87DA51 /* SiteTabScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110B138E26420AE2E80212B4 /* SiteTabScreen.swift */; };
 		741C3B020EEB6692BE875DC9 /* OverviewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20D0DB50A815C0FD4CB715E0 /* OverviewModel.swift */; };
+		746ADF2B829571DEB19AD9DF /* Headband.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DC0C05A557F466F42DC086B /* Headband.swift */; };
 		7B63796B1698692B64A36D1F /* PeriodStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50CD5971030788D8D00BC8D9 /* PeriodStats.swift */; };
 		85B4E755EBE5C81DEF17A7AA /* PeriodStatsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA98EFEB479445BEFCA726CD /* PeriodStatsTests.swift */; };
 		880942499CFC9F5FA863E04C /* TabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCE806538483AE3DC0C0C5DC /* TabBar.swift */; };
 		89D1C405DD817D3BCBCBB1C2 /* OverviewSummaryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D072C44E6ADEAC4BAEF98994 /* OverviewSummaryCard.swift */; };
+		8C38EC6EFA47B9C9736BF449 /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE562BC678FA721589263640 /* Palette.swift */; };
 		9168383C0927A5AB63CFA385 /* PeekProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFCC0F96A67A2A36DC269314 /* PeekProgress.swift */; };
 		951AA88C8458E5190892063F /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5B9A04E26D93153A62163C4 /* APIModels.swift */; };
+		9D1607CB25A2C156E018F215 /* RankingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D48AE16DAFEBEDC4046EDBF1 /* RankingStore.swift */; };
+		A55C90240C57F6F0561C54A7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8DFE9D4C0CC1386C304172AE /* Assets.xcassets */; };
 		AAA57221A6143D5011DA8867 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E39AF56E6524C71BC8CD647 /* RootView.swift */; };
+		AE21FE04A10BFB72FAB05B4F /* LiveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0A714F9E6B0DA6A3253E672 /* LiveTests.swift */; };
 		B37AF13A7FDDEA4D6004C29D /* DashboardStatsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF8132411C3FF78734ECE39C /* DashboardStatsTests.swift */; };
 		BC6BF8F8C2FBC906EC76D8D1 /* RemoteTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D47884F5C76365B32D976D91 /* RemoteTarget.swift */; };
 		E5563277B4AAEF923CCF3024 /* OverviewStartupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EECC279489F2799FC2058D9 /* OverviewStartupTests.swift */; };
@@ -41,7 +45,6 @@
 		F9BE1413FD53E51A943A6613 /* TabID.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31326E990B111E0658AB101D /* TabID.swift */; };
 		FCF8BB7FA387F8E6EF75DE9C /* RankstasParadiseApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99CF10FA929DAD1D5987DD20 /* RankstasParadiseApp.swift */; };
 		FF96390E0022FC4C9BF4725D /* WorkspaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB82AF93569E40E4297CF5AC /* WorkspaceTests.swift */; };
-		A55E75C0A11C0A11C0A11C02 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A55E75C0A11C0A11C0A11C01 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -66,10 +69,11 @@
 		4CBE8B0CA6B44C981EE7AE2F /* PeekProgressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeekProgressTests.swift; sourceTree = "<group>"; };
 		50CD5971030788D8D00BC8D9 /* PeriodStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeriodStats.swift; sourceTree = "<group>"; };
 		52071A75DDC18E04824A43A2 /* HistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryStore.swift; sourceTree = "<group>"; };
-		52071A75DDC18E04824A43A3 /* RankingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RankingStore.swift; sourceTree = "<group>"; };
 		5B221BE06A0C0C969C69E053 /* TabScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabScreen.swift; sourceTree = "<group>"; };
 		61874C20B6B2BCAFB1667A61 /* OverviewRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewRepository.swift; sourceTree = "<group>"; };
+		6DC0C05A557F466F42DC086B /* Headband.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Headband.swift; sourceTree = "<group>"; };
 		808292EC68DF3F3F1372857D /* ThreeFingerDragRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreeFingerDragRecognizer.swift; sourceTree = "<group>"; };
+		8DFE9D4C0CC1386C304172AE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		99C05C79BE3B70FF6B960794 /* FaviconFetcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaviconFetcherTests.swift; sourceTree = "<group>"; };
 		99CF10FA929DAD1D5987DD20 /* RankstasParadiseApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RankstasParadiseApp.swift; sourceTree = "<group>"; };
 		9E39AF56E6524C71BC8CD647 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
@@ -77,28 +81,30 @@
 		A8D78F25509D227C0557EB01 /* CommandKeyMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandKeyMonitor.swift; sourceTree = "<group>"; };
 		A9315B96CB87D84C07606E52 /* Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
 		AA98EFEB479445BEFCA726CD /* PeriodStatsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeriodStatsTests.swift; sourceTree = "<group>"; };
+		B526F19FE23F5E62A81B79B2 /* LiveStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveStore.swift; sourceTree = "<group>"; };
 		B5B9A04E26D93153A62163C4 /* APIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIModels.swift; sourceTree = "<group>"; };
+		BE562BC678FA721589263640 /* Palette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Palette.swift; sourceTree = "<group>"; };
 		BFCC0F96A67A2A36DC269314 /* PeekProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeekProgress.swift; sourceTree = "<group>"; };
 		C1BE634789533BFD60C75EA7 /* PeekLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeekLayoutTests.swift; sourceTree = "<group>"; };
 		C34C86ED39F2F1CBD090FCBD /* PeekLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeekLayout.swift; sourceTree = "<group>"; };
-		C34C86ED39F2F1CBD090FCC1 /* Palette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Palette.swift; sourceTree = "<group>"; };
-		C34C86ED39F2F1CBD090FCC2 /* Headband.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Headband.swift; sourceTree = "<group>"; };
 		CCE806538483AE3DC0C0C5DC /* TabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabBar.swift; sourceTree = "<group>"; };
 		D072C44E6ADEAC4BAEF98994 /* OverviewSummaryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewSummaryCard.swift; sourceTree = "<group>"; };
 		D47884F5C76365B32D976D91 /* RemoteTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTarget.swift; sourceTree = "<group>"; };
+		D48AE16DAFEBEDC4046EDBF1 /* RankingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RankingStore.swift; sourceTree = "<group>"; };
 		D8E17C8B77CA1B192AFF6678 /* RankstasParadiseTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RankstasParadiseTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DB82AF93569E40E4297CF5AC /* WorkspaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceTests.swift; sourceTree = "<group>"; };
-		E1CA89C89C02C407A80DF8C6 /* Ranksta's Paradise.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Ranksta's Paradise.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		DF3CCE903967EA97F88CF96F /* VisitsComparisonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitsComparisonTests.swift; sourceTree = "<group>"; };
+		E1CA89C89C02C407A80DF8C6 /* RankstasParadise.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RankstasParadise.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F0A714F9E6B0DA6A3253E672 /* LiveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTests.swift; sourceTree = "<group>"; };
 		FDBE29CE70B5A9DA353D559F /* OverviewScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewScreen.swift; sourceTree = "<group>"; };
 		FF8132411C3FF78734ECE39C /* DashboardStatsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardStatsTests.swift; sourceTree = "<group>"; };
-		A55E75C0A11C0A11C0A11C01 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
 		2866C33CC1E51FC2ABD7E8C7 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				E1CA89C89C02C407A80DF8C6 /* Ranksta's Paradise.app */,
+				E1CA89C89C02C407A80DF8C6 /* RankstasParadise.app */,
 				D8E17C8B77CA1B192AFF6678 /* RankstasParadiseTests.xctest */,
 			);
 			name = Products;
@@ -121,10 +127,11 @@
 				B5B9A04E26D93153A62163C4 /* APIModels.swift */,
 				0B7A8C3726C45B7E051EC676 /* FaviconStore.swift */,
 				52071A75DDC18E04824A43A2 /* HistoryStore.swift */,
-				52071A75DDC18E04824A43A3 /* RankingStore.swift */,
+				B526F19FE23F5E62A81B79B2 /* LiveStore.swift */,
 				20D0DB50A815C0FD4CB715E0 /* OverviewModel.swift */,
 				61874C20B6B2BCAFB1667A61 /* OverviewRepository.swift */,
 				50CD5971030788D8D00BC8D9 /* PeriodStats.swift */,
+				D48AE16DAFEBEDC4046EDBF1 /* RankingStore.swift */,
 				D47884F5C76365B32D976D91 /* RemoteTarget.swift */,
 			);
 			path = Model;
@@ -154,10 +161,12 @@
 			children = (
 				FF8132411C3FF78734ECE39C /* DashboardStatsTests.swift */,
 				99C05C79BE3B70FF6B960794 /* FaviconFetcherTests.swift */,
+				F0A714F9E6B0DA6A3253E672 /* LiveTests.swift */,
 				2EECC279489F2799FC2058D9 /* OverviewStartupTests.swift */,
 				C1BE634789533BFD60C75EA7 /* PeekLayoutTests.swift */,
 				4CBE8B0CA6B44C981EE7AE2F /* PeekProgressTests.swift */,
 				AA98EFEB479445BEFCA726CD /* PeriodStatsTests.swift */,
+				DF3CCE903967EA97F88CF96F /* VisitsComparisonTests.swift */,
 				DB82AF93569E40E4297CF5AC /* WorkspaceTests.swift */,
 			);
 			path = Tests;
@@ -166,10 +175,10 @@
 		AAFDB717B48AE836DD8654CD /* UI */ = {
 			isa = PBXGroup;
 			children = (
+				6DC0C05A557F466F42DC086B /* Headband.swift */,
 				D072C44E6ADEAC4BAEF98994 /* OverviewSummaryCard.swift */,
+				BE562BC678FA721589263640 /* Palette.swift */,
 				C34C86ED39F2F1CBD090FCBD /* PeekLayout.swift */,
-				C34C86ED39F2F1CBD090FCC1 /* Palette.swift */,
-				C34C86ED39F2F1CBD090FCC2 /* Headband.swift */,
 				321E61A9553942809C755B5E /* PeekOverlay.swift */,
 				9E39AF56E6524C71BC8CD647 /* RootView.swift */,
 				CCE806538483AE3DC0C0C5DC /* TabBar.swift */,
@@ -183,8 +192,8 @@
 		B6A2084280EB01D266B31620 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				8DFE9D4C0CC1386C304172AE /* Assets.xcassets */,
 				BD2F4E02EC37A362F54224D7 /* App */,
-				A55E75C0A11C0A11C0A11C01 /* Assets.xcassets */,
 				E1C6F9B59AED3EC3BC42E4C8 /* Gesture */,
 				657CB13A9B9527ADE17E22AC /* Model */,
 				AAFDB717B48AE836DD8654CD /* UI */,
@@ -236,7 +245,7 @@
 			buildConfigurationList = 8F2DC3395978E3BEC2BD32C0 /* Build configuration list for PBXNativeTarget "RankstasParadise" */;
 			buildPhases = (
 				B1B4648EED50FD65733F6AB7 /* Sources */,
-				A55E75C0A11C0A11C0A11C03 /* Resources */,
+				B8F598BF6AF551ECCB50AD52 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -246,7 +255,7 @@
 			packageProductDependencies = (
 			);
 			productName = RankstasParadise;
-			productReference = E1CA89C89C02C407A80DF8C6 /* Ranksta's Paradise.app */;
+			productReference = E1CA89C89C02C407A80DF8C6 /* RankstasParadise.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -281,11 +290,11 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		A55E75C0A11C0A11C0A11C03 /* Resources */ = {
+		B8F598BF6AF551ECCB50AD52 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A55E75C0A11C0A11C0A11C02 /* Assets.xcassets in Resources */,
+				A55C90240C57F6F0561C54A7 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -298,10 +307,12 @@
 			files = (
 				B37AF13A7FDDEA4D6004C29D /* DashboardStatsTests.swift in Sources */,
 				3B385BA04A4F926DB22F8A6D /* FaviconFetcherTests.swift in Sources */,
+				AE21FE04A10BFB72FAB05B4F /* LiveTests.swift in Sources */,
 				E5563277B4AAEF923CCF3024 /* OverviewStartupTests.swift in Sources */,
 				20E8747A62A7D8ACACA52BD7 /* PeekLayoutTests.swift in Sources */,
 				E6BE7E42DE600F1584F97274 /* PeekProgressTests.swift in Sources */,
 				85B4E755EBE5C81DEF17A7AA /* PeriodStatsTests.swift in Sources */,
+				053F52BB4172591F3B89ED51 /* VisitsComparisonTests.swift in Sources */,
 				FF96390E0022FC4C9BF4725D /* WorkspaceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -314,18 +325,19 @@
 				951AA88C8458E5190892063F /* APIModels.swift in Sources */,
 				4EB19731C7D64342D90C3020 /* CommandKeyMonitor.swift in Sources */,
 				0886B2DB9CA4455C65865FFC /* FaviconStore.swift in Sources */,
+				746ADF2B829571DEB19AD9DF /* Headband.swift in Sources */,
 				35C1A65569E692C36E498150 /* HistoryStore.swift in Sources */,
-				35C1A65569E692C36E498151 /* RankingStore.swift in Sources */,
+				558BA52213440023D16C0D9F /* LiveStore.swift in Sources */,
 				741C3B020EEB6692BE875DC9 /* OverviewModel.swift in Sources */,
 				5D5175994B1AD981AA0DDFC2 /* OverviewRepository.swift in Sources */,
 				03B5AB4CBEA4DE2907E88D3E /* OverviewScreen.swift in Sources */,
 				89D1C405DD817D3BCBCBB1C2 /* OverviewSummaryCard.swift in Sources */,
+				8C38EC6EFA47B9C9736BF449 /* Palette.swift in Sources */,
 				307A850E88309D9EC5DDB2D4 /* PeekLayout.swift in Sources */,
-				307A850E88309D9EC5DDB2E1 /* Palette.swift in Sources */,
-				307A850E88309D9EC5DDB2E2 /* Headband.swift in Sources */,
 				02687AB5F8D41B2177FA01A4 /* PeekOverlay.swift in Sources */,
 				9168383C0927A5AB63CFA385 /* PeekProgress.swift in Sources */,
 				7B63796B1698692B64A36D1F /* PeriodStats.swift in Sources */,
+				9D1607CB25A2C156E018F215 /* RankingStore.swift in Sources */,
 				FCF8BB7FA387F8E6EF75DE9C /* RankstasParadiseApp.swift in Sources */,
 				BC6BF8F8C2FBC906EC76D8D1 /* RemoteTarget.swift in Sources */,
 				AAA57221A6143D5011DA8867 /* RootView.swift in Sources */,
