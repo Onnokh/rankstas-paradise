@@ -885,6 +885,14 @@ private struct VisitsCard: View {
 
             if points.count >= 2 {
                 Chart {
+                    // The baseline is a mark, not an axis grid line: Charts draws the grid
+                    // line for zero a few points above where the bars actually start, so
+                    // bars sat below their own baseline. A rule at zero is placed on the
+                    // same scale as the bars and meets them exactly. Drawn first, under them.
+                    RuleMark(y: .value("Visits", 0))
+                        .foregroundStyle(Palette.line)
+                        .lineStyle(StrokeStyle(lineWidth: 1))
+
                     ForEach(points) { point in
                         BarMark(
                             x: .value("Date", point.day, unit: .day),
@@ -902,12 +910,7 @@ private struct VisitsCard: View {
                     }
                 }
                 .chartYScale(domain: .automatic(includesZero: true))
-                .chartYAxis {
-                    AxisMarks(values: [0]) { _ in
-                        AxisGridLine(stroke: StrokeStyle(lineWidth: 1))
-                            .foregroundStyle(Palette.line)
-                    }
-                }
+                .chartYAxis(.hidden)
                 .chartXAxis(.hidden)
                 .chartPlotStyle { plot in
                     plot.padding(.top, 8)
