@@ -476,6 +476,37 @@ test("saveVisits round-trips the rows and stamps every fetched date", async () =
   )
 })
 
+test("a day's rows and hours read back as written, and the day knows when it was synced", async () => {
+  await run(Storage.use.saveVisits(visitsFor(["2024-01-10"], ["/a", "/b"]), ["2024-01-10"], "fake"))
+  await run(
+    Storage.use.saveHours(
+      "2024-01-10",
+      [
+        { hour: 9, pageviews: 4, visits: 3, visitors: 2 },
+        { hour: 7, pageviews: 1, visits: 1, visitors: 1 },
+      ],
+      "fake",
+    ),
+  )
+
+  const day = await run(Storage.use.visitsOfDay("2024-01-10"))
+  expect(day.site).toEqual([{ date: "2024-01-10", pageviews: 10, visits: 6, visitors: 5 }])
+  expect(day.pages.map((row) => row.page)).toEqual(["/a", "/b"])
+  expect(day.events).toEqual([{ date: "2024-01-10", name: "purchase", count: 1 }])
+  // Hour ascending, whatever order they were written in.
+  expect((await run(Storage.use.hoursOfDay("2024-01-10"))).map((row) => row.hour)).toEqual([7, 9])
+  expect(await run(Storage.use.visitsSyncedAt("2024-01-10"))).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+
+  // A second write replaces the day's hours rather than adding to them.
+  await run(Storage.use.saveHours("2024-01-10", [{ hour: 10, pageviews: 1, visits: 1, visitors: 1 }], "fake"))
+  expect((await run(Storage.use.hoursOfDay("2024-01-10"))).map((row) => row.hour)).toEqual([10])
+
+  // A day never synced is empty, not an error.
+  expect(await run(Storage.use.visitsOfDay("2024-01-11"))).toEqual({ site: [], pages: [], events: [] })
+  expect(await run(Storage.use.hoursOfDay("2024-01-11"))).toEqual([])
+  expect(await run(Storage.use.visitsSyncedAt("2024-01-11"))).toBeNull()
+})
+
 test("pageVisitsOverview and eventWindow anchor on the end date given", async () => {
   const days = ["2024-01-10", "2024-01-11", "2024-01-12", "2024-01-13"]
   await run(Storage.use.saveVisits(visitsFor(days, ["/a", "/b"]), days, "fake"))

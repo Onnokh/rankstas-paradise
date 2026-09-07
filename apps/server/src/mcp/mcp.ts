@@ -312,11 +312,11 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     "today",
     {
       description:
-        "Today so far in the site's time zone, from its analytics provider: totals " +
-        "(pageviews, visits, visitors), 24 hourly rows, pages and events. The ledger " +
-        "stops at yesterday, so this is the second read that asks the provider " +
-        "(answers are memoised for a minute). today is null when the site has no " +
-        "provider; analytics.ready false with a reason means it cannot be read.",
+        "Today so far in the site's time zone, from the ledger: totals (pageviews, " +
+        "visits, visitors), 24 hourly rows, pages and events, re-fetched from the " +
+        "analytics provider every few minutes (syncedAt says when). today is null " +
+        "when the site has no provider; analytics.ready false with a reason means " +
+        "the provider cannot be read, and the day stays at its last synced state.",
       inputSchema: { site },
     },
     async ({ site }) => {

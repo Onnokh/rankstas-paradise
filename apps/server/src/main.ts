@@ -14,7 +14,7 @@
 // Deploy note: the daily Coolify scheduled task keeps the data warm by POSTing
 // `/api/jobs/sync?site=<id>` per configured site (see the root Dockerfile header
 // and apps/server/README.md; the full ADR 0002 is PLO-278).
-import { Effect, Layer } from "effect"
+import { Duration, Effect, Layer } from "effect"
 import { BunRuntime } from "@effect/platform-bun"
 
 import { Sync } from "@rp/domain/sync/sync"
@@ -43,6 +43,14 @@ console.log(
 // interleave with a read-triggered warm for the same site, and different sites
 // run independently. Best-effort: a JobAlreadyRunningError (a read beat us to
 // it) or any sync failure is swallowed. Skipped in debug (never calls Google).
+//
+// Today is different: it lives in the ledger like every other day, but a day
+// in progress goes stale by the minute, so each site's today is re-fetched
+// from its analytics provider every few minutes for as long as the server
+// runs. Not a job — it writes only today's rows and takes seconds — and
+// best-effort: a failed round is dropped and the next one tries again.
+const todayEvery = Duration.minutes(5)
+
 if (!debug) {
   void ctx
     .loadSites()
@@ -51,6 +59,14 @@ if (!debug) {
         const rt = ctx.runtimeFor(site)
         const work = Effect.promise(() => rt.runPromise(Sync.use.syncSearchConsole()))
         void rt.runPromise(Jobs.use.startJob("sync", site.id, work)).catch(() => {})
+
+        const today = Effect.gen(function* () {
+          while (true) {
+            yield* Sync.use.syncToday().pipe(Effect.ignore)
+            yield* Effect.sleep(todayEvery)
+          }
+        })
+        void rt.runPromise(today).catch(() => {})
       }
     })
     .catch(() => {})

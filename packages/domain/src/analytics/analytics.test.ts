@@ -170,32 +170,33 @@ test("live visitors come from the adapter once per cache window", async () => {
   expect(memo.liveCalls).toBe(1)
 })
 
-test("today is the provider's day in the site's zone, padded to 24 hours", async () => {
+test("localDay is the provider's calendar day in the site's zone, hours pass through", async () => {
   const seen: { dates?: ReadonlyArray<string> } = {}
   const layer = buildLayer(withAnalytics, new Map([["fake", fakeFactory(seen)]]))
-  const today = await Effect.runPromise(
-    Analytics.use.today().pipe(Effect.provide(layer)),
+  const local = await Effect.runPromise(
+    Analytics.use.localDay().pipe(Effect.provide(layer)),
   )
-  expect(today?.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-  expect(today?.timeZone).toBe("UTC")
-  // The adapter was asked for exactly today.
-  expect(seen.dates).toEqual([today!.date])
-  expect(today?.site?.date).toBe(today!.date)
-  expect(today?.hoursElapsed).toBeGreaterThanOrEqual(1)
-  expect(today?.hoursElapsed).toBeLessThanOrEqual(24)
-  // One entry per hour, the adapter's 09:00 in place and zeros elsewhere.
-  expect(today?.hours).toHaveLength(24)
-  expect(today?.hours[9]).toEqual({ hour: 9, pageviews: 3, visits: 2, visitors: 2 })
-  expect(today?.hours[8]).toEqual({ hour: 8, pageviews: 0, visits: 0, visitors: 0 })
-  expect(today?.pages).toEqual([])
-  expect(today?.events).toEqual([])
+  expect(local?.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  expect(local?.timeZone).toBe("UTC")
+  expect(local?.hour).toBeGreaterThanOrEqual(0)
+  expect(local?.hour).toBeLessThanOrEqual(23)
+
+  const hours = await Effect.runPromise(
+    Analytics.use.fetchHours(local!.date).pipe(Effect.provide(layer)),
+  )
+  expect(hours).toEqual([{ hour: 9, pageviews: 3, visits: 2, visitors: 2 }])
 })
 
-test("a site without analytics has no today", async () => {
+test("a site without analytics has no local day and no hours", async () => {
   const layer = buildLayer(withoutAnalytics, new Map())
   expect(
-    await Effect.runPromise(Analytics.use.today().pipe(Effect.provide(layer))),
+    await Effect.runPromise(Analytics.use.localDay().pipe(Effect.provide(layer))),
   ).toBeNull()
+  expect(
+    await Effect.runPromise(
+      Analytics.use.fetchHours("2026-01-01").pipe(Effect.provide(layer)),
+    ),
+  ).toEqual([])
 })
 
 test("a site without analytics has no live visitors", async () => {

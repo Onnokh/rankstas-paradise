@@ -17,7 +17,7 @@
 | `GET /api/history?limit=N` | — (TUI history view) |
 | `GET /api/live` | — (visitors on the site right now; the one read that asks the analytics provider) |
 | `GET /api/events?window=N` | `events --window N` |
-| `GET /api/today` | — (today so far from the analytics provider; memoised a minute) |
+| `GET /api/today` | — (today so far, from the ledger; re-synced every five minutes) |
 
 `GET /api/status` reports two instants in `data`, both ISO 8601
 (`YYYY-MM-DDTHH:MM:SSZ`) and both `null` until they have a value:
@@ -85,14 +85,20 @@ ended before `fetchedAt`.
 Answers are memoised for 30 seconds per site, so poll it on its own timer and
 never fold it into the dashboard read, which must stay served from disk.
 
-`GET /api/today` is the other read that asks the provider. The ledger stops at
-yesterday (UTC) and Search Console lags days, so today's figures can only come
-live. It answers `{ analytics, today: { date, timeZone, hoursElapsed, site,
-hours, pages, events, fetchedAt } | null }`: the provider's calendar day in the
-site's zone, its totals so far (`site`, null before the first visit), exactly
-24 hourly rows (`hour`, `pageviews`, `visits`, `visitors`; zeros for hours to
-come, `hoursElapsed` says how many have begun), and the day's pages and
-events. Memoised for a minute per site.
+`GET /api/today` is served from the ledger like every other read. The daily
+sync stops at yesterday, so the server re-fetches the day in progress from the
+provider every five minutes (`Sync.syncToday`) and writes it into the same
+daily tables plus `analytics_site_hourly`. It answers `{ analytics, today: {
+date, timeZone, hoursElapsed, site, hours, pages, events, syncedAt } | null }`:
+the provider's calendar day in the site's zone, its totals so far (`site`,
+null before the first sync), exactly 24 hourly rows (`hour`, `pageviews`,
+`visits`, `visitors`; zeros for hours to come, `hoursElapsed` says how many
+have begun), the day's pages and events, and when the rows were last written
+(`syncedAt`, null before the first sync).
+
+`GET /api/events` ends its window on the newest finished day of visits
+(yesterday once today has synced), not on the Search Console latest date, so
+the freshest whole days are in it; today's partial day is left to `/api/today`.
 
 All site-scoped endpoints accept `?site=<id>`. The default is the first configured site. For example:
 

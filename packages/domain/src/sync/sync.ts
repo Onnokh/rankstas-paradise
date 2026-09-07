@@ -24,6 +24,12 @@ export interface Interface {
   readonly backfillSearchConsole: (
     months?: number,
   ) => Effect.Effect<string, SyncError>
+  // Re-fetch the day in progress from the site's analytics provider and write
+  // it into the ledger: the daily rows for today plus its hours. Meant to run
+  // every few minutes for as long as the server is up; the daily sync fetches
+  // the same day once more when it is finished. Returns a summary, or null for
+  // a site with no analytics.
+  readonly syncToday: () => Effect.Effect<string | null, SyncError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@rp/Sync") {}
@@ -154,6 +160,24 @@ export const layer = Layer.effect(
         yield* storage.saveVisits(visits, dates, status.provider)
       }
       return { provider: status.provider, days: dates.length }
+    })
+
+    // Today's rows, straight into the same tables as every other day. The
+    // date is the provider's calendar day in the site's zone, the same key the
+    // daily fetch writes (its time-series is asked in that zone too), so the
+    // daily sync's reconcile of "yesterday" overwrites exactly this row.
+    const runToday = Effect.fn("Sync.syncToday")(function* () {
+      const status = yield* analytics.status()
+      const local = yield* analytics.localDay()
+      if (!status || !local) return null
+      const [visits, hours] = yield* Effect.all(
+        [analytics.fetchVisits([local.date]), analytics.fetchHours(local.date)],
+        { concurrency: 2 },
+      )
+      yield* storage.saveVisits(visits, [local.date], status.provider)
+      yield* storage.saveHours(local.date, hours, status.provider)
+      const site = visits.site.find((day) => day.date === local.date)
+      return `Today (${local.date} ${local.timeZone}) from ${status.provider}: ${site?.visits ?? 0} visits, ${site?.pageviews ?? 0} pageviews, ${visits.events.length} event names, ${hours.length} hours.`
     })
 
     const runSync = Effect.fn("Sync.syncSearchConsole")(function* () {
@@ -330,6 +354,8 @@ export const layer = Layer.effect(
         runBackfill(months).pipe(
           Effect.mapError(toSyncError("The Search Console backfill failed.")),
         ),
+      syncToday: () =>
+        runToday().pipe(Effect.mapError(toSyncError("The today sync failed."))),
     }
   }),
 )

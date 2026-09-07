@@ -141,12 +141,12 @@ export const SiteVisitsHour = Schema.Struct({
 export interface SiteVisitsHour
   extends Schema.Schema.Type<typeof SiteVisitsHour> {}
 
-// Today so far, in the site's zone, straight from the provider. The ledger
-// stops at yesterday and Search Console lags days, so "today" is the second
-// read (after live visitors) that reaches the provider on demand: fetched,
-// briefly cached, never stored. Tomorrow's sync writes the same day properly.
-export const todayCacheSeconds = 60
-
+// Today so far, in the site's zone, read from the ledger like every other
+// day. Search Console lags days and a day in progress changes by the minute,
+// so the sync re-fetches today's rows from the provider every few minutes and
+// writes them into the same daily tables (plus an hourly one); tomorrow the
+// daily sync fetches the finished day once more. Reports never reach the
+// provider for this: the provider is a data source, the ledger is the truth.
 export const TodayVisits = Schema.Struct({
   // The provider's calendar day, YYYY-MM-DD in `timeZone`.
   date: Schema.String,
@@ -159,7 +159,9 @@ export const TodayVisits = Schema.Struct({
   hours: Schema.Array(SiteVisitsHour),
   pages: Schema.Array(PageVisitsDay),
   events: Schema.Array(EventCountDay),
-  fetchedAt: Schema.String,
+  // When the sync last wrote today's rows, as an ISO 8601 instant; null when
+  // it has not yet, in which case everything above is zero.
+  syncedAt: Schema.NullOr(Schema.String),
 }).annotate({ identifier: "TodayVisits" })
 export interface TodayVisits
   extends Schema.Schema.Type<typeof TodayVisits> {}

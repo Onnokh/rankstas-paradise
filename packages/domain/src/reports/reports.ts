@@ -7,7 +7,7 @@
 // identically.
 import { Context, Effect, Layer } from "effect"
 
-import { Analytics } from "../analytics/analytics.ts"
+import { Analytics, normaliseHours } from "../analytics/analytics.ts"
 import { type AnalyticsError, type AnalyticsStatus } from "../analytics/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { DomainRating } from "../domain-rating/domain-rating.ts"
@@ -808,12 +808,22 @@ export const layer = Layer.effect(
             }
             if (!analyticsStatus)
               return { analytics: null, windowDays, window: empty, events: [] }
-            // The Search Console latest date when there is one, so the window
-            // is the one the rest of the screen shows; else the newest synced
-            // visits day, so a site without Search Console data still reads.
-            const anchor =
-              (yield* storage.latestSnapshotDate()) ??
-              (yield* storage.visitsSummary()).lastDate
+            // Anchored on the newest finished day of visits: yesterday when the
+            // today sync has run, else the newest synced day. Not on the Search
+            // Console latest date, as the pages and registry windows are — no
+            // clicks figure sits beside an event count, and that anchor lags
+            // days and would hide the freshest events. Today's partial day is
+            // left out so the window is whole days only; the Today period
+            // shows it. A site with no visits synced at all falls back to the
+            // Search Console date, which only matters for the empty window's
+            // labels.
+            const summary = yield* storage.visitsSummary()
+            const local = yield* analytics.localDay()
+            const finished =
+              summary.lastDate && local && summary.lastDate >= local.date
+                ? dateDaysBefore(local.date, 1)
+                : summary.lastDate
+            const anchor = finished ?? (yield* storage.latestSnapshotDate())
             if (!anchor)
               return { analytics: analyticsStatus, windowDays, window: empty, events: [] }
             const currentStart = dateDaysBefore(anchor, windowDays - 1)
@@ -838,12 +848,28 @@ export const layer = Layer.effect(
         wrap(
           Effect.gen(function* () {
             const analyticsStatus = yield* analytics.status()
-            // As for liveReport: a not-ready provider is reported, not thrown.
-            const today =
-              analyticsStatus && analyticsStatus.ready
-                ? yield* analytics.today()
-                : null
-            return { analytics: analyticsStatus, today }
+            const local = yield* analytics.localDay()
+            if (!analyticsStatus || !local)
+              return { analytics: analyticsStatus, today: null }
+            // Served from the ledger, as every other read is; the today sync
+            // keeps these rows a few minutes old. Before its first run the day
+            // reads as zeros with a null syncedAt, not as an error.
+            const day = yield* storage.visitsOfDay(local.date)
+            const hours = yield* storage.hoursOfDay(local.date)
+            const syncedAt = yield* storage.visitsSyncedAt(local.date)
+            return {
+              analytics: analyticsStatus,
+              today: {
+                date: local.date,
+                timeZone: local.timeZone,
+                hoursElapsed: local.hour + 1,
+                site: day.site.find((row) => row.date === local.date) ?? null,
+                hours: normaliseHours(hours),
+                pages: day.pages,
+                events: day.events,
+                syncedAt,
+              },
+            }
           }),
         ),
 

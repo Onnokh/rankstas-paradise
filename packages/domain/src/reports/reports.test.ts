@@ -356,22 +356,9 @@ beforeAll(async () => {
         series: Array<number>(30).fill(0),
         fetchedAt: "2026-07-12T12:00:00.000Z",
       }),
-    today: () =>
-      Effect.succeed({
-        date: "2026-07-13",
-        timeZone: "UTC",
-        hoursElapsed: 13,
-        site: { date: "2026-07-13", pageviews: 40, visits: 25, visitors: 20 },
-        hours: Array.from({ length: 24 }, (_, hour) => ({
-          hour,
-          pageviews: hour === 12 ? 40 : 0,
-          visits: hour === 12 ? 25 : 0,
-          visitors: hour === 12 ? 20 : 0,
-        })),
-        pages: [{ date: "2026-07-13", page: "/", pageviews: 40, visits: 25 }],
-        events: [{ date: "2026-07-13", name: "purchase", count: 1 }],
-        fetchedAt: "2026-07-13T12:30:00.000Z",
-      }),
+    // The fixture's "today" is the day after its last synced day.
+    localDay: () =>
+      Effect.succeed({ date: "2026-07-13", hour: 12, timeZone: "UTC" }),
   })
   const base = Layer.mergeAll(
     storageLayer,
@@ -689,7 +676,8 @@ test("eventsReport sums each event over the window and the one before", async ()
   const report = await run(Reports.use.eventsReport())
   expect(report.analytics?.provider).toBe("fake")
   expect(report.windowDays).toBe(28)
-  // Anchored on the Search Console latest date, like the pages report.
+  // Anchored on the newest finished day of visits (here the fixture's last
+  // day), not on the Search Console latest date.
   expect(report.window.currentEnd).toBe("2026-07-12")
   expect(report.window.currentStart).toBe("2026-06-15")
   expect(report.window.previousEnd).toBe("2026-06-14")
@@ -704,13 +692,50 @@ test("eventsReport sums each event over the window and the one before", async ()
   expect(week.window.currentStart).toBe("2026-07-06")
 })
 
-test("todayReport carries the provider status and today's figures", async () => {
+test("todayReport reads the day in progress from the ledger", async () => {
+  // Before the today sync has run: the day is zeros, not an error.
+  const before = await run(Reports.use.todayReport())
+  expect(before.analytics?.provider).toBe("fake")
+  expect(before.today?.date).toBe("2026-07-13")
+  expect(before.today?.hoursElapsed).toBe(13)
+  expect(before.today?.site).toBeNull()
+  expect(before.today?.hours).toHaveLength(24)
+  expect(before.today?.syncedAt).toBeNull()
+
+  // What the today sync writes, as it writes it.
+  await runtime.runPromise(
+    Effect.gen(function* () {
+      const storage = yield* Storage.Service
+      yield* storage.saveVisits(
+        {
+          site: [{ date: "2026-07-13", pageviews: 40, visits: 25, visitors: 20 }],
+          pages: [{ date: "2026-07-13", page: "/", pageviews: 40, visits: 25 }],
+          events: [{ date: "2026-07-13", name: "purchase", count: 1 }],
+        },
+        ["2026-07-13"],
+        "fake",
+      )
+      yield* storage.saveHours(
+        "2026-07-13",
+        [{ hour: 12, pageviews: 40, visits: 25, visitors: 20 }],
+        "fake",
+      )
+    }),
+  )
+
   const report = await run(Reports.use.todayReport())
-  expect(report.analytics?.provider).toBe("fake")
-  expect(report.today?.date).toBe("2026-07-13")
   expect(report.today?.site?.visits).toBe(25)
-  expect(report.today?.hours).toHaveLength(24)
+  expect(report.today?.hours[12]).toEqual({ hour: 12, pageviews: 40, visits: 25, visitors: 20 })
+  expect(report.today?.hours[11]).toEqual({ hour: 11, pageviews: 0, visits: 0, visitors: 0 })
+  expect(report.today?.pages).toEqual([{ date: "2026-07-13", page: "/", pageviews: 40, visits: 25 }])
   expect(report.today?.events).toEqual([{ date: "2026-07-13", name: "purchase", count: 1 }])
+  expect(report.today?.syncedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+
+  // The events window still ends on the last FINISHED day, so today's partial
+  // purchase does not leak into the 28-day figure.
+  const events = await run(Reports.use.eventsReport())
+  expect(events.window.currentEnd).toBe("2026-07-12")
+  expect(events.events).toEqual([{ name: "purchase", current: 56, previous: 56, delta: 0 }])
 })
 
 test("liveReport carries the provider status and the live count", async () => {
