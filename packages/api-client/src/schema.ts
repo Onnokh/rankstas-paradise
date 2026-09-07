@@ -14,6 +14,7 @@ import { Schema } from "effect"
 import { Site } from "@rp/domain/sites/schema"
 import {
   DashboardSnapshot,
+  EventsReport,
   HistoryReport,
   LiveReport,
   LogAddResult,
@@ -32,6 +33,7 @@ import {
 // wire contract from one place without reaching into the domain package.
 export {
   DashboardSnapshot,
+  EventsReport,
   HistoryReport,
   LiveReport,
   LogAddResult,

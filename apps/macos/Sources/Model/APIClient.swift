@@ -44,6 +44,14 @@ struct APIClient: Sendable {
         )
     }
 
+    /// The site's custom events over `windowDays` against the window before.
+    func events(siteID: String, windowDays: Int) async throws -> EventsReport {
+        try await get(
+            path: "/api/events",
+            query: [URLQueryItem(name: "site", value: siteID), URLQueryItem(name: "window", value: String(windowDays))]
+        )
+    }
+
     func registry(siteID: String) async throws -> RegistryListReport {
         try await get(path: "/api/registry", query: [URLQueryItem(name: "site", value: siteID)])
     }

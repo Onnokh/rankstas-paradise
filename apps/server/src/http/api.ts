@@ -20,6 +20,7 @@ import {
 import {
   DashboardSnapshot,
   HistoryReport,
+  EventsReport,
   LiveReport,
   LogAddInput,
   LogAddResult,
@@ -130,6 +131,12 @@ export const apiGroup = HttpApiGroup.make("api")
     HttpApiEndpoint.get("live", "/api/live", {
       query: { site: S },
       success: enveloped(LiveReport.fields),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("events", "/api/events", {
+      query: { site: S, window: S },
+      success: enveloped(EventsReport.fields),
     }),
   )
   .add(
