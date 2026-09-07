@@ -74,10 +74,14 @@ const datesBetween = (start: string, end: string) => {
 const reconciliationDates = () => datesBeforeToday(5)
 
 // Visits have no finalization lag — a day is complete at its midnight — so the
-// newest whole day is yesterday (UTC, the zone every date in the ledger is
-// keyed in), and only the last two days are reconciled, for events a vendor
-// batches in late. Read fresh per call, for the reason datesBeforeToday is.
-const newestVisitsDate = () => {
+// newest whole day is yesterday, and only the last two days are reconciled,
+// for events a vendor batches in late. "Yesterday" is the site's, in its
+// provider's zone: that is the zone the provider keys its days in and the one
+// the today sync writes, so a zone ahead of UTC does not leave its finished
+// day unfetched until UTC catches up. UTC is the fallback for the tests' bare
+// clock; a site with analytics always has a local day.
+const newestVisitsDate = (localToday: string | undefined) => {
+  if (localToday) return dateDaysBefore(localToday, 1)
   const date = new Date()
   date.setUTCDate(date.getUTCDate() - 1)
   return date.toISOString().slice(0, 10)
@@ -138,7 +142,8 @@ export const layer = Layer.effect(
     const syncVisits = Effect.fnUntraced(function* () {
       const status = yield* analytics.status()
       if (!status) return null
-      const newest = newestVisitsDate()
+      const local = yield* analytics.localDay()
+      const newest = newestVisitsDate(local?.date)
       const summary = yield* storage.visitsSummary()
       const start = summary.firstDate ?? dateDaysBefore(newest, visitsFirstRunDays - 1)
       const range = datesBetween(start, newest)
