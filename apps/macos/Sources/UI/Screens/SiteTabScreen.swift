@@ -820,8 +820,8 @@ private struct Tooltip: View {
 private let visitsColor = Palette.lilac
 
 /// The last half hour by the minute: one bar per minute, the newest at the right, with the
-/// people online right now beside the title and the window's total under the bars, where
-/// it reads as the bars' sum rather than as a second "now". The store behind it asks again
+/// window's total beside the title. The people online right now are the header's figure,
+/// beside the site name; this card is the wider picture. The store behind it asks again
 /// every half minute, so the bars are the screen's one moving part.
 private struct RealtimeCard: View {
     let live: LiveVisitors?
@@ -833,7 +833,7 @@ private struct RealtimeCard: View {
                     .font(.headline)
                 Spacer()
                 if let live {
-                    Text("\(live.onlineNow.formatted(.number.precision(.fractionLength(0)))) online now")
+                    Text("\(live.visitors.formatted(.number.precision(.fractionLength(0)))) in the last \(live.windowMinutes) min")
                         .font(.subheadline)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
@@ -847,9 +847,6 @@ private struct RealtimeCard: View {
 
                 HStack {
                     Text("\(live.windowMinutes) minutes ago")
-                    Spacer()
-                    Text("\(live.visitors.formatted(.number.precision(.fractionLength(0)))) in the last \(live.windowMinutes) min")
-                        .monospacedDigit()
                     Spacer()
                     Text("Now")
                 }
@@ -867,13 +864,12 @@ private struct RealtimeCard: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// "Seen in the last 5 minutes. 20 people in the last 30 minutes." When the server only
-    /// knows the whole window the two would say the same thing, so it is said once.
+    /// "Distinct people in the last 30 minutes. 4 online now." When the server only knows
+    /// the whole window there is no separate now, so it is said once.
     static func windowHelp(_ live: LiveVisitors) -> String {
-        let seen = "Seen in the last \(live.onlineMinutes) minutes."
-        guard live.online != nil else { return seen }
-        let total = live.visitors.formatted(.number.precision(.fractionLength(0)))
-        return "\(seen) \(total) people in the last \(live.windowMinutes) minutes."
+        let window = "Distinct people in the last \(live.windowMinutes) minutes."
+        guard let online = live.online else { return window }
+        return "\(window) \(online.formatted(.number.precision(.fractionLength(0)))) online now."
     }
 }
 
