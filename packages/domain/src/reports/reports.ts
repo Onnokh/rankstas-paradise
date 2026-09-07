@@ -8,7 +8,7 @@
 import { Context, Effect, Layer } from "effect"
 
 import { Analytics } from "../analytics/analytics.ts"
-import { type AnalyticsError } from "../analytics/schema.ts"
+import { type AnalyticsError, type AnalyticsStatus } from "../analytics/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { DomainRating } from "../domain-rating/domain-rating.ts"
 import { type RegistryEntry, type RegistryPatch } from "../registry/schema.ts"
@@ -124,6 +124,16 @@ export const layer = Layer.effect(
     const resolved = yield* site.current()
     const origin = resolved.origin
     const brandTerms = resolved.brandTerms
+
+    // Whether per-page visits mean anything yet. A provider that is configured
+    // but has synced nothing shows null, not a column of zeros pretending to be
+    // a measurement. Once a day is synced, zeros ARE the measurement: a site
+    // whose pages saw nobody still gets rows of zeros, as its Visits total
+    // does — the test is a synced day, not a page with visits.
+    const hasSyncedVisits = (analyticsStatus: AnalyticsStatus | null) =>
+      analyticsStatus
+        ? storage.visitsSummary().pipe(Effect.map((summary) => summary.days > 0))
+        : Effect.succeed(false)
 
     // Map the dependencies' typed errors to a ReportsError; the guard failures
     // raised inside the report gens are already ReportsError and pass through.
@@ -287,9 +297,7 @@ export const layer = Layer.effect(
             const visitsByPath = new Map(
               (visitsOverview?.rows ?? []).map((row) => [row.page, row]),
             )
-            // A provider that is configured but has synced nothing yet shows
-            // null, not a column of zeros pretending to be a measurement.
-            const hasVisits = visitsByPath.size > 0
+            const hasVisits = yield* hasSyncedVisits(analyticsStatus)
             const digest = yield* storage.opportunityDigest(entries)
             const progressList =
               yield* storage.registryTargetProgress(entries)
@@ -415,12 +423,11 @@ export const layer = Layer.effect(
                   overview.latestDate ?? undefined,
                 )
               : null
-            const visits =
-              visitsOverview && visitsOverview.rows.length > 0
-                ? visitsWindow(
-                    visitsOverview.rows.find((row) => row.page === path),
-                  )
-                : null
+            const visits = (yield* hasSyncedVisits(analyticsStatus))
+              ? visitsWindow(
+                  visitsOverview?.rows.find((row) => row.page === path),
+                )
+              : null
             const queries = yield* storage.topQueries({
               page: `${origin}${path}`,
               includeBrand: true,
@@ -593,7 +600,7 @@ export const layer = Layer.effect(
             const visitsByPath = new Map(
               (visitsOverview?.rows ?? []).map((row) => [row.page, row]),
             )
-            const hasVisits = visitsByPath.size > 0
+            const hasVisits = yield* hasSyncedVisits(analyticsStatus)
             return {
               targets: targets.map((progress) => {
                 const first = progress.entries[0]!
