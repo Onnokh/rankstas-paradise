@@ -897,14 +897,6 @@ private struct VisitsCard: View {
                         RuleMark(x: .value("Date", hovered.day))
                             .foregroundStyle(.secondary.opacity(0.6))
                             .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                            .annotation(
-                                position: .top,
-                                alignment: .leading,
-                                spacing: 8,
-                                overflowResolution: .init(x: .fit(to: .chart), y: .disabled)
-                            ) {
-                                VisitsTooltip(day: hovered)
-                            }
                     }
                 }
                 .chartYScale(domain: .automatic(includesZero: true))
@@ -918,24 +910,42 @@ private struct VisitsCard: View {
                 .chartPlotStyle { plot in
                     plot.padding(.top, 8)
                 }
+                // The tooltip is drawn here in the overlay, not as a chart annotation: an
+                // annotation is part of the chart's layout, and one taller than this small
+                // plot made the chart resize and the hover re-fire on every move. Drawn here
+                // it changes nothing below it, and it cannot take the pointer.
                 .chartOverlay { proxy in
                     if !isPreview {
                         GeometryReader { geometry in
-                            Rectangle()
-                                .fill(.clear)
-                                .contentShape(Rectangle())
-                                .onContinuousHover { phase in
-                                    switch phase {
-                                    case .active(let location):
-                                        hovered = day(at: location, proxy: proxy, geometry: geometry)
-                                    case .ended:
-                                        hovered = nil
+                            ZStack(alignment: .topLeading) {
+                                Rectangle()
+                                    .fill(.clear)
+                                    .contentShape(Rectangle())
+                                    .onContinuousHover { phase in
+                                        switch phase {
+                                        case .active(let location):
+                                            hovered = day(at: location, proxy: proxy, geometry: geometry)
+                                        case .ended:
+                                            hovered = nil
+                                        }
                                     }
+
+                                if let hovered,
+                                   let plotFrame = proxy.plotFrame,
+                                   let x = proxy.position(forX: hovered.day) {
+                                    let centre = geometry[plotFrame].origin.x + x
+                                    VisitsTooltip(day: hovered)
+                                        .fixedSize()
+                                        .alignmentGuide(.leading) { label in
+                                            -min(max(centre - label.width / 2, 0), max(geometry.size.width - label.width, 0))
+                                        }
+                                        .alignmentGuide(.top) { label in label.height + 8 }
+                                        .allowsHitTesting(false)
                                 }
+                            }
                         }
                     }
                 }
-                .animation(.snappy(duration: 0.15), value: hovered)
                 .frame(height: 96)
 
                 HStack {
@@ -1038,11 +1048,11 @@ private struct MinuteBars: View {
                             -min(max(centre - label.width / 2, 0), max(geometry.size.width - label.width, 0))
                         }
                         .alignmentGuide(.top) { label in label.height + 8 }
+                        .allowsHitTesting(false)
                 }
             }
         }
         .animation(.snappy(duration: 0.3), value: values)
-        .animation(.snappy(duration: 0.15), value: hovered)
         .accessibilityHidden(true)
     }
 
