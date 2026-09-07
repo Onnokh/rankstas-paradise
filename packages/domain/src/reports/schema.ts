@@ -425,6 +425,11 @@ export const RegistryListReport = Schema.Struct({
       measuredFrom: Schema.NullOr(Schema.String),
       window: TidyMetrics,
       baseline: Schema.NullOr(TidyMetrics),
+      // Pageviews and visits from the analytics provider over the same 28 days
+      // as `window`, so a target's clicks and visits describe the same days.
+      // Null when the site has no provider or nothing is synced yet; optional
+      // key so an older server's answer still decodes.
+      visits: Schema.optional(Schema.NullOr(VisitsWindowReport)),
       keywords: Schema.Array(
         Schema.Struct({
           keyword: Schema.String,

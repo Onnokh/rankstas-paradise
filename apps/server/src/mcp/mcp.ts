@@ -235,7 +235,9 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     "registry",
     {
       description:
-        "The keyword registry: every target URL with its phase, plan, and progress.",
+        "The keyword registry: every target URL with its phase, plan, and progress, " +
+        "plus visits from the analytics provider over the same 28 days (null " +
+        "without a provider).",
       inputSchema: { site },
     },
     async ({ site }) => {

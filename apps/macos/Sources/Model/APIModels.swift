@@ -196,6 +196,22 @@ struct RegistryTarget: Codable, Sendable, Equatable, Identifiable {
     let phase: String
     let status: String
     let window: TidyMetrics
+    /// The provider's visits over the same 28 days. Nil when the site has no provider, has
+    /// synced nothing yet, or the server predates the field.
+    var visits: VisitsWindow? = nil
 
     var id: String { targetUrl }
+}
+
+/// Pageviews and visits over a window and the one before it, as the server tidies them.
+struct VisitsWindow: Codable, Sendable, Equatable {
+    struct Counts: Codable, Sendable, Equatable {
+        let pageviews: Double
+        let visits: Double
+    }
+
+    let current: Counts
+    let previous: Counts
+    let deltaPageviews: Double
+    let deltaVisits: Double
 }

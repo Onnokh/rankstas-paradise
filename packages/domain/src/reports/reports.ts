@@ -581,6 +581,19 @@ export const layer = Layer.effect(
           Effect.gen(function* () {
             const entries = yield* registry.loadRegistry()
             const targets = yield* storage.registryTargetProgress(entries)
+            // Visits over the same 28 days a target's window covers, anchored
+            // on the Search Console latest date like the target itself.
+            const analyticsStatus = yield* analytics.status()
+            const visitsOverview = analyticsStatus
+              ? yield* storage.pageVisitsOverview(
+                  28,
+                  (yield* storage.latestSnapshotDate()) ?? undefined,
+                )
+              : null
+            const visitsByPath = new Map(
+              (visitsOverview?.rows ?? []).map((row) => [row.page, row]),
+            )
+            const hasVisits = visitsByPath.size > 0
             return {
               targets: targets.map((progress) => {
                 const first = progress.entries[0]!
@@ -600,6 +613,9 @@ export const layer = Layer.effect(
                   measuredFrom: progress.measuredFrom,
                   window: tidy(progress.target),
                   baseline: progress.baseline ? tidy(progress.baseline) : null,
+                  visits: hasVisits
+                    ? visitsWindow(visitsByPath.get(progress.targetUrl))
+                    : null,
                   keywords: progress.entries
                     .filter((entry) => entry.keyword.trim())
                     .map((entry) => ({
