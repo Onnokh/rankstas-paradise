@@ -824,7 +824,7 @@ private struct RealtimeCard: View {
             }
 
             if let live {
-                MinuteBars(values: live.bars)
+                MinuteBars(values: live.bars, fetchedAt: SiteTabScreen.instant(live.fetchedAt))
                     .frame(height: 96)
 
                 HStack {
@@ -855,6 +855,9 @@ private struct VisitsCard: View {
     let days: [HistoryReportDay]
     let comparison: VisitsComparison?
 
+    @Environment(\.isTabPreview) private var isPreview
+    @State private var hovered: HistoryReportDay?
+
     private var points: [HistoryReportDay] {
         days.filter { $0.visits != nil }
     }
@@ -879,13 +882,30 @@ private struct VisitsCard: View {
             }
 
             if points.count >= 2 {
-                Chart(points) { point in
-                    BarMark(
-                        x: .value("Date", point.day, unit: .day),
-                        y: .value("Visits", point.visits?.visits ?? 0)
-                    )
-                    .foregroundStyle(visitsColor)
-                    .cornerRadius(2)
+                Chart {
+                    ForEach(points) { point in
+                        BarMark(
+                            x: .value("Date", point.day, unit: .day),
+                            y: .value("Visits", point.visits?.visits ?? 0)
+                        )
+                        // The hovered day keeps its colour; the others step back.
+                        .foregroundStyle(visitsColor.opacity(hovered == nil || hovered == point ? 1 : 0.4))
+                        .cornerRadius(2)
+                    }
+
+                    if let hovered {
+                        RuleMark(x: .value("Date", hovered.day))
+                            .foregroundStyle(.secondary.opacity(0.6))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                            .annotation(
+                                position: .top,
+                                alignment: .leading,
+                                spacing: 8,
+                                overflowResolution: .init(x: .fit(to: .chart), y: .disabled)
+                            ) {
+                                VisitsTooltip(day: hovered)
+                            }
+                    }
                 }
                 .chartYScale(domain: .automatic(includesZero: true))
                 .chartYAxis {
@@ -895,6 +915,27 @@ private struct VisitsCard: View {
                     }
                 }
                 .chartXAxis(.hidden)
+                .chartPlotStyle { plot in
+                    plot.padding(.top, 8)
+                }
+                .chartOverlay { proxy in
+                    if !isPreview {
+                        GeometryReader { geometry in
+                            Rectangle()
+                                .fill(.clear)
+                                .contentShape(Rectangle())
+                                .onContinuousHover { phase in
+                                    switch phase {
+                                    case .active(let location):
+                                        hovered = day(at: location, proxy: proxy, geometry: geometry)
+                                    case .ended:
+                                        hovered = nil
+                                    }
+                                }
+                        }
+                    }
+                }
+                .animation(.snappy(duration: 0.15), value: hovered)
                 .frame(height: 96)
 
                 HStack {
@@ -915,6 +956,36 @@ private struct VisitsCard: View {
         .cardSurface(cornerRadius: 12)
         .accessibilityElement(children: .combine)
     }
+
+    private func day(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) -> HistoryReportDay? {
+        guard let plotFrame = proxy.plotFrame else { return nil }
+        let origin = geometry[plotFrame].origin
+        guard let date: Date = proxy.value(atX: location.x - origin.x) else { return nil }
+        return points.min { abs($0.day.timeIntervalSince(date)) < abs($1.day.timeIntervalSince(date)) }
+    }
+}
+
+/// The day under the pointer in the Visits card: its visits, visitors and pageviews.
+private struct VisitsTooltip: View {
+    let day: HistoryReportDay
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(day.day.formatted(.dateTime.day().month(.abbreviated)))
+                .font(.callout.weight(.semibold))
+            if let visits = day.visits {
+                Text("Visits : \(visits.visits.formatted(.number.precision(.fractionLength(0))))")
+                Text("Visitors : \(visits.visitors.formatted(.number.precision(.fractionLength(0))))")
+                Text("Pageviews : \(visits.pageviews.formatted(.number.precision(.fractionLength(0))))")
+            }
+        }
+        .font(.callout)
+        .monospacedDigit()
+        .padding(12)
+        .background(.regularMaterial, in: .rect(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+        .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
+    }
 }
 
 /// One rounded bar per minute, oldest on the left. A quiet minute keeps a stub in the line
@@ -922,24 +993,85 @@ private struct VisitsCard: View {
 /// someone on the site.
 private struct MinuteBars: View {
     let values: [Double]
+    /// When the newest bar was read. Each bar is one minute; the last is the minute running
+    /// then, so a bar's time is that instant less the minutes between them.
+    let fetchedAt: Date?
+
+    @Environment(\.isTabPreview) private var isPreview
+    @State private var hovered: Int?
 
     private static let stub: CGFloat = 6
 
     var body: some View {
         GeometryReader { geometry in
             let peak = max(values.max() ?? 0, 1)
+            let count = max(values.count, 1)
+            let slot = geometry.size.width / CGFloat(count)
+
             HStack(alignment: .bottom, spacing: 3) {
                 ForEach(values.indices, id: \.self) { index in
                     let value = values[index]
                     RoundedRectangle(cornerRadius: 2)
                         .fill(value > 0 ? visitsColor : Palette.line)
+                        .opacity(hovered == nil || hovered == index ? 1 : 0.4)
                         .frame(height: value > 0 ? max(Self.stub, geometry.size.height * value / peak) : Self.stub)
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .bottom)
+            .contentShape(Rectangle())
+            .onContinuousHover { phase in
+                guard !isPreview else { return }
+                switch phase {
+                case .active(let location):
+                    hovered = min(max(Int(location.x / slot), 0), count - 1)
+                case .ended:
+                    hovered = nil
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if let hovered, hovered < values.count {
+                    // Above the bar, kept inside the card's width at both ends.
+                    let centre = slot * (CGFloat(hovered) + 0.5)
+                    MinuteLabel(count: values[hovered], minute: minute(hovered))
+                        .fixedSize()
+                        .alignmentGuide(.leading) { label in
+                            -min(max(centre - label.width / 2, 0), max(geometry.size.width - label.width, 0))
+                        }
+                        .alignmentGuide(.top) { label in label.height + 8 }
+                }
+            }
         }
         .animation(.snappy(duration: 0.3), value: values)
+        .animation(.snappy(duration: 0.15), value: hovered)
         .accessibilityHidden(true)
+    }
+
+    private func minute(_ index: Int) -> Date? {
+        fetchedAt?.addingTimeInterval(-Double(values.count - 1 - index) * 60)
+    }
+}
+
+/// The minute under the pointer: how many people, at what time.
+private struct MinuteLabel: View {
+    let count: Double
+    let minute: Date?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if let minute {
+                Text(minute.formatted(date: .omitted, time: .shortened))
+                    .foregroundStyle(.secondary)
+            }
+            Text("\(count.formatted(.number.precision(.fractionLength(0)))) \(count == 1 ? "person" : "people")")
+                .fontWeight(.semibold)
+        }
+        .font(.caption)
+        .monospacedDigit()
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.regularMaterial, in: .rect(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
+        .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
     }
 }
 
