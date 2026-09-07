@@ -58,10 +58,10 @@ built against an older server keeps decoding:
   read it (`ready`, with a `reason` when not), and how many days of visits are
   stored (`days`, `firstDate`, `lastDate`, `lastSyncedAt`). `null` when the
   site has no provider.
-- `GET /api/pages` and `GET /api/page` → `visits`: `{ current, previous,
-  deltaPageviews, deltaVisits }` of pageviews and visits over the same two
-  windows as the Search Console metrics. `null` when there is no provider or no
-  visits synced yet.
+- `GET /api/pages`, `GET /api/page` and each target of `GET /api/registry` →
+  `visits`: `{ current, previous, deltaPageviews, deltaVisits }` of pageviews
+  and visits over the same two windows as the Search Console metrics. `null`
+  when there is no provider or no visits synced yet.
 - `GET /api/history` → each day carries `visits: { pageviews, visits,
   visitors } | null`.
 

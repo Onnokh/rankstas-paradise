@@ -545,6 +545,18 @@ test("registryList includes a known target with its keywords", async () => {
   expect(pocket?.keywords.map((keyword) => keyword.keyword)).toContain(
     "pocket alternative",
   )
+  // Visits ride along over the target's own 28 days: flat fixture, so both
+  // windows agree and the delta is zero. A target the provider never saw
+  // carries zeros, not null — null is reserved for "no provider / nothing
+  // synced" (see the debug-mode test below).
+  const chrome = report.targets.find((t) => t.targetUrl === "/chrome-extension")
+  expect(chrome?.visits).toEqual({
+    current: { pageviews: 40 * 28, visits: 25 * 28 },
+    previous: { pageviews: 40 * 28, visits: 25 * 28 },
+    deltaPageviews: 0,
+    deltaVisits: 0,
+  })
+  expect(pocket?.visits?.current).toEqual({ pageviews: 0, visits: 0 })
 })
 
 test("logFeed enriches an action with a before/after window", async () => {

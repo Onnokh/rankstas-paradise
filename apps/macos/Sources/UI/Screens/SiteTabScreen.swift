@@ -170,7 +170,7 @@ struct SiteTabScreen: View {
             RankingCard(
                 title: "Registry",
                 rows: (rankings.registry[overview.id] ?? []).map {
-                    RankingCard.Row(id: $0.id, label: $0.targetUrl, metrics: $0.window)
+                    RankingCard.Row(id: $0.id, label: $0.targetUrl, metrics: $0.window, visits: $0.visits?.current.visits)
                 },
                 loading: loading,
                 emptyMessage: "No target pages in the registry yet."
@@ -462,7 +462,7 @@ private struct Metric: View {
 
 /// What a ranking card ranks by. Each takes the colour of its line in the chart.
 private enum RankMetric: String, CaseIterable, Identifiable {
-    case clicks, impressions
+    case clicks, impressions, visits
 
     var id: String { rawValue }
 
@@ -470,6 +470,7 @@ private enum RankMetric: String, CaseIterable, Identifiable {
         switch self {
         case .clicks: "Clicks"
         case .impressions: "Impressions"
+        case .visits: "Visits"
         }
     }
 
@@ -477,25 +478,31 @@ private enum RankMetric: String, CaseIterable, Identifiable {
         switch self {
         case .clicks: TrendChart.clicksColor
         case .impressions: TrendChart.impressionsColor
+        case .visits: visitsColor
         }
     }
 
-    func value(of metrics: TidyMetrics) -> Double {
+    func value(of row: RankingCard.Row) -> Double {
         switch self {
-        case .clicks: metrics.clicks
-        case .impressions: metrics.impressions
+        case .clicks: row.metrics.clicks
+        case .impressions: row.metrics.impressions
+        case .visits: row.visits ?? 0
         }
     }
 }
 
 /// A titled list where every row is a bar: the row's tint runs as far as its count reaches
 /// against the strongest row, so the list reads as a chart without a chart's furniture.
-/// A word switch in the title row picks clicks or impressions; the tint follows.
+/// A word switch in the title row picks clicks, impressions or, when the rows carry them,
+/// visits; the tint follows.
 private struct RankingCard: View {
     struct Row: Identifiable {
         let id: String
         let label: String
         let metrics: TidyMetrics
+        /// Visits from the analytics provider over the same window. Nil for rows that have
+        /// none (keywords, or a site without a provider); the switch then hides the option.
+        var visits: Double? = nil
     }
 
     let title: String
@@ -503,12 +510,21 @@ private struct RankingCard: View {
     let loading: Bool
     let emptyMessage: String
 
-    @State private var metric = RankMetric.impressions
+    @State private var chosen = RankMetric.impressions
+
+    /// Visits is offered only when some row has them, so the keyword card and a site without
+    /// a provider keep their two words.
+    private var options: [RankMetric] {
+        rows.contains { $0.visits != nil } ? RankMetric.allCases : [.clicks, .impressions]
+    }
+
+    /// The choice, unless the rows stopped carrying it (a site switch), then impressions.
+    private var metric: RankMetric { options.contains(chosen) ? chosen : .impressions }
 
     /// The strongest rows for the chosen metric. The order among equals is the server's own,
     /// so a run of zeros still lists the searches with the most impressions first.
     private var ranked: [Row] {
-        Array(rows.sorted { metric.value(of: $0.metrics) > metric.value(of: $1.metrics) }.prefix(RankingStore.rowLimit))
+        Array(rows.sorted { metric.value(of: $0) > metric.value(of: $1) }.prefix(RankingStore.rowLimit))
     }
 
     var body: some View {
@@ -521,7 +537,7 @@ private struct RankingCard: View {
                         .controlSize(.small)
                 }
                 Spacer()
-                WordSwitch(options: RankMetric.allCases, selection: $metric, label: \.label, font: .subheadline)
+                WordSwitch(options: options, selection: $chosen, label: \.label, font: .subheadline)
                     .accessibilityLabel("Rank by")
             }
 
@@ -531,10 +547,10 @@ private struct RankingCard: View {
                     .padding(.vertical, 8)
             } else {
                 let ranked = ranked
-                let strongest = max(ranked.map { metric.value(of: $0.metrics) }.max() ?? 1, 1)
+                let strongest = max(ranked.map { metric.value(of: $0) }.max() ?? 1, 1)
                 VStack(spacing: 6) {
                     ForEach(ranked) { row in
-                        let value = metric.value(of: row.metrics)
+                        let value = metric.value(of: row)
                         HStack(spacing: 12) {
                             Text(row.label)
                                 .lineLimit(1)

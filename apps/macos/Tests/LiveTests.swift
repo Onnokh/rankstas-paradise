@@ -57,6 +57,24 @@ final class LiveTests: XCTestCase {
         XCTAssertEqual(long.bars, [1, 2, 3])
     }
 
+    func testRegistryTargetsDecodeWithAndWithoutVisits() throws {
+        let targets = try decode("""
+        [{"targetUrl":"/","phase":"live","status":"published",
+          "window":{"impressions":10,"clicks":1,"ctr":0.1,"position":5},
+          "visits":{"current":{"pageviews":840,"visits":560},"previous":{"pageviews":800,"visits":500},
+                    "deltaPageviews":40,"deltaVisits":60}},
+         {"targetUrl":"/old","phase":"live","status":"published",
+          "window":{"impressions":10,"clicks":1,"ctr":0.1,"position":5},"visits":null},
+         {"targetUrl":"/older-server","phase":"live","status":"published",
+          "window":{"impressions":10,"clicks":1,"ctr":0.1,"position":5}}]
+        """, as: [RegistryTarget].self)
+
+        XCTAssertEqual(targets[0].visits?.current.visits, 560)
+        XCTAssertEqual(targets[0].visits?.deltaVisits, 60)
+        XCTAssertNil(targets[1].visits)
+        XCTAssertNil(targets[2].visits)
+    }
+
     func testHistoryDaysDecodeWithAndWithoutVisits() throws {
         let days = try decode("""
         [{"date":"2026-09-06","provisional":false,"impressions":10,"clicks":1,"ctr":0.1,"position":5,
