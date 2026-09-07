@@ -25,6 +25,11 @@ struct APIClient: Sendable {
         )
     }
 
+    /// The people on the site right now. Polled while a site screen is shown; see `LiveStore`.
+    func live(siteID: String) async throws -> LiveReport {
+        try await get(path: "/api/live", query: [URLQueryItem(name: "site", value: siteID)])
+    }
+
     /// The strongest search terms over `windowDays`, brand terms included: the card ranks
     /// what brings clicks, and for a small site that is often the brand.
     func queries(siteID: String, windowDays: Int, limit: Int) async throws -> QueriesReport {

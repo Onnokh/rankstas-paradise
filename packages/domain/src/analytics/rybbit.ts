@@ -11,7 +11,9 @@
 //     sums over its range and has no day dimension;
 //   - `GET /metric?parameter=event_name` for event counts, the same way. For
 //     this parameter Rybbit's `count` is the number of occurrences, not sessions;
-//   - `GET /live-user-count?minutes=N` for the people active right now.
+//   - `GET /live-user-count?minutes=N` for the people active right now, and
+//     `GET /overview/time-series?bucket=minute&past_minutes_start=N` for how
+//     many were seen in each of those minutes.
 //
 // Everything Rybbit-specific ends at this file: its envelope (`{ data }` around
 // the series, `{ data: { data, totalCount } }` around a metric page), its column
@@ -312,13 +314,31 @@ export const makeWith =
 
       const provider: Provider = {
         liveVisitors: Effect.fn("Rybbit.liveVisitors")(function* (windowMinutes) {
-          const body = yield* request(
+          const count = yield* request(
             LiveCountResponse,
             "/live-user-count",
             { minutes: String(windowMinutes) },
             "live-user-count",
           )
-          return asCount(body.count)
+          // The trailing window, one bucket per minute. Rybbit fills quiet
+          // minutes with zero rows and orders by time, so the rows are taken
+          // as they come; the port pads or trims to the window's length.
+          const series = yield* request(
+            TimeSeriesResponse,
+            "/overview/time-series",
+            {
+              bucket: "minute",
+              past_minutes_start: String(windowMinutes),
+              past_minutes_end: "0",
+            },
+            "live time-series",
+          )
+          return {
+            visitors: asCount(count.count),
+            perMinute: [...series.data]
+              .sort((left, right) => asText(left["time"]).localeCompare(asText(right["time"])))
+              .map((row) => asCount(row["users"])),
+          }
         }),
         fetchVisits: Effect.fn("Rybbit.fetchVisits")(function* (dates) {
           const sorted = [...new Set(dates)].sort()

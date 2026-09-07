@@ -24,12 +24,20 @@ export interface Provider {
   readonly fetchVisits: (
     dates: ReadonlyArray<string>,
   ) => Effect.Effect<VisitsDays, AnalyticsError>
-  // Distinct visitors active in the last `windowMinutes`. Every vendor in scope
-  // answers this in one call (Rybbit live-user-count, Umami active, GA4
-  // realtime), so it is part of the contract rather than an optional extra.
+  // Distinct visitors active in the last `windowMinutes`, and how many were
+  // seen in each of those minutes (oldest first, one entry per minute, zeros
+  // for quiet ones). Every vendor in scope answers both — Rybbit's
+  // live-user-count and minute-bucketed time-series, Umami's active and
+  // minute-unit pageviews, GA4's realtime report by minutesAgo — so this is
+  // part of the contract rather than an optional extra.
   readonly liveVisitors: (
     windowMinutes: number,
-  ) => Effect.Effect<number, AnalyticsError>
+  ) => Effect.Effect<LiveSample, AnalyticsError>
+}
+
+export interface LiveSample {
+  readonly visitors: number
+  readonly perMinute: ReadonlyArray<number>
 }
 
 // Builds the adapter for one site's source. Runs once per site runtime, so this

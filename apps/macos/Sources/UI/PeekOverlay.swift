@@ -10,6 +10,7 @@ struct PeekOverlay: View {
     let model: OverviewModel
     let history: HistoryStore
     let rankings: RankingStore
+    let live: LiveStore
     let favicons: FaviconStore
     /// While Command is held, each card shows its ⌘-number shortcut.
     let showsShortcuts: Bool
@@ -60,7 +61,7 @@ struct PeekOverlay: View {
                             scalesContent: true,
                             action: { onSelect(tab) }
                         ) {
-                            TabScreen(tab: tab, workspace: workspace, model: model, history: history, rankings: rankings, favicons: favicons, actions: .none)
+                            TabScreen(tab: tab, workspace: workspace, model: model, history: history, rankings: rankings, live: live, favicons: favicons, actions: .none)
                         }
                     }
                 }

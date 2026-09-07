@@ -350,7 +350,8 @@ beforeAll(async () => {
     liveVisitors: () =>
       Effect.succeed({
         visitors: 4,
-        windowMinutes: 5,
+        windowMinutes: 30,
+        series: Array<number>(30).fill(0),
         fetchedAt: "2026-07-12T12:00:00.000Z",
       }),
   })
@@ -657,9 +658,7 @@ test("dashboardSnapshot carries the provider, its history, and event counts", as
 test("liveReport carries the provider status and the live count", async () => {
   const report = await run(Reports.use.liveReport())
   expect(report.analytics?.provider).toBe("fake")
-  expect(report.live).toEqual({
-    visitors: 4,
-    windowMinutes: 5,
-    fetchedAt: "2026-07-12T12:00:00.000Z",
-  })
+  expect(report.live?.visitors).toBe(4)
+  expect(report.live?.windowMinutes).toBe(30)
+  expect(report.live?.series).toHaveLength(30)
 })

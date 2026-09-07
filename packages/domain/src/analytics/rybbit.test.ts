@@ -77,6 +77,16 @@ const fetchWith = (
 const healthy: Answer = (url) => {
   if (url.pathname.endsWith("/live-user-count"))
     return { status: 200, body: { count: "3" } }
+  if (url.searchParams.get("bucket") === "minute")
+    return {
+      status: 200,
+      // Out of order on purpose: the adapter sorts by time.
+      body: seriesEnvelope([
+        { time: "2026-09-07 19:02:00", users: 2, sessions: 2, pageviews: 5 },
+        { time: "2026-09-07 19:00:00", users: 1, sessions: 1, pageviews: 1 },
+        { time: "2026-09-07 19:01:00", users: 0, sessions: 0, pageviews: 0 },
+      ]),
+    }
   if (url.pathname.endsWith("/overview/time-series")) {
     const start = url.searchParams.get("start_date")!
     const end = url.searchParams.get("end_date")!
@@ -218,11 +228,11 @@ test("follows totalCount across metric pages", async () => {
   expect(pathnameCalls[0]!.url.searchParams.get("limit")).toBe("2")
 })
 
-test("live visitors ask live-user-count for the window and read count", async () => {
+test("live visitors ask live-user-count and a minute series for the window", async () => {
   const seen: Seen = { requests: [] }
   const exit = await Effect.runPromiseExit(
     noRetries(source).pipe(
-      Effect.flatMap((provider) => provider.liveVisitors(5)),
+      Effect.flatMap((provider) => provider.liveVisitors(30)),
       Effect.provide(
         Layer.mergeAll(fakeHttp(seen, healthy), configLayer({ RYBBIT_API_KEY: "k" })),
       ),
@@ -230,12 +240,20 @@ test("live visitors ask live-user-count for the window and read count", async ()
   )
   if (!Exit.isSuccess(exit)) throw new Error("expected success")
 
-  expect(exit.value).toBe(3)
-  expect(seen.requests).toHaveLength(1)
-  const { url, auth } = seen.requests[0]!
-  expect(url.pathname).toBe("/api/sites/12/live-user-count")
-  expect(url.searchParams.get("minutes")).toBe("5")
-  expect(auth).toBe("Bearer k")
+  expect(exit.value.visitors).toBe(3)
+  // Sorted by time, users per minute.
+  expect(exit.value.perMinute).toEqual([1, 0, 2])
+  expect(seen.requests).toHaveLength(2)
+  const count = seen.requests.find((r) => r.url.pathname.endsWith("/live-user-count"))!
+  expect(count.url.pathname).toBe("/api/sites/12/live-user-count")
+  expect(count.url.searchParams.get("minutes")).toBe("30")
+  expect(count.auth).toBe("Bearer k")
+  const series = seen.requests.find((r) => r.url.pathname.endsWith("/time-series"))!
+  expect(series.url.searchParams.get("bucket")).toBe("minute")
+  expect(series.url.searchParams.get("past_minutes_start")).toBe("30")
+  expect(series.url.searchParams.get("past_minutes_end")).toBe("0")
+  // A trailing window carries no dates: Rybbit takes one form or the other.
+  expect(series.url.searchParams.get("start_date")).toBeNull()
 })
 
 test("an empty date list makes no request", async () => {

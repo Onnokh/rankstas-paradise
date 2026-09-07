@@ -1,0 +1,63 @@
+import XCTest
+@testable import RankstasParadise
+
+final class LiveTests: XCTestCase {
+    private func decode<T: Decodable>(_ json: String, as type: T.Type) throws -> T {
+        try JSONDecoder().decode(type, from: Data(json.utf8))
+    }
+
+    func testLiveReportDecodesTheServersShape() throws {
+        let report = try decode("""
+        {"generatedAt":"2026-09-07T19:51:20.381Z","mode":"live",
+         "analytics":{"provider":"rybbit","siteId":"11ce3965208b","ready":true,"reason":null},
+         "live":{"visitors":20,"windowMinutes":30,"series":[0,1,0,2],"fetchedAt":"2026-09-07T19:51:20.381Z"}}
+        """, as: LiveReport.self)
+
+        XCTAssertEqual(report.analytics?.provider, "rybbit")
+        XCTAssertEqual(report.analytics?.ready, true)
+        XCTAssertEqual(report.live?.visitors, 20)
+        XCTAssertEqual(report.live?.windowMinutes, 30)
+        XCTAssertEqual(report.live?.series, [0, 1, 0, 2])
+    }
+
+    func testASiteWithoutAnalyticsDecodesToNulls() throws {
+        let report = try decode("""
+        {"generatedAt":"2026-09-07T19:51:20.381Z","mode":"debug","analytics":null,"live":null}
+        """, as: LiveReport.self)
+
+        XCTAssertNil(report.analytics)
+        XCTAssertNil(report.live)
+    }
+
+    func testAnOlderServerWithoutTheSeriesStillDecodes() throws {
+        let report = try decode("""
+        {"generatedAt":"2026-09-07T19:51:20.381Z","mode":"live","analytics":null,
+         "live":{"visitors":2,"windowMinutes":5,"fetchedAt":"2026-09-07T19:51:20.381Z"}}
+        """, as: LiveReport.self)
+
+        XCTAssertEqual(report.live?.visitors, 2)
+        XCTAssertNil(report.live?.series)
+        // The card still draws its bars, all empty, over the window it was told.
+        XCTAssertEqual(report.live?.bars.count, 5)
+        XCTAssertEqual(report.live?.bars.reduce(0, +), 0)
+    }
+
+    func testBarsAreExactlyTheWindowLong() throws {
+        let short = LiveVisitors(visitors: 3, windowMinutes: 6, series: [1, 2], fetchedAt: "2026-09-07T19:51:20Z")
+        XCTAssertEqual(short.bars, [0, 0, 0, 0, 1, 2])
+
+        let long = LiveVisitors(visitors: 3, windowMinutes: 3, series: [9, 1, 2, 3], fetchedAt: "2026-09-07T19:51:20Z")
+        XCTAssertEqual(long.bars, [1, 2, 3])
+    }
+
+    func testHistoryDaysDecodeWithAndWithoutVisits() throws {
+        let days = try decode("""
+        [{"date":"2026-09-06","provisional":false,"impressions":10,"clicks":1,"ctr":0.1,"position":5,
+          "visits":{"pageviews":1078,"visits":109,"visitors":92}},
+         {"date":"2026-09-05","provisional":true,"impressions":10,"clicks":1,"ctr":0.1,"position":5}]
+        """, as: [HistoryReportDay].self)
+
+        XCTAssertEqual(days[0].visits?.visitors, 92)
+        XCTAssertNil(days[1].visits)
+    }
+}

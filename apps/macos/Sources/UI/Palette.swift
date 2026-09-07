@@ -21,6 +21,9 @@ enum Palette {
     static let mint = Color(nsColor: srgb(0x42D3A2))
     /// The warm half of a two-series chart.
     static let amber = Color(nsColor: srgb(0xFFB54A))
+    /// The third series and the realtime card: visits, from the site's analytics provider.
+    /// Not in the guide, which knows two series; chosen to sit between its blue and coral.
+    static let lilac = Color(nsColor: srgb(0xA78BFA))
 
     // MARK: Surfaces
 

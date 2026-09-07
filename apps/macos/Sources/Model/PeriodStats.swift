@@ -56,6 +56,30 @@ struct PeriodComparison: Equatable {
     var positionDelta: Double? { previousStats.map { currentStats.position - $0.position } }
 }
 
+/// Visits over a period against the period before it, from the analytics provider's days.
+///
+/// Visits (sessions) sum across days; visitors do not, so the period figure is visits and
+/// visitors stay a per-day number in the chart. Nil when no day of the series carries
+/// visits: the site has no provider, or nothing is synced yet. `previous` is nil when the
+/// earlier period has no synced day at all, so a series that only started recently reads as
+/// "no comparison yet" rather than as growth from zero.
+struct VisitsComparison: Equatable {
+    let current: Double
+    let previous: Double?
+
+    init?(days: [HistoryReportDay], window: Int) {
+        guard days.contains(where: { $0.visits != nil }) else { return nil }
+        let count = days.count
+        let currentDays = days.suffix(window)
+        let previousDays = days[max(0, count - window * 2)..<max(0, count - window)]
+        current = currentDays.reduce(0) { $0 + ($1.visits?.visits ?? 0) }
+        let earlier = previousDays.filter { $0.visits != nil }
+        previous = earlier.isEmpty ? nil : earlier.reduce(0) { $0 + ($1.visits?.visits ?? 0) }
+    }
+
+    var trend: Trend? { previous.map { Trend(current: current, previous: $0) } }
+}
+
 /// A count and how it moved against the previous period.
 struct Trend: Equatable {
     let delta: Double

@@ -6,6 +6,7 @@ struct SiteTabScreen: View {
     @Bindable var state: SiteTabState
     let history: HistoryStore
     let rankings: RankingStore
+    let live: LiveStore
     let icon: Image?
     let isRefreshing: Bool
     let onRefresh: () -> Void
@@ -48,6 +49,11 @@ struct SiteTabScreen: View {
         }
         .clipped()
         .animation(.snappy(duration: 0.3), value: state.path)
+        // The live count polls only while the real screen is shown: a preview is a still.
+        .task(id: overview.id) {
+            guard !isPreview else { return }
+            await live.poll(overview.id)
+        }
         .task(id: overview.id) {
             // Previews share the stores with the live screen; only the live screen loads.
             guard !isPreview else { return }
@@ -79,6 +85,10 @@ struct SiteTabScreen: View {
         PeriodComparison(days: days.map(\.asHistoryDay), window: state.period.days)
     }
 
+    private var visitsComparison: VisitsComparison? {
+        VisitsComparison(days: days, window: state.period.days)
+    }
+
     private var ratingMove: RatingMove? {
         guard let dashboard = overview.dashboard else { return nil }
         var series = dashboard.domainRatingHistory ?? []
@@ -103,8 +113,16 @@ struct SiteTabScreen: View {
                     .padding(.top, Self.columnInset)
                     .padding(.bottom, 40)
 
-                MetricStrip(comparison: comparison, rating: ratingMove)
+                MetricStrip(comparison: comparison, visits: visitsComparison, rating: ratingMove)
                     .column()
+
+                // The realtime card only exists for a site with a provider that answers; a
+                // site without one gets no empty card to explain.
+                if let liveVisitors = live.reports[overview.id]?.live {
+                    LiveCard(live: liveVisitors)
+                        .column()
+                        .padding(.top, 28)
+                }
 
                 TrendChart(days: Array(days.suffix(state.period.days)))
                     .padding(.top, 36)
@@ -296,6 +314,7 @@ private struct PeriodSwitch: View {
 /// Console figures from the Domain Rating, which comes from another source.
 private struct MetricStrip: View {
     let comparison: PeriodComparison
+    let visits: VisitsComparison?
     let rating: RatingMove?
 
     var body: some View {
@@ -337,6 +356,17 @@ private struct MetricStrip: View {
             Rectangle()
                 .fill(Palette.line)
                 .frame(width: 1, height: 48)
+            gap
+            // Visits (sessions) rather than visitors: visits sum over a period, distinct
+            // people do not. The chart's tooltip shows both for a single day.
+            Metric(
+                title: "Visits",
+                value: visits.map { $0.current.formatted(.number.precision(.fractionLength(0))) } ?? "—",
+                change: visits?.trend.map { Trend.signed($0.delta, fractionDigits: 0) },
+                tint: visits?.trend.map { $0.delta >= 0 ? Palette.mint : Palette.coral },
+                dot: visits == nil ? nil : TrendChart.visitsColor,
+                footnote: visits == nil ? "No analytics" : nil
+            )
             gap
             Metric(
                 title: "Domain Rating",
@@ -521,6 +551,13 @@ private struct TrendChart: View {
 
     static let impressionsColor = Palette.amber
     static let clicksColor = Palette.blue
+    static let visitsColor = Palette.lilac
+
+    /// Whether any day carries the analytics provider's numbers; the visits series is drawn
+    /// only then, so a site without a provider keeps its two-series chart.
+    private var hasVisits: Bool {
+        days.contains { $0.visits != nil }
+    }
 
     var body: some View {
         if days.count >= 2 {
@@ -585,9 +622,18 @@ private struct TrendChart: View {
                 PointMark(x: .value("Date", hovered.day), y: .value("Clicks", hovered.clicks))
                     .foregroundStyle(Self.clicksColor)
                     .symbolSize(70)
+                if let visits = hovered.visits {
+                    PointMark(x: .value("Date", hovered.day), y: .value("Visits", visits.visits))
+                        .foregroundStyle(Self.visitsColor)
+                        .symbolSize(70)
+                }
             }
         }
-        .chartForegroundStyleScale(["Impressions": Self.impressionsColor, "Clicks": Self.clicksColor])
+        .chartForegroundStyleScale([
+            "Impressions": Self.impressionsColor,
+            "Clicks": Self.clicksColor,
+            "Visits": Self.visitsColor,
+        ])
         .chartLegend(.hidden)
         .chartYScale(domain: .automatic(includesZero: true))
         // The baseline is the only horizontal rule: a hairline at zero.
@@ -687,6 +733,37 @@ private struct TrendChart: View {
                 .foregroundStyle(Self.clicksColor.opacity(opacity))
                 .lineStyle(StrokeStyle(lineWidth: 1.5, lineJoin: .round))
             }
+
+            // Visits from the analytics provider, on the same axis as clicks: the gap between
+            // the two lines is the traffic Google did not send. A day the provider has not
+            // synced yet sits on the baseline rather than breaking the line.
+            if hasVisits {
+                AreaMark(
+                    x: .value("Date", point.day),
+                    y: .value("Visits", point.visits?.visits ?? 0),
+                    series: .value("Series", "Visits" + suffix),
+                    stacking: .unstacked
+                )
+                .foregroundStyle(Self.gradient(Self.visitsColor).opacity(opacity))
+
+                if suffix.isEmpty {
+                    LineMark(
+                        x: .value("Date", point.day),
+                        y: .value("Visits", point.visits?.visits ?? 0),
+                        series: .value("Series", "Visits")
+                    )
+                    .foregroundStyle(by: .value("Series", "Visits"))
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, lineJoin: .round))
+                } else {
+                    LineMark(
+                        x: .value("Date", point.day),
+                        y: .value("Visits", point.visits?.visits ?? 0),
+                        series: .value("Series", "Visits" + suffix)
+                    )
+                    .foregroundStyle(Self.visitsColor.opacity(opacity))
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, lineJoin: .round))
+                }
+            }
         }
         .interpolationMethod(.monotone)
     }
@@ -721,6 +798,10 @@ private struct Tooltip: View {
                 .font(.callout.weight(.semibold))
             Text("Clicks : \(day.clicks.formatted(.number.precision(.fractionLength(0))))")
             Text("Impressions : \(day.impressions.formatted(.number.precision(.fractionLength(0))))")
+            if let visits = day.visits {
+                Text("Visits : \(visits.visits.formatted(.number.precision(.fractionLength(0))))")
+                Text("Visitors : \(visits.visitors.formatted(.number.precision(.fractionLength(0))))")
+            }
             if day.provisional {
                 Text("Still being revised")
                     .font(.caption)
@@ -733,6 +814,81 @@ private struct Tooltip: View {
         .background(.regularMaterial, in: .rect(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
         .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
+    }
+}
+
+// MARK: - Live card
+
+/// The people on the site right now: a count over the last half hour and one bar per minute,
+/// the analytics provider's realtime view set beside the Search Console numbers. The card is
+/// the screen's one moving part; the store behind it asks again every half minute.
+private struct LiveCard: View {
+    let live: LiveVisitors
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(live.visitors.formatted(.number.precision(.fractionLength(0))))
+                    .font(.system(size: 22, weight: .semibold))
+                    .monospacedDigit()
+                Text(live.visitors == 1 ? "person" : "people")
+                    .font(.system(size: 22, weight: .semibold))
+                Text("in the last \(live.windowMinutes)m")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Palette.mint)
+                        .frame(width: 6, height: 6)
+                    Text("Live")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            MinuteBars(values: live.bars)
+                .frame(height: 44)
+
+            HStack {
+                Text("\(live.windowMinutes) minutes ago")
+                Spacer()
+                Text("Now")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(20)
+        .frame(width: 400, alignment: .leading)
+        .cardSurface(cornerRadius: 12)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(live.visitors.formatted(.number.precision(.fractionLength(0)))) people in the last \(live.windowMinutes) minutes")
+    }
+}
+
+/// One rounded bar per minute, oldest on the left. A quiet minute keeps a stub in the line
+/// colour, so the row always reads as the whole window and not as however many minutes had
+/// someone on the site.
+private struct MinuteBars: View {
+    let values: [Double]
+
+    private static let stub: CGFloat = 6
+
+    var body: some View {
+        GeometryReader { geometry in
+            let peak = max(values.max() ?? 0, 1)
+            HStack(alignment: .bottom, spacing: 3) {
+                ForEach(values.indices, id: \.self) { index in
+                    let value = values[index]
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(value > 0 ? Palette.lilac : Palette.line)
+                        .frame(height: value > 0 ? max(Self.stub, geometry.size.height * value / peak) : Self.stub)
+                }
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .bottom)
+        }
+        .animation(.snappy(duration: 0.3), value: values)
+        .accessibilityHidden(true)
     }
 }
 
@@ -810,6 +966,7 @@ private struct PlaceholderScreen: View {
         state: SiteTabState(siteID: "sleevy"),
         history: HistoryStore(),
         rankings: RankingStore(),
+        live: LiveStore(),
         icon: nil,
         isRefreshing: false,
         onRefresh: {}
