@@ -12,5 +12,10 @@ struct RankstasParadiseApp: App {
         .commands {
             ViewCommands()
         }
+
+        // ⌘, — the server, each site's settings and keys, and the clients.
+        Settings {
+            SettingsView()
+        }
     }
 }
