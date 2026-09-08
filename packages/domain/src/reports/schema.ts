@@ -534,7 +534,8 @@ export const EventsReport = Schema.Struct({
 export interface EventsReport extends Schema.Schema.Type<typeof EventsReport> {}
 
 // Orders and takings over a window, summed. Amounts in the currency's minor
-// unit, as the rows are.
+// unit, as the rows are; `net` is the provider's own net (after refunds and
+// its fees), so it compares within one provider only.
 export const RevenueTotals = Schema.Struct({
   orders: Schema.Number,
   revenue: Schema.Number,

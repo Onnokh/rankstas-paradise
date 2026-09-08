@@ -143,7 +143,7 @@ What customers paid, summed over a day or a window, in the currency's minor unit
 _Avoid_: "gross".
 
 **Net revenue**:
-Revenue less refunds. Not less the provider's fee, which each vendor defines differently. Shorthand: "net".
+What reached the seller: revenue less refunds and less the commerce provider's fees, as that provider defines them. Compare it within one provider only; Revenue is the headline. Shorthand: "net".
 
 ### Work record
 
