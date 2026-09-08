@@ -112,6 +112,27 @@ How contested the term is among *advertisers*, 0–1. A paid-auction measure, an
 A term's volume month by month, as far back as the vendor holds it — about eight years, and its length is the vendor's to decide. The history behind the twelve-month average, and the only thing that answers two questions the average hides: when in the year demand peaks, and whether the term is growing or dying. A term with a December peak and a term with flat demand report the same search volume, and so do a term that has halved and one that has doubled.
 _Avoid_: "the last twelve months" — that is the search volume, not this.
 
+### Keyword discovery
+
+**Seed**:
+A Keyword handed to DataForSEO to be expanded, so it answers with terms nobody named. Always one term per run, so every keyword found has a seed to attribute it to.
+_Avoid_: "query" (that is a term Google already showed the site for); "keyword" alone, which loses the direction of the expansion.
+
+**Expansion**:
+One paid request that turns a Seed into keywords the Site does not have. Three exist, and which one runs is decided by the Market, not the caller: *suggestions* returns long-tail phrases that contain the seed, *related* returns terms Google itself relates to it (which need not contain it, and is the only one that can find a subject the Site does not cover), and the Google Ads expansion serves the 49 Markets Labs does not — reporting no difficulty and no intent, like every Google Ads answer.
+_Avoid_: "keyword research"; "suggestions" for the whole family. Unlike a Keyword metric, an expansion's cost is not knowable before the call: the vendor decides how many rows to return, so the row limit is the price.
+
+**Proposal**:
+A Keyword an Expansion found, kept because it passed every filter, and waiting on a person. Carries the vendor's numbers as they read at the moment it was proposed, frozen: a Keyword metric is re-asked and overwritten, and a proposal is the record of why this term looked worth the work. A proposal is not a Registry row and never becomes one on its own.
+_Avoid_: "suggestion"; "candidate"; calling a proposal "planned" — the plan is the Registry.
+
+**Dismissed**:
+A Proposal a person has set aside. Permanent in the one way that matters: a later run on the same Seed will find the same term and must not offer it again.
+_Avoid_: "rejected"; "deleted" — the row stays, which is what makes the decision hold.
+
+**Accepted**:
+Not a status. A Proposal is accepted by adding a Registry row for it, and a keyword the Registry holds stops being proposed — so a term added by hand and a term accepted from the list read exactly the same, which is the honest reading of both.
+
 ### Analysis & status
 
 **Opportunity**:

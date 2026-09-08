@@ -1,11 +1,12 @@
-// The DataForSEO wire layer: two endpoints, one envelope, and the translation
+// The DataForSEO wire layer: five endpoints, one envelope, and the translation
 // from their field names to ours. No storage, no caching, no policy — that is
-// KeywordMetrics' job. Kept separate from the service so the shape of their
-// payload stays in one file and the service reads as decisions.
+// KeywordMetrics' and KeywordDiscovery's job. Kept separate from the services so
+// the shape of their payload stays in one file and a service reads as decisions.
 //
-// Both endpoints take a batch of keywords and answer with one item per keyword
-// they know. Which one to call is decided by the Market's country alone; see
-// ./market.ts for why, and `providerFor` for the routing.
+// Two kinds of question live here. The lookups take a batch of keywords and
+// answer with one item per keyword they know. The expansions take one seed and
+// answer with keywords the caller did not name. Both are routed by the Market's
+// country alone; see ./market.ts for why, and `providerFor` for the routing.
 //
 // Authentication is HTTP Basic, and the stored key is the base64 of
 // "<login>:<password>" — the value DataForSEO's own dashboard shows as the API
@@ -14,7 +15,12 @@
 import { Effect, Redacted } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 
-import { KeywordMetricsError, type KeywordMetric, type MonthlySearch } from "./schema.ts"
+import {
+  foldKeyword,
+  KeywordMetricsError,
+  type KeywordMetric,
+  type MonthlySearch,
+} from "./schema.ts"
 
 const BASE_URL = "https://api.dataforseo.com"
 
@@ -25,6 +31,48 @@ const LABS_PATH = "/v3/dataforseo_labs/google/keyword_overview/live"
 // Google Ads reports volume, cost per click, and competition, for every Google
 // geotarget. https://docs.dataforseo.com/v3/keywords_data/google_ads/search_volume/live/
 const ADS_PATH = "/v3/keywords_data/google_ads/search_volume/live"
+
+// --- expansion: asking what ELSE people search -------------------------------
+//
+// The three above answer "what about these keywords". These answer "what other
+// keywords are there", which is a different kind of request in one way that
+// matters: the caller does not know how many rows will come back. A metric
+// lookup is priced by the keywords you name; an expansion is priced by the rows
+// it decides to return, so the `limit` is the only thing standing between one
+// call and a four-figure row count.
+//
+// Long-tail phrases built around the seed. The safest expansion, because every
+// answer contains the term you asked about.
+// https://docs.dataforseo.com/v3/dataforseo_labs/google/keyword_suggestions/live/
+const LABS_SUGGESTIONS_PATH =
+  "/v3/dataforseo_labs/google/keyword_suggestions/live"
+
+// Terms Google itself relates to the seed, from its "searches related to" data.
+// Broader than suggestions, and the one that finds an adjacent topic rather than
+// a variant of the one you have.
+// https://docs.dataforseo.com/v3/dataforseo_labs/google/related_keywords/live/
+const LABS_RELATED_PATH = "/v3/dataforseo_labs/google/related_keywords/live"
+
+// The Google Ads equivalent, for the 49 countries Labs does not cover. Reports
+// no difficulty and no intent, like every Google Ads answer.
+// https://docs.dataforseo.com/v3/keywords_data/google_ads/keywords_for_keywords/live/
+const ADS_IDEAS_PATH =
+  "/v3/keywords_data/google_ads/keywords_for_keywords/live"
+
+// How many rows an expansion may return by default. Not an optimization: the
+// Labs expansions bill per row, so an unbounded call is an unbounded bill. 200
+// is enough that the terms worth having are in the set after filtering, and
+// small enough that one mistaken call costs about two cents.
+export const expansionLimit = 200
+
+// How far `related_keywords` walks Google's related-searches graph. Each level
+// branches by up to eight, so depth 1 is at most 8 keywords, depth 2 at most 72,
+// and depth 3 at most 584. Two is the choice here for two reasons: every answer
+// is within two hops of the seed, so the set still reads as the same subject;
+// and 72 is under `expansionLimit`, so nothing is truncated. Depth 3 would hand
+// back more than the limit and let DataForSEO choose which 200 survive, by an
+// order they do not document.
+const RELATED_DEPTH = 2
 
 // Both endpoints cap a batch at 700 keywords. Exceeding it is a rejected task,
 // which is charged, so the batching is not an optimization.
@@ -223,6 +271,15 @@ const postTask = <T>(
     return task.result ?? []
   })
 
+// `related_keywords` wraps the same keyword payload one level deeper than every
+// other Labs endpoint. Reading it at the wrong level yields an empty answer from
+// a charged request, which is why it does not share an unwrapper.
+interface RelatedResult {
+  readonly items?: ReadonlyArray<{
+    readonly keyword_data?: LabsItem | null
+  } | null> | null
+}
+
 export interface Batch {
   readonly keywords: ReadonlyArray<string>
   readonly locationCode: number
@@ -290,5 +347,134 @@ export const adsSearchVolume = (
           : [],
       ),
   )
+
+// --- expansion ----------------------------------------------------------------
+
+// One seed to expand. `limit` is on the seed rather than a module constant
+// because on the two Labs expansions it is the price of the call, and a price
+// belongs at the call site. On the Google Ads expansion, which charges a flat
+// fee, it only bounds how many rows come back.
+export interface Seed {
+  readonly keyword: string
+  readonly locationCode: number
+  readonly languageCode: string
+  readonly limit: number
+}
+
+// The shape all three expansions share: POST one seed, get keywords back with
+// their metrics already filled in. Discovery therefore costs one request, not
+// an expansion followed by a metric lookup — which is the whole reason to read
+// the metrics off these endpoints instead of calling `keywordOverview` after.
+type Expansion = (
+  httpClient: HttpClient.HttpClient,
+  apiKey: Redacted.Redacted<string>,
+  seed: Seed,
+  fetchedAt: string,
+) => Effect.Effect<ReadonlyArray<KeywordMetric>, KeywordMetricsError>
+
+// Turn Labs items into metrics, dropping the seed itself and anything unnamed.
+// The seed is dropped because the caller already holds it: it is the keyword
+// they asked about, so returning it as a discovery would propose a keyword the
+// Registry has.
+const labsRows = (
+  items: ReadonlyArray<LabsItem | null | undefined>,
+  seed: Seed,
+  fetchedAt: string,
+): ReadonlyArray<KeywordMetric> => {
+  const folded = foldKeyword(seed.keyword)
+  return items.flatMap((item) =>
+    item?.keyword && foldKeyword(item.keyword) !== folded
+      ? [
+          {
+            keyword: item.keyword,
+            locationCode: seed.locationCode,
+            languageCode: seed.languageCode,
+            fetchedAt,
+            ...labsMetrics(item),
+          },
+        ]
+      : [],
+  )
+}
+
+// Long-tail phrases built around the seed: every answer contains the seed term.
+// The predictable expansion, and the one to reach for when a Cluster needs more
+// of the subject it already has.
+export const keywordSuggestions: Expansion = (httpClient, apiKey, seed, fetchedAt) =>
+  Effect.map(
+    postTask<LabsResult>(httpClient, apiKey, LABS_SUGGESTIONS_PATH, {
+      keyword: seed.keyword,
+      location_code: seed.locationCode,
+      language_code: seed.languageCode,
+      limit: seed.limit,
+      include_clickstream_data: false,
+      // The seed's own row would be a billed row we already have.
+      include_seed_keyword: false,
+      // Their defaults, named because each one silently changes what comes back:
+      // synonyms in, and phrase matching rather than exact, is the wider set.
+      ignore_synonyms: false,
+      exact_match: false,
+    }),
+    (results) => labsRows(results[0]?.items ?? [], seed, fetchedAt),
+  )
+
+// Terms Google itself relates to the seed. Broader than suggestions, and the
+// only one of the three that can find a subject the Site does not cover — an
+// answer here need not contain the seed term at all.
+export const relatedKeywords: Expansion = (httpClient, apiKey, seed, fetchedAt) =>
+  Effect.map(
+    postTask<RelatedResult>(httpClient, apiKey, LABS_RELATED_PATH, {
+      keyword: seed.keyword,
+      location_code: seed.locationCode,
+      language_code: seed.languageCode,
+      limit: seed.limit,
+      depth: RELATED_DEPTH,
+      include_clickstream_data: false,
+      // The SERP for every keyword found, which is a much larger response and
+      // is not read here.
+      include_serp_info: false,
+    }),
+    (results) =>
+      labsRows(
+        (results[0]?.items ?? []).map((item) => item?.keyword_data),
+        seed,
+        fetchedAt,
+      ),
+  )
+
+// The Google Ads expansion, for the 49 Markets Labs does not serve. Reports no
+// difficulty and no intent, like every Google Ads answer, so a proposal from
+// here cannot be filtered on either.
+export const adsKeywordsForKeywords: Expansion = (httpClient, apiKey, seed, fetchedAt) => {
+  const folded = foldKeyword(seed.keyword)
+  return Effect.map(
+    postTask<AdsItem>(httpClient, apiKey, ADS_IDEAS_PATH, {
+      // Plural: this endpoint takes a list of seeds, and is given one, so that
+      // every answer has a seed to attribute it to.
+      keywords: [seed.keyword],
+      location_code: seed.locationCode,
+      language_code: seed.languageCode,
+      // This endpoint has no `limit`: it charges one flat fee and can answer
+      // with thousands of rows, so `seed.limit` is applied below, on the way
+      // out. Sorted by volume first so the rows the limit keeps are the rows
+      // worth keeping.
+      sort_by: "search_volume",
+    }),
+    (items) =>
+      items.slice(0, seed.limit).flatMap((item) =>
+        item.keyword && foldKeyword(item.keyword) !== folded
+          ? [
+              {
+                keyword: item.keyword,
+                locationCode: seed.locationCode,
+                languageCode: seed.languageCode,
+                fetchedAt,
+                ...adsMetrics(item),
+              },
+            ]
+          : [],
+      ),
+  )
+}
 
 export * as DataForSeo from "./dataforseo"
