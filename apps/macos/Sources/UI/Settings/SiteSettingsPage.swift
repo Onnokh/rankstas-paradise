@@ -1,9 +1,11 @@
 import SwiftUI
 
-/// One site: its settings as plain fields, and one field per key.
+/// One site: its settings as plain fields, and one field per key. An empty optional field
+/// shows the value the server uses in its place, as read from the resolved site.
 struct SiteSettingsPage: View {
     let model: SettingsModel
     let entry: SiteEntry
+    let resolved: Site?
     let secrets: SecretsEnvelope?
 
     @State private var draft: Draft
@@ -61,36 +63,42 @@ struct SiteSettingsPage: View {
         }
     }
 
-    init(model: SettingsModel, entry: SiteEntry, secrets: SecretsEnvelope?) {
+    init(model: SettingsModel, entry: SiteEntry, resolved: Site?, secrets: SecretsEnvelope?) {
         self.model = model
         self.entry = entry
+        self.resolved = resolved
         self.secrets = secrets
         _draft = State(initialValue: Draft(entry.settings))
     }
 
     private var isDirty: Bool { draft != Draft(entry.settings) }
 
+    private var sitemapDefault: String {
+        guard let origin = resolved?.origin, let host = URL(string: origin)?.host() else { return "derived" }
+        return "https://\(host)/sitemap.xml"
+    }
+
     var body: some View {
         Form {
             TextField("Name", text: $draft.name, prompt: Text(entry.id))
             TextField("Property", text: $draft.siteUrl)
-            TextField("Origin", text: $draft.origin, prompt: Text("derived"))
-            TextField("Sitemap", text: $draft.sitemapUrl, prompt: Text("derived"))
+            TextField("Origin", text: $draft.origin, prompt: Text(resolved?.origin ?? "derived"))
+            TextField("Sitemap", text: $draft.sitemapUrl, prompt: Text(sitemapDefault))
             TextField("Brand terms", text: $draft.brandTerms, prompt: Text(entry.id))
 
             if let analytics = entry.analytics {
                 Section("Analytics (\(analytics.provider))") {
                     TextField("Site id", text: $draft.analyticsSiteId)
-                    TextField("Base URL", text: $draft.analyticsBaseUrl, prompt: Text("provider cloud"))
-                    TextField("Time zone", text: $draft.analyticsTimeZone, prompt: Text("UTC"))
+                    TextField("Base URL", text: $draft.analyticsBaseUrl, prompt: Text("\(analytics.provider) cloud"))
+                    TextField("Time zone", text: $draft.analyticsTimeZone, prompt: Text(resolved?.analytics?.timeZone ?? "UTC"))
                 }
             }
 
             if let revenue = entry.revenue {
                 Section("Revenue (\(revenue.provider))") {
-                    TextField("Account id", text: $draft.revenueAccountId, prompt: Text("none"))
-                    TextField("Base URL", text: $draft.revenueBaseUrl, prompt: Text("production"))
-                    TextField("Time zone", text: $draft.revenueTimeZone, prompt: Text("analytics zone"))
+                    TextField("Account id", text: $draft.revenueAccountId, prompt: Text("the token's own"))
+                    TextField("Base URL", text: $draft.revenueBaseUrl, prompt: Text("\(revenue.provider) production"))
+                    TextField("Time zone", text: $draft.revenueTimeZone, prompt: Text(resolved?.revenue?.timeZone ?? "UTC"))
                 }
             }
 

@@ -26,8 +26,13 @@ struct SettingsView: View {
             switch page {
             case .site(let id):
                 if let entry = model.entries[id] {
-                    SiteSettingsPage(model: model, entry: entry, secrets: model.siteSecrets[id])
-                        .id(id)
+                    SiteSettingsPage(
+                        model: model,
+                        entry: entry,
+                        resolved: model.sites.first { $0.id == id },
+                        secrets: model.siteSecrets[id]
+                    )
+                    .id(id)
                 } else {
                     ProgressView()
                 }
