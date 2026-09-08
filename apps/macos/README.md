@@ -76,7 +76,7 @@ xcodegen generate
 - `Sources/UI` — `RootView`, `TabBar`, `PeekOverlay`, `TabContentStack`, and `PeekLayout`, the pure struct that turns window size plus peek progress into every frame.
 - `Sources/UI/Screens` — one screen per tab kind, rendered from tab state so previews match the live screen.
 
-Peek: swipe down with three fingers (or ⌘⇧P) to reveal live previews under the tabs; keep swiping for the grid. Esc or a click closes it. ⌘1…⌘9 select tabs. View > Refresh (⌘R) refreshes the active tab.
+Peek: swipe down with three fingers (or ⌘⇧P) to reveal live previews under the tabs; keep swiping for the grid. Esc or a click closes it. ⌘1…⌘9 select tabs; ⌘← and ⌘→ step between them. View > Refresh (⌘R) refreshes the active tab.
 
 Refreshing and loading never blank the screen. Every store keeps what it shows until the server's answer lands, and the overview, history and ranked lists are read from a local cache first, so a warm launch and a refresh only change the numbers, not the layout. The live count is the one exception: it is never cached, because a stale "3 people" would be a lie.
 
