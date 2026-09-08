@@ -255,3 +255,55 @@ extension PlanningListTests {
         )
     }
 }
+
+// MARK: - Proposals
+
+extension PlanningListTests {
+    func testTheSearchBoxMatchesAProposalsKeywordAndItsSeed() {
+        let rows = [
+            proposal("mount tracker addon", seed: "mount tracker"),
+            // A related run answers with terms that need not contain the seed, which is
+            // the case the seed match exists for — and the only one that tests it.
+            proposal("gold farming route", seed: "wow gold"),
+        ]
+
+        XCTAssertEqual(
+            PlanningList.proposals(rows, search: "addon").map(\.keyword),
+            ["mount tracker addon"]
+        )
+        // The seed is how a reader finds the group a run just produced, and this needle
+        // appears in neither keyword.
+        XCTAssertEqual(
+            PlanningList.proposals(rows, search: "wow gold").map(\.keyword),
+            ["gold farming route"]
+        )
+        XCTAssertEqual(PlanningList.proposals(rows, search: "  ").count, 2,
+                       "A blank filter keeps every row.")
+    }
+
+    func testAHardProposalIsKeptRatherThanHidden() {
+        // The reach slider colours a difficulty; it never removes a row. Hiding one would
+        // answer "what is within reach" with a list that cannot be checked.
+        let rows = [proposal("mount tracker addon", seed: "mount tracker", difficulty: 90)]
+        XCTAssertEqual(PlanningList.proposals(rows).count, 1)
+    }
+
+    private func proposal(
+        _ keyword: String,
+        seed: String,
+        difficulty: Double? = 20
+    ) -> KeywordProposal {
+        KeywordProposal(
+            keyword: keyword,
+            seed: seed,
+            source: "suggestions",
+            searchVolume: 100,
+            difficulty: difficulty,
+            costPerClick: nil,
+            competition: nil,
+            intent: nil,
+            status: "proposed",
+            discoveredAt: "2026-09-08T00:00:00Z"
+        )
+    }
+}

@@ -215,6 +215,35 @@ describe("JSON routes", () => {
     expect(status).toBe(400)
   })
 
+  test("GET /api/keywords/proposed → an empty list, not an error", async () => {
+    // Nothing has been discovered on the fixture deployment, and that is the
+    // shape every deployment has until someone runs a discovery. It answers,
+    // rather than 404-ing or failing, so a screen can show "none yet" without
+    // having to tell an empty list from a broken read.
+    const { status, body } = await requestJson(server, `/api/keywords/proposed${site}`)
+    expect(status).toBe(200)
+    const envelope = body as Record<string, unknown>
+    expect(typeof envelope.generatedAt).toBe("string")
+    expect(envelope.totals).toEqual({ proposals: 0, monthlyVolume: 0 })
+    expect(envelope.proposals).toEqual([])
+  })
+
+  test("POST /api/keywords/dismiss → the count of rows changed", async () => {
+    // Nothing is proposed, so nothing changes. The count is rows changed and
+    // not keywords named, which is what makes a repeated dismissal safe.
+    const { status, body } = await requestJson(server, `/api/keywords/dismiss${site}`, {
+      method: "POST",
+      body: { keywords: ["never proposed"] },
+    })
+    expect(status).toBe(200)
+    expect((body as Record<string, unknown>).dismissed).toBe(0)
+  })
+
+  test("GET /api/keywords/proposed with an unknown ?site= → 400", async () => {
+    const { status } = await requestJson(server, "/api/keywords/proposed?site=nope")
+    expect(status).toBe(400)
+  })
+
   test("GET /api/status → debug envelope with generatedAt + expected keys", async () => {
     const { status, body } = await requestJson(server, `/api/status${site}`)
     expect(status).toBe(200)

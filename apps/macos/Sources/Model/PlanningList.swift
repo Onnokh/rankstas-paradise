@@ -67,6 +67,28 @@ enum PlanningList {
         }
     }
 
+    /// Proposals as the screen shows them: narrowed by the same search box as the plan.
+    /// One box over both lists on purpose — the reader's question is about a subject, and
+    /// asking it twice in two fields would be two questions.
+    ///
+    /// The seed is matched as well as the keyword, because the seed is how a reader finds
+    /// the group a run just produced.
+    ///
+    /// Not narrowed by the reach slider, for the same reason the plan is not: a difficulty
+    /// above the threshold is shown and coloured, never hidden. Hiding it would answer
+    /// "what is within reach" with a list that cannot be checked against anything.
+    static func proposals(
+        _ proposals: [KeywordProposal],
+        search: String = ""
+    ) -> [KeywordProposal] {
+        let needle = search.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !needle.isEmpty else { return proposals }
+        return proposals.filter { proposal in
+            proposal.keyword.lowercased().contains(needle)
+                || proposal.seed.lowercased().contains(needle)
+        }
+    }
+
     /// How much of the plan the vendor has actually answered for. The denominator of every
     /// claim the screen makes: a "1 of 3" is honest where a "1 of 29" would not be, because
     /// the other 26 were never asked about.

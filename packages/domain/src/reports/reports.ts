@@ -13,6 +13,8 @@ import { Revenue } from "../revenue/revenue.ts"
 import { type RevenueDay } from "../revenue/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { DomainRating } from "../domain-rating/domain-rating.ts"
+import { KeywordDiscovery } from "../keyword-discovery/keyword-discovery.ts"
+import { KeywordDiscoveryError } from "../keyword-discovery/schema.ts"
 import { KeywordMetrics } from "../keyword-metrics/keyword-metrics.ts"
 import {
   foldKeyword,
@@ -61,6 +63,8 @@ import {
   type QueriesReport,
   type RegistryAddInput,
   type RegistryAddResult,
+  type KeywordDismissResult,
+  type KeywordProposalsReport,
   type RegistryHealthReport,
   type KeywordHealthVerdict,
   type RegistryListReport,
@@ -97,6 +101,19 @@ export interface Interface {
     RegistryHealthReport,
     ReportsError
   >
+  // Keyword Proposals waiting on a decision. Reads the store only: discovery
+  // spends money and is asked for over MCP, so nothing an HTTP read does can
+  // start a paid run.
+  readonly proposedKeywords: () => Effect.Effect<
+    KeywordProposalsReport,
+    ReportsError
+  >
+  // Set Proposals aside. A write, and the only one this feature offers over
+  // HTTP — accepting one is `registryAdd`, which already exists and is the same
+  // call whether a person or an agent makes it.
+  readonly dismissProposals: (
+    keywords: ReadonlyArray<string>,
+  ) => Effect.Effect<KeywordDismissResult, ReportsError>
   readonly registryAdd: (
     input: RegistryAddInput,
   ) => Effect.Effect<RegistryAddResult, ReportsError>
@@ -156,6 +173,7 @@ export const layer = Layer.effect(
     const sitemap = yield* Sitemap.Service
     const domainRatingService = yield* DomainRating.Service
     const keywordMetrics = yield* KeywordMetrics.Service
+    const discovery = yield* KeywordDiscovery.Service
     const analytics = yield* Analytics.Service
     const revenue = yield* Revenue.Service
     const site = yield* CurrentSite.Service
@@ -178,7 +196,11 @@ export const layer = Layer.effect(
     const wrap = <A>(
       effect: Effect.Effect<
         A,
-        StorageError | RegistryError | AnalyticsError | ReportsError
+        | StorageError
+        | RegistryError
+        | AnalyticsError
+        | ReportsError
+        | KeywordDiscoveryError
       >,
     ): Effect.Effect<A, ReportsError> =>
       effect.pipe(
@@ -188,6 +210,8 @@ export const layer = Layer.effect(
           RegistryError: (cause) =>
             Effect.fail(new ReportsError({ message: cause.message, cause })),
           AnalyticsError: (cause) =>
+            Effect.fail(new ReportsError({ message: cause.message, cause })),
+          KeywordDiscoveryError: (cause) =>
             Effect.fail(new ReportsError({ message: cause.message, cause })),
         }),
       )
@@ -709,6 +733,32 @@ export const layer = Layer.effect(
           }),
         ),
 
+      proposedKeywords: () =>
+        wrap(
+          Effect.gen(function* () {
+            const proposals = yield* discovery.proposed()
+            return {
+              // `resolved.market` is the Site's own, and every proposal is keyed
+              // by the Market it was found in — so naming it here cannot label
+              // one Market's numbers with another's.
+              ...(resolved.market ? { market: resolved.market } : {}),
+              totals: {
+                proposals: proposals.length,
+                monthlyVolume: proposals.reduce(
+                  (total, proposal) => total + (proposal.searchVolume ?? 0),
+                  0,
+                ),
+              },
+              proposals,
+            }
+          }),
+        ),
+
+      dismissProposals: (keywords) =>
+        wrap(
+          Effect.map(discovery.dismiss(keywords), (dismissed) => ({ dismissed })),
+        ),
+
       registryHealth: () =>
         wrap(
           Effect.gen(function* () {
@@ -1182,6 +1232,7 @@ export const layer = Layer.effect(
 export const defaultLayer = layer.pipe(
   Layer.provide(DomainRating.defaultLayer),
   Layer.provide(KeywordMetrics.defaultLayer),
+  Layer.provide(KeywordDiscovery.defaultLayer),
   Layer.provide(Analytics.defaultLayer),
   Layer.provide(Revenue.defaultLayer),
   Layer.provide(Storage.defaultLayer),

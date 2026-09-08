@@ -79,6 +79,11 @@ struct PlanningScreen: View {
 
                 list
 
+                if planningState == .plan {
+                    proposed
+                        .padding(.top, 20)
+                }
+
                 if let error = rankings.errors[overview.id] {
                     Text(error)
                         .foregroundStyle(Palette.coral)
@@ -377,6 +382,70 @@ struct PlanningScreen: View {
         }
     }
 
+    // MARK: Proposed
+
+    private var proposals: [KeywordProposal] {
+        PlanningList.proposals(
+            rankings.proposals[overview.id]?.proposals ?? [],
+            search: state.planningSearch
+        )
+    }
+
+    /// Keywords the site does NOT have, offered for a decision. Below the plan rather than
+    /// mixed into it: a proposal is a suggestion and a planned keyword is a commitment, and
+    /// one list holding both would let a reader act on the wrong one.
+    @ViewBuilder
+    private var proposed: some View {
+        if proposals.isEmpty {
+            // One dim line rather than an empty card. A reader with no proposals has
+            // nothing to act on here, and a card saying so on every site is noise — but
+            // the feature is invisible otherwise, so it says where they come from.
+            Text("No keywords proposed. Ask an agent to run a discovery on a seed keyword.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Text("Proposed")
+                        .font(.headline)
+                    Text("\(proposals.count)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                    Spacer()
+                    // The demand on offer, the counterpart of the Addressable tile. Only
+                    // shown when nothing is filtered out, because a sum over a filtered
+                    // list reads as a total and is not one.
+                    if state.planningSearch.trimmingCharacters(in: .whitespaces).isEmpty,
+                       let totals = rankings.proposals[overview.id]?.totals,
+                       totals.monthlyVolume > 0 {
+                        Text("\(totals.monthlyVolume.formatted(.number.precision(.fractionLength(0)))) searches / month on offer")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Text("Not in the registry. Accepting one is a registry row with a target page and a cluster — decisions to make on the Registry screen, not in one click here.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(proposals) { proposal in
+                        ProposalRow(
+                            proposal: proposal,
+                            reach: reach,
+                            onDismiss: {
+                                Task { await rankings.dismissProposals([proposal.keyword], siteID: overview.id) }
+                            }
+                        )
+                        Divider().opacity(0.4)
+                    }
+                }
+                .padding(.vertical, 4)
+                .cardSurface(cornerRadius: 12)
+            }
+        }
+    }
+
     private var columnHeadings: some View {
         HStack(spacing: PlanningRow.columnSpacing) {
             Text("Keyword")
@@ -481,5 +550,84 @@ private struct PlanningRow: View {
         }
         let signed = gap >= 0 ? "+\(gap.formatted(.number.precision(.fractionLength(0))))" : gap.formatted(.number.precision(.fractionLength(0)))
         return "Difficulty \(value.formatted(.number.precision(.fractionLength(0)))), \(signed) against this site's domain rating."
+    }
+}
+
+/// One proposed keyword: what it is, which seed found it, and what the vendor said when it
+/// was proposed. The numbers are frozen at that moment, which is why they can disagree with
+/// the same keyword's current metric elsewhere.
+private struct ProposalRow: View {
+    let proposal: KeywordProposal
+    let reach: Double
+    let onDismiss: () -> Void
+
+    @State private var dismissing = false
+
+    var body: some View {
+        HStack(spacing: PlanningRow.columnSpacing) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(proposal.keyword)
+                    .font(.callout)
+                HStack(spacing: 6) {
+                    Text("from \(proposal.seed)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let source = ProposalSource(rawValue: proposal.source) {
+                        Text(source.label)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .help(source.help)
+                    }
+                    if let intent = proposal.intent, !intent.isEmpty {
+                        Text(intent)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(proposal.searchVolume.map { $0.formatted(.number.precision(.fractionLength(0))) } ?? "—")
+                .font(.callout)
+                .monospacedDigit()
+                .frame(width: PlanningRow.numberWidth, alignment: .trailing)
+
+            difficulty
+                .frame(width: PlanningRow.numberWidth, alignment: .trailing)
+
+            Button("Dismiss", systemImage: "xmark") {
+                dismissing = true
+                onDismiss()
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .disabled(dismissing)
+            .help("Set aside. A later discovery run will not offer this keyword again.")
+            .frame(width: PlanningRow.peakWidth, alignment: .trailing)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 9)
+        // Dimmed while the server has not confirmed. The row leaves when it has — not
+        // before, because a dismissal is permanent and a row that vanished from a failed
+        // call would read as decided.
+        .opacity(dismissing ? 0.4 : 1)
+    }
+
+    /// Coloured against the reader's own threshold, like the plan's rows. A Google-Ads
+    /// market reports none at all, and a dash is the honest answer.
+    @ViewBuilder
+    private var difficulty: some View {
+        if let value = proposal.difficulty {
+            Text(value.formatted(.number.precision(.fractionLength(0))))
+                .font(.callout)
+                .monospacedDigit()
+                .foregroundStyle(value <= reach ? Palette.mint : Palette.coral)
+        } else {
+            Text("—")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .help("No difficulty. Either the vendor scored none, or this market is served by Google Ads, which does not measure it.")
+        }
     }
 }

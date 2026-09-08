@@ -20,6 +20,7 @@ import { Clients } from "./clients/clients.ts"
 import { Config } from "./config/config.ts"
 import { CurrentSite } from "./sites/current-site.ts"
 import { DomainRating } from "./domain-rating/domain-rating.ts"
+import { KeywordDiscovery } from "./keyword-discovery/keyword-discovery.ts"
 import { KeywordMetrics } from "./keyword-metrics/keyword-metrics.ts"
 import { Registry } from "./registry/registry.ts"
 import { Reports } from "./reports/reports.ts"
@@ -47,6 +48,7 @@ export const AppLayer = Layer.mergeAll(
   Sitemap.defaultLayer,
   DomainRating.defaultLayer,
   KeywordMetrics.defaultLayer,
+  KeywordDiscovery.defaultLayer,
   Sync.defaultLayer,
   Reports.defaultLayer,
 )

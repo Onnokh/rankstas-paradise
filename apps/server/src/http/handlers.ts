@@ -447,6 +447,11 @@ export const makeApiGroup = (ctx: ServerContext) => {
       .handle("registryHealth", ({ query }) =>
         Effect.promise(() => siteJson(query.site, Reports.use.registryHealth())),
       )
+      .handle("keywordProposals", ({ query }) =>
+        Effect.promise(() =>
+          siteJson(query.site, Reports.use.proposedKeywords()),
+        ),
+      )
       .handle("log", ({ query }) =>
         Effect.promise(() =>
           siteJson(query.site, Reports.use.logList(query.path ?? undefined)),
@@ -540,6 +545,11 @@ export const makeApiGroup = (ctx: ServerContext) => {
             ),
           )
         }),
+      )
+      .handle("keywordsDismiss", ({ query, payload }) =>
+        Effect.promise(() =>
+          siteJson(query.site, Reports.use.dismissProposals(payload.keywords)),
+        ),
       )
       .handle("logAdd", ({ query, payload }) =>
         Effect.promise(() => siteJson(query.site, Reports.use.logAdd(payload))),

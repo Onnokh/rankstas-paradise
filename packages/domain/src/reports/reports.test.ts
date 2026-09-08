@@ -28,6 +28,7 @@ import { type SitemapPage } from "../sitemap/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { DomainRating } from "../domain-rating/domain-rating.ts"
 import { type DomainRating as DomainRatingReading } from "../domain-rating/schema.ts"
+import { KeywordDiscovery } from "../keyword-discovery/keyword-discovery.ts"
 import { KeywordMetrics } from "../keyword-metrics/keyword-metrics.ts"
 import { type KeywordMetric } from "../keyword-metrics/schema.ts"
 import { type Site } from "../sites/schema.ts"
@@ -414,12 +415,19 @@ beforeAll(async () => {
     localDay: () =>
       Effect.succeed({ date: "2026-07-13", hour: 12, timeZone: "UTC" }),
   })
+  // Discovery is stubbed empty rather than wired: the reports these tests cover
+  // read the plan the Site has, and a proposal is a keyword it does not.
+  const discoveryLayer = Layer.mock(KeywordDiscovery.Service)({
+    proposed: () => Effect.succeed([]),
+    dismiss: () => Effect.succeed(0),
+  })
   const base = Layer.mergeAll(
     storageLayer,
     registryLayer,
     sitemapLayer,
     domainRatingLayer,
     keywordMetricsLayer,
+    discoveryLayer,
     analyticsLayer,
     revenueLayer,
     currentSiteLayer,

@@ -15,6 +15,7 @@
 | `GET /api/opportunities?kind=` | `opportunities --kind` |
 | `GET /api/registry` | `registry` |
 | `GET /api/registry/health` | `registry health` |
+| `GET /api/keywords/proposed` | — (keyword proposals waiting on a decision; MCP `keywords_proposed`) |
 | `GET /api/log?path=` | `log list` |
 | `GET /api/history?limit=N` | — (TUI history view) |
 | `GET /api/live` | — (visitors on the site right now; the one read that asks the analytics provider) |
@@ -122,6 +123,24 @@ yet cannot answer any other way. Every planned keyword carries a `verdict`:
 Keywords with demand come first, strongest first. `totals.monthlyVolume` sums
 only those, and is the size of the addressable market — every search, not the
 share a first-page ranking would win. It is not a traffic forecast.
+
+`GET /api/keywords/proposed` is the other side of the same question: keywords an
+expansion found that the Registry does *not* hold. Each row carries the vendor's
+numbers **as they read when it was proposed**, frozen — a Keyword metric is
+re-asked and overwritten every thirty days, and a proposal is the record of why
+the term looked worth the work then. So a proposal may disagree with the same
+keyword's current metric in `/api/registry/health`, and both are true.
+
+`totals.monthlyVolume` here is the demand on offer, the counterpart of the plan's
+own figure. Rows come strongest first.
+
+There is deliberately **no HTTP route that runs a discovery**. An expansion is
+billed by the rows the vendor decides to return, so every run costs money and
+its cost is not knowable in advance; running one is `keywords_discover` over
+MCP, where the caller reads the drop counts before spending again. Accepting a
+proposal is `POST /api/registry` — the same call whether a person or an agent
+makes it, which is why a keyword the Registry holds simply stops being proposed
+and there is no "accepted" state to write.
 
 `difficultyGap` is a keyword's difficulty minus the site's Domain Rating, so a
 positive number means the keyword scores harder than the site rates. The two are
@@ -240,6 +259,7 @@ Vendor keys are stored encrypted (see [deploy.md](deploy.md) §3c) and addressed
 - `POST /api/registry` — body: `RegistryAddInput` (`target`, optional `keyword`/`cluster`/`intent`/`priority`/`why`/`publishedAt`/`baselineDate`/`status`). Keyword rows require cluster, intent, and priority.
 - `PATCH /api/registry` — body: `{ target, keyword?, patch: RegistryPatch }`.
 - `POST /api/log` — body: `{ path, kind, date?, note? }`.
+- `POST /api/keywords/dismiss` — body: `{ keywords: string[] }`; answers `{ dismissed }`, the number of rows that changed. A keyword already dismissed, or never proposed, changes nothing.
 
 ## Jobs (asynchronous)
 
