@@ -444,6 +444,9 @@ export const makeApiGroup = (ctx: ServerContext) => {
       .handle("registry", ({ query }) =>
         Effect.promise(() => siteJson(query.site, Reports.use.registryList())),
       )
+      .handle("registryHealth", ({ query }) =>
+        Effect.promise(() => siteJson(query.site, Reports.use.registryHealth())),
+      )
       .handle("log", ({ query }) =>
         Effect.promise(() =>
           siteJson(query.site, Reports.use.logList(query.path ?? undefined)),

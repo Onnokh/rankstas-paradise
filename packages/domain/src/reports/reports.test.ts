@@ -27,6 +27,7 @@ import { Sitemap } from "../sitemap/sitemap.ts"
 import { type SitemapPage } from "../sitemap/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { DomainRating } from "../domain-rating/domain-rating.ts"
+import { type DomainRating as DomainRatingReading } from "../domain-rating/schema.ts"
 import { KeywordMetrics } from "../keyword-metrics/keyword-metrics.ts"
 import { type KeywordMetric } from "../keyword-metrics/schema.ts"
 import { type Site } from "../sites/schema.ts"
@@ -215,7 +216,6 @@ const entry = (over: Partial<RegistryEntry>): RegistryEntry => ({
   targetUrl: "/",
   intent: "",
   whyOpportunity: "",
-  country: "USA",
   priority: "",
   publishedAt: "",
   baselineDate: "",
@@ -303,6 +303,10 @@ const site: Site = {
 // ordinary case: a site whose metrics have never been fetched.
 const storedDemand = new Map<string, KeywordMetric>()
 
+// The Domain Rating the stub reports, on the same terms. Empty is the ordinary
+// case: most sites have no reading stored.
+const storedRating: { value: DomainRatingReading | null } = { value: null }
+
 const demandMetric = (
   keyword: string,
   over: Partial<KeywordMetric> = {},
@@ -364,9 +368,9 @@ beforeAll(async () => {
 
   const storageLayer = Storage.layer.pipe(Layer.provide(currentSiteLayer))
   // The dashboard reads a stored rating and never fetches one; a site without a
-  // reading is the ordinary case, so the stub yields null.
+  // reading is the ordinary case, so the cell starts empty.
   const domainRatingLayer = Layer.mock(DomainRating.Service)({
-    cached: () => Effect.succeed(null),
+    cached: () => Effect.succeed(storedRating.value),
   })
   // Reads whatever the demand tests put in `storedDemand`. Empty for every
   // other test, so the reports must read every number exactly as they did
@@ -538,6 +542,7 @@ test("pageReport rejects a non-slash path", async () => {
 
 afterEach(() => {
   storedDemand.clear()
+  storedRating.value = null
 })
 
 test("queriesReport carries the Market and the demand behind each Query", async () => {
@@ -624,6 +629,150 @@ test("a report reads no demand at all when nothing is stored", async () => {
       .flatMap((target) => target.keywords)
       .every((keyword) => keyword.demand === undefined),
   ).toBe(true)
+})
+
+// --- the Registry judged on demand -----------------------------------------
+
+test("registryHealth sorts the plan by demand and counts each verdict", async () => {
+  storedDemand.set("pocket alternative", demandMetric("pocket alternative", { searchVolume: 1_900 }))
+  // Measured, and the vendor found nothing. This is the row to act on: a page
+  // aimed here will not be found.
+  storedDemand.set("chrome read later extension", demandMetric("chrome read later extension", { searchVolume: 0 }))
+  // Measured, and the vendor has no volume — the term is too rare for it to
+  // report, which is a different fact from a measured zero.
+  storedDemand.set("save links from iphone", demandMetric("save links from iphone", { searchVolume: null }))
+
+  const report = await run(Reports.use.registryHealth())
+
+  // Demand first, then the measured-and-empty row, then the unreported one.
+  expect(report.keywords.map((row) => [row.keyword, row.verdict])).toEqual([
+    ["pocket alternative", "has-demand"],
+    ["chrome read later extension", "no-demand"],
+    ["save links from iphone", "unreported"],
+  ])
+  expect(report.totals).toEqual({
+    keywords: 3,
+    unmeasured: 0,
+    unreported: 1,
+    noDemand: 1,
+    hasDemand: 1,
+    // Only the keywords with demand count toward the plan's addressable
+    // market; the empty ones would otherwise read as if they contributed.
+    monthlyVolume: 1_900,
+  })
+  expect(report.market?.label).toBe("United States")
+})
+
+test("the verdict decides the order, not the plan's own", async () => {
+  // The plan lists "chrome read later extension" before "save links from
+  // iphone". Both have a volume that sorts to zero, so only the verdict rank
+  // can separate them — and a measured-empty row has to come before an
+  // unreported one, because that is a decision and this is closer to a gap in
+  // the data.
+  storedDemand.set(
+    "chrome read later extension",
+    demandMetric("chrome read later extension", { searchVolume: null }),
+  )
+  storedDemand.set(
+    "save links from iphone",
+    demandMetric("save links from iphone", { searchVolume: 0 }),
+  )
+
+  const report = await run(Reports.use.registryHealth())
+  expect(report.keywords.map((row) => [row.keyword, row.verdict])).toEqual([
+    ["save links from iphone", "no-demand"],
+    ["chrome read later extension", "unreported"],
+    // Nobody asked about this one at all, so it comes last.
+    ["pocket alternative", "unmeasured"],
+  ])
+})
+
+test("registryHealth leaves inventory-only rows out", async () => {
+  // The fixture registry holds four rows and one of them has a blank keyword:
+  // a page the sitemap contributed. It makes no claim about demand, so judging
+  // it would invent a verdict about nothing.
+  const report = await run(Reports.use.registryHealth())
+  expect(report.keywords).toHaveLength(3)
+  expect(report.keywords.every((row) => row.keyword.trim() !== "")).toBe(true)
+})
+
+test("an unmeasured keyword says nothing about the keyword", async () => {
+  // Every site before a DataForSEO key is configured. The report still has its
+  // shape, and no row claims the vendor said anything.
+  const report = await run(Reports.use.registryHealth())
+  expect(report.totals.unmeasured).toBe(3)
+  expect(report.totals.monthlyVolume).toBe(0)
+  expect(report.keywords.every((row) => row.verdict === "unmeasured")).toBe(true)
+  expect(report.keywords.every((row) => row.searchVolume === null)).toBe(true)
+})
+
+test("registryHealth ranks demand strongest first within a verdict", async () => {
+  storedDemand.set("pocket alternative", demandMetric("pocket alternative", { searchVolume: 90 }))
+  storedDemand.set("chrome read later extension", demandMetric("chrome read later extension", { searchVolume: 4_400 }))
+  storedDemand.set("save links from iphone", demandMetric("save links from iphone", { searchVolume: 720 }))
+
+  const report = await run(Reports.use.registryHealth())
+  expect(report.keywords.map((row) => row.searchVolume)).toEqual([4_400, 720, 90])
+  expect(report.totals.monthlyVolume).toBe(5_210)
+})
+
+test("difficultyGap reads a keyword's difficulty against the site's rating", async () => {
+  storedRating.value = {
+    target: "sleevy.app",
+    rating: 12,
+    fetchedAt: "2026-09-08T00:00:00.000Z",
+    license: "https://ahrefs.com/legal/domain-rating-license",
+  }
+  storedDemand.set(
+    "pocket alternative",
+    demandMetric("pocket alternative", { searchVolume: 1_900, difficulty: 31 }),
+  )
+  // A keyword the vendor scored no difficulty for — the ordinary case for a
+  // Google-Ads market, which does not measure it.
+  storedDemand.set(
+    "chrome read later extension",
+    demandMetric("chrome read later extension", { searchVolume: 800, difficulty: null }),
+  )
+
+  const report = await run(Reports.use.registryHealth())
+  expect(report.domainRating).toBe(12)
+  const rows = new Map(report.keywords.map((row) => [row.keyword, row]))
+  // 31 − 12: the keyword scores harder than the site rates.
+  expect(rows.get("pocket alternative")?.difficultyGap).toBe(19)
+  // No difficulty means no gap, rather than a gap measured from nothing.
+  expect(rows.get("chrome read later extension")?.difficultyGap).toBeNull()
+})
+
+test("a site with no Domain Rating gets no gap rather than no report", async () => {
+  // The rating is supplementary. Reading it as a zero would report every
+  // keyword as scoring its full difficulty above the site, which is a claim
+  // nobody made.
+  storedDemand.set(
+    "pocket alternative",
+    demandMetric("pocket alternative", { searchVolume: 1_900, difficulty: 31 }),
+  )
+  const report = await run(Reports.use.registryHealth())
+  expect(report.domainRating).toBeNull()
+  expect(report.keywords[0]?.difficulty).toBe(31)
+  expect(report.keywords[0]?.difficultyGap).toBeNull()
+})
+
+test("registryHealth carries the plan's own fields beside the vendor's", async () => {
+  // The report has to be actionable on its own: the reader needs the target and
+  // the priority to decide what to do about a keyword with no demand.
+  storedDemand.set(
+    "pocket alternative",
+    demandMetric("pocket alternative", { searchVolume: 1_900, intent: "commercial" }),
+  )
+  const report = await run(Reports.use.registryHealth())
+  const row = report.keywords[0]!
+  expect(row.targetUrl).toBe("/pocket-alternative")
+  expect(row.priority).toBe("P1")
+  expect(row.cluster).toBe("Alternatives")
+  // The plan's claimed intent and the one the vendor observed, side by side:
+  // a disagreement is worth seeing rather than resolving here.
+  expect(row.intent).toBe("comparison")
+  expect(row.reportedIntent).toBe("commercial")
 })
 
 test("queriesReport excludes brand queries by default", async () => {

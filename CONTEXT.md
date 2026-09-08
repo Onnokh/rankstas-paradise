@@ -14,11 +14,11 @@ The stored list of sites and their settings, in the app-level database. The serv
 _Avoid_: "config" for the list of sites.
 
 **Site settings**:
-Everything a catalog entry holds except its id: the Search Console property, name, origin, sitemap URL, brand terms, and the analytics and revenue provider blocks. Never a vendor key.
+Everything a catalog entry holds except its id: the Search Console property, name, origin, sitemap URL, brand terms, the market, and the analytics and revenue provider blocks. Never a vendor key.
 
 **Market**:
 The country and language a site's keyword demand is measured in — one per site, stored as a DataForSEO location code and language code. Every Keyword metric belongs to exactly one market, because a search volume is only comparable with another volume from the same one. A site that names no market is measured in the United States in English. Language, not country, is the axis that matters: a German visitor to an English site searches in English.
-_Avoid_: "location" or "locale" on their own; "country" (a market is a country *and* a language); the registry's `country` column, which is unvalidated free text and predates this term.
+_Avoid_: "location" or "locale" on their own; "country" (a market is a country *and* a language). The Registry used to carry a per-row `country` column; it was unvalidated free text, nothing read it, and it is gone — a row cannot be in a different market from the site it belongs to.
 
 **Vendor key**:
 The API key a provider (Polar, Rybbit, Ahrefs, DataForSEO) is read with. Stored encrypted in the vault, addressed by scope (a site, or the app) and purpose (the provider name), and handed to the provider's adapter under the environment variable it reads. The environment variable is the fallback. Never part of Site settings.

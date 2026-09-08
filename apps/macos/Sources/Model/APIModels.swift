@@ -8,14 +8,43 @@ struct Site: Codable, Identifiable, Sendable {
     /// snapshots and older servers still decode.
     var analytics: ResolvedAnalytics?
     var revenue: ResolvedRevenue?
+    /// The country and language the site's keyword numbers describe, on the same terms.
+    var market: ResolvedMarket?
 
-    init(id: String, name: String, origin: String, analytics: ResolvedAnalytics? = nil, revenue: ResolvedRevenue? = nil) {
+    init(
+        id: String,
+        name: String,
+        origin: String,
+        analytics: ResolvedAnalytics? = nil,
+        revenue: ResolvedRevenue? = nil,
+        market: ResolvedMarket? = nil
+    ) {
         self.id = id
         self.name = name
         self.origin = origin
         self.analytics = analytics
         self.revenue = revenue
+        self.market = market
     }
+}
+
+/// A site's Market with the server's defaults filled: the country and language every search
+/// volume on the site is measured in. A volume without its market is ambiguous, so anything
+/// that shows one shows this too.
+struct ResolvedMarket: Codable, Sendable, Equatable {
+    let locationCode: Int
+    let languageCode: String
+    /// The country's name, for display.
+    let label: String
+    /// "labs" or "google-ads". Google-Ads markets carry no keyword difficulty and no search
+    /// intent, so a screen can leave those out rather than show them empty.
+    let provider: String
+
+    /// The market in one line: "United States · EN".
+    var summary: String { "\(label) · \(languageCode.uppercased())" }
+
+    /// Whether the vendor reports keyword difficulty for this market at all.
+    var hasDifficulty: Bool { provider != "google-ads" }
 }
 
 /// A site's analytics source with the server's defaults filled: what the adapter runs with.
@@ -489,9 +518,40 @@ struct RegistryKeyword: Codable, Sendable, Equatable, Identifiable, Hashable {
     let keyword: String
     let cluster: String
     let intent: String
-    let country: String
+    /// What the vendor says about the keyword in the site's market. Nil means no answer is
+    /// stored — not that the keyword has no demand.
+    var demand: KeywordDemand? = nil
 
-    var id: String { keyword + "|" + country }
+    /// The registry holds one row per keyword, so the keyword identifies it.
+    var id: String { keyword }
+}
+
+/// What DataForSEO says about one keyword, as the server reports it. Every number is
+/// optional twice over: the key is absent when no answer is stored, and a value inside is
+/// null when the vendor was asked and had nothing. Neither is a zero.
+struct KeywordDemand: Codable, Sendable, Equatable, Hashable {
+    /// Average monthly searches over the last twelve months. Nil means the term is too rare
+    /// for the vendor to report, which is not the same as nobody searching it.
+    let searchVolume: Double?
+    /// 0-100. Nil for a Google-Ads market, which does not measure it.
+    let difficulty: Double?
+    let costPerClick: Double?
+    let competition: Double?
+    let intent: String?
+    let fetchedAt: String
+
+    /// The volume as a row shows it, or nil when there is none to show.
+    var volumeLabel: String? {
+        guard let searchVolume else { return nil }
+        return "\(searchVolume.formatted(.number.precision(.fractionLength(0))))/mo"
+    }
+
+    /// The difficulty as a row shows it. Nil covers both a Google-Ads market and a term the
+    /// vendor scored no difficulty for.
+    var difficultyLabel: String? {
+        guard let difficulty else { return nil }
+        return "KD \(difficulty.formatted(.number.precision(.fractionLength(0))))"
+    }
 }
 
 /// The server's word for where a page stands. A word this build does not know is shown as

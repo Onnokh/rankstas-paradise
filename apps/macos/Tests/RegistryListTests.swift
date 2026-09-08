@@ -26,8 +26,35 @@ final class RegistryListTests: XCTestCase {
                 )
             },
             indexed: indexed,
-            keywords: keywords.map { RegistryKeyword(keyword: $0, cluster: "c", intent: "informational", country: "nl") }
+            keywords: keywords.map { RegistryKeyword(keyword: $0, cluster: "c", intent: "informational") }
         )
+    }
+
+    func testHasDemandIsTrueOnlyWhenSomeKeywordCarriesAnAnswer() {
+        // Drives whether the screen names the market. A market label beside no numbers
+        // would be a promise the screen does not keep.
+        XCTAssertFalse(RegistryList.hasDemand([target("/a", keywords: ["one", "two"])]))
+        XCTAssertFalse(RegistryList.hasDemand([]))
+
+        var withDemand = target("/b", keywords: ["one", "two"])
+        withDemand.keywords = [
+            RegistryKeyword(keyword: "one", cluster: "c", intent: "informational"),
+            RegistryKeyword(
+                keyword: "two",
+                cluster: "c",
+                intent: "informational",
+                demand: KeywordDemand(
+                    searchVolume: 1_900,
+                    difficulty: 31,
+                    costPerClick: nil,
+                    competition: nil,
+                    intent: nil,
+                    fetchedAt: "2026-09-08T00:00:00.000Z"
+                )
+            ),
+        ]
+        // One answered keyword among many is enough: the market describes them all.
+        XCTAssertTrue(RegistryList.hasDemand([target("/a", keywords: ["x"]), withDemand]))
     }
 
     func testRanksByTheChosenMetricAndKeepsTheServersOrderAmongEquals() {

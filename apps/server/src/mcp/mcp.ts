@@ -263,6 +263,30 @@ export const buildMcpServer = (run: RunTool): McpServer => {
   )
 
   server.registerTool(
+    "registry_health",
+    {
+      description:
+        "The keyword registry judged on demand: which planned keywords have searches " +
+        "behind them and which do not. Every keyword carries a `verdict` — " +
+        '"has-demand", "no-demand" (the vendor measured zero), "unreported" (the vendor ' +
+        'has no volume because the term is too rare to report), or "unmeasured" (nobody ' +
+        "has asked yet, so it says nothing about the keyword). Keywords with demand come " +
+        "first, strongest first; `totals.monthlyVolume` sums their searches, which is the " +
+        "size of the addressable market and NOT a traffic forecast. `difficultyGap` is " +
+        "the keyword's difficulty minus the site's Domain Rating, positive meaning the " +
+        "keyword scores harder than the site rates — a rough guide from two different " +
+        "vendors' scales, deliberately reported as a number and never as a verdict. Use " +
+        "this to check an existing plan; use `opportunities` to find what is missing " +
+        "from it.",
+      inputSchema: { site },
+    },
+    async ({ site }) => {
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.registryHealth(), id))
+    },
+  )
+
+  server.registerTool(
     "log",
     {
       description: "The action log, site-wide or for one path, newest first.",
@@ -420,7 +444,6 @@ export const buildMcpServer = (run: RunTool): McpServer => {
         cluster: z.string().optional(),
         intent: z.string().optional(),
         priority: z.string().optional(),
-        country: z.string().optional(),
         why: z.string().optional().describe("Why this is an opportunity."),
         publishedAt: z.string().optional().describe("YYYY-MM-DD."),
         baselineDate: z.string().optional().describe("YYYY-MM-DD."),
@@ -450,7 +473,6 @@ export const buildMcpServer = (run: RunTool): McpServer => {
           .object({
             cluster: z.string().optional(),
             intent: z.string().optional(),
-            country: z.string().optional(),
             priority: z.string().optional(),
             publishedAt: z.string().optional(),
             baselineDate: z.string().optional(),

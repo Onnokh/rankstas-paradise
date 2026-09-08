@@ -14,6 +14,7 @@
 | `GET /api/queries?page=&window=&min-impressions=&include-brand=true&limit=` | `queries …` |
 | `GET /api/opportunities?kind=` | `opportunities --kind` |
 | `GET /api/registry` | `registry` |
+| `GET /api/registry/health` | `registry health` |
 | `GET /api/log?path=` | `log list` |
 | `GET /api/history?limit=N` | — (TUI history view) |
 | `GET /api/live` | — (visitors on the site right now; the one read that asks the analytics provider) |
@@ -105,6 +106,29 @@ either absence as a zero.
 `searchVolume` is what ranks three of the four Opportunity kinds. `difficulty`
 is reported and never scored — read it against the site's Domain Rating from
 `GET /api/status`.
+
+`GET /api/registry/health` is the same data turned round: the plan judged on
+demand rather than the demand hung off the plan. It answers "does the Registry
+aim at searches that exist", which is the question a site with no visibility
+yet cannot answer any other way. Every planned keyword carries a `verdict`:
+
+| verdict | what the vendor said | what it means |
+|---|---|---|
+| `has-demand` | a volume above zero | there is demand behind the plan |
+| `no-demand` | zero | measured empty; the rows to act on |
+| `unreported` | null | the term is too rare for the vendor to report |
+| `unmeasured` | nothing — it was never asked | says nothing about the keyword |
+
+Keywords with demand come first, strongest first. `totals.monthlyVolume` sums
+only those, and is the size of the addressable market — every search, not the
+share a first-page ranking would win. It is not a traffic forecast.
+
+`difficultyGap` is a keyword's difficulty minus the site's Domain Rating, so a
+positive number means the keyword scores harder than the site rates. The two are
+different scales from different vendors measuring related but distinct things,
+so it is a rough guide reported as a number and never as a verdict — banding it
+into "reachable" or "not" would dress a rule of thumb up as a fact. Inventory-
+only rows (a blank keyword) are left out: they make no claim about demand.
 
 The daily sync grows the series forward from wherever it starts, and cannot
 widen it backwards: its range begins at the ledger's own first day, and a day
@@ -213,7 +237,7 @@ Vendor keys are stored encrypted (see [deploy.md](deploy.md) §3c) and addressed
 
 ## Write endpoints
 
-- `POST /api/registry` — body: `RegistryAddInput` (`target`, optional `keyword`/`cluster`/`intent`/`priority`/`country`/`why`/`publishedAt`/`baselineDate`/`status`). Keyword rows require cluster, intent, and priority.
+- `POST /api/registry` — body: `RegistryAddInput` (`target`, optional `keyword`/`cluster`/`intent`/`priority`/`why`/`publishedAt`/`baselineDate`/`status`). Keyword rows require cluster, intent, and priority.
 - `PATCH /api/registry` — body: `{ target, keyword?, patch: RegistryPatch }`.
 - `POST /api/log` — body: `{ path, kind, date?, note? }`.
 

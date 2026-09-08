@@ -373,7 +373,6 @@ const RegistryDetail = ({
                 .filter(Boolean)
                 .join(" · "),
             ],
-            ["Country", entry.country],
           ]}
         />
       </Card>

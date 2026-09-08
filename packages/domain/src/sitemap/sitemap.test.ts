@@ -78,7 +78,6 @@ const entry = (targetUrl: string): RegistryEntry => ({
   targetUrl,
   intent: "",
   whyOpportunity: "",
-  country: "",
   priority: "",
   publishedAt: "",
   baselineDate: "",

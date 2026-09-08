@@ -71,13 +71,15 @@ Read commands (never call Google — served from the remote server):
   opportunities [--kind <kind>]   Classified signals (striking-distance, ctr, new-demand,
                                   cannibalization) with recommendations.
   registry                        The SEO plan: targets, intents, keywords, rationale, phases.
+  registry health                 The plan judged on demand: which planned keywords have
+                                  searches behind them, and which the vendor measured empty.
   log list [--path <path>]        Logged interventions.
 
 Write commands:
-  registry add --target </path> [--keyword K --cluster C --intent I --priority P] [--country C]
+  registry add --target </path> [--keyword K --cluster C --intent I --priority P]
                [--why TEXT] [--published-at D] [--baseline-date D] [--status S]
                                   Add a keyword mapping (or inventory-only page row without --keyword).
-  registry set --target </path> [--keyword K] [--cluster C] [--intent I] [--country C] [--priority P]
+  registry set --target </path> [--keyword K] [--cluster C] [--intent I] [--priority P]
                [--published-at D] [--baseline-date D] [--status S] [--why TEXT] [--new-target </path>]
                                   Update any field. Without --keyword every row of the target is
                                   patched; with --keyword only that row. --new-target remaps rows
@@ -124,7 +126,6 @@ const commandRegistry = (flags: Flags, positional: readonly string[], site: Site
         cluster: stringFlag(flags, "cluster"),
         intent: stringFlag(flags, "intent"),
         priority: stringFlag(flags, "priority"),
-        country: stringFlag(flags, "country"),
         why: stringFlag(flags, "why"),
         publishedAt: stringFlag(flags, "published-at"),
         baselineDate: stringFlag(flags, "baseline-date"),
@@ -139,7 +140,6 @@ const commandRegistry = (flags: Flags, positional: readonly string[], site: Site
     const patch = {
       cluster: stringFlag(flags, "cluster"),
       intent: stringFlag(flags, "intent"),
-      country: stringFlag(flags, "country"),
       priority: stringFlag(flags, "priority"),
       publishedAt: stringFlag(flags, "published-at"),
       baselineDate: stringFlag(flags, "baseline-date"),
@@ -148,11 +148,12 @@ const commandRegistry = (flags: Flags, positional: readonly string[], site: Site
       newTargetUrl: stringFlag(flags, "new-target"),
     }
     if (Object.values(patch).every((value) => value === undefined)) {
-      throw new Error("registry set requires at least one field flag: --cluster, --intent, --country, --priority, --published-at, --baseline-date, --status, --why, --new-target.")
+      throw new Error("registry set requires at least one field flag: --cluster, --intent, --priority, --published-at, --baseline-date, --status, --why, --new-target.")
     }
     return ApiClient.use.registrySet(target, stringFlag(flags, "keyword"), patch, site)
   }
-  if (action !== undefined && action !== "list") throw new Error(`Unknown registry action: ${action}. Use list, add, or set.`)
+  if (action === "health") return ApiClient.use.registryHealth(site)
+  if (action !== undefined && action !== "list") throw new Error(`Unknown registry action: ${action}. Use list, health, add, or set.`)
   return ApiClient.use.registry(site)
 }
 
