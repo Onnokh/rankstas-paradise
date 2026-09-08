@@ -54,9 +54,9 @@ const todayEvery = Duration.minutes(5)
 if (!debug) {
   void ctx
     .loadSites()
-    .then((sites) => {
+    .then(async (sites) => {
       for (const site of sites) {
-        const rt = ctx.runtimeFor(site)
+        const rt = await ctx.runtimeFor(site)
         const work = Effect.promise(() => rt.runPromise(Sync.use.syncSearchConsole()))
         void rt.runPromise(Jobs.use.startJob("sync", site.id, work)).catch(() => {})
 

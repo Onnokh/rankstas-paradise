@@ -341,3 +341,129 @@ describe("site settings routes", () => {
     expect(again.status).toBe(404)
   })
 })
+
+// --- vendor keys ---
+
+describe("secrets routes", () => {
+  const keyedSite = {
+    id: "keyed",
+    siteUrl: "sc-domain:keyed.example",
+    // A Rybbit source whose base URL is never reached: the adapter only needs
+    // the key to report ready, which is exactly what these tests observe.
+    analytics: { provider: "rybbit", siteId: "1", baseUrl: "http://127.0.0.1:9" },
+  }
+  const analyticsStatus = async () => {
+    const { body } = await requestJson(server, "/api/status?site=keyed")
+    return (body as { analytics: { ready: boolean; reason: string | null } | null }).analytics
+  }
+
+  test("GET /api/secrets → encryption configured and an empty ahrefs slot", async () => {
+    const { status, body } = await requestJson(server, "/api/secrets")
+    expect(status).toBe(200)
+    const envelope = body as {
+      encryption: { configured: boolean }
+      slots: ReadonlyArray<{ purpose: string; variable: string; stored: unknown; inEnvironment: boolean }>
+    }
+    expect(envelope.encryption.configured).toBe(true)
+    const ahrefs = envelope.slots.find((slot) => slot.purpose === "ahrefs")
+    expect(ahrefs?.variable).toBe("AHREFS_API_KEY")
+    expect(ahrefs?.stored).toBeNull()
+    expect(ahrefs?.inEnvironment).toBe(false)
+  })
+
+  test("PUT then DELETE /api/secrets/:purpose; the value never comes back", async () => {
+    const value = "ahrefs-test-key-0001"
+    const put = await requestJson(server, "/api/secrets/ahrefs", {
+      method: "PUT",
+      body: { value },
+    })
+    expect(put.status).toBe(200)
+    const secret = (put.body as { secret: { scope: null; purpose: string; last4: string } }).secret
+    expect(secret.scope).toBeNull()
+    expect(secret.purpose).toBe("ahrefs")
+    expect(secret.last4).toBe("0001")
+    expect(JSON.stringify(put.body)).not.toContain(value)
+
+    const listed = await requestJson(server, "/api/secrets")
+    expect(JSON.stringify(listed.body)).not.toContain(value)
+    const slots = (listed.body as { slots: ReadonlyArray<{ purpose: string; stored: { last4: string } | null }> }).slots
+    expect(slots.find((slot) => slot.purpose === "ahrefs")?.stored?.last4).toBe("0001")
+
+    const removed = await requestJson(server, "/api/secrets/ahrefs", { method: "DELETE" })
+    expect(removed.status).toBe(200)
+    const again = await requestJson(server, "/api/secrets/ahrefs", { method: "DELETE" })
+    expect(again.status).toBe(404)
+  })
+
+  test("a stored site key reaches the vendor adapter through the site's runtime", async () => {
+    const created = await requestJson(server, "/api/sites", { method: "POST", body: keyedSite })
+    expect(created.status).toBe(201)
+
+    // Without a key the provider is configured but not ready, and says why.
+    const before = await analyticsStatus()
+    expect(before?.ready).toBe(false)
+    expect(before?.reason).toContain("RYBBIT_API_KEY")
+
+    const slotsBefore = await requestJson(server, "/api/sites/keyed/secrets")
+    expect(slotsBefore.status).toBe(200)
+    const rybbitSlot = (slotsBefore.body as { slots: ReadonlyArray<{ purpose: string; variable: string; stored: unknown }> }).slots
+      .find((slot) => slot.purpose === "rybbit")
+    expect(rybbitSlot?.variable).toBe("RYBBIT_API_KEY")
+    expect(rybbitSlot?.stored).toBeNull()
+
+    const put = await requestJson(server, "/api/sites/keyed/secrets/rybbit", {
+      method: "PUT",
+      body: { value: "rybbit-test-key-9999" },
+    })
+    expect(put.status).toBe(200)
+    expect((put.body as { secret: { scope: string; last4: string } }).secret).toMatchObject({
+      scope: "keyed",
+      last4: "9999",
+    })
+
+    // The site's runtime was rebuilt with the key in its ConfigProvider.
+    const after = await analyticsStatus()
+    expect(after?.ready).toBe(true)
+
+    const removed = await requestJson(server, "/api/sites/keyed/secrets/rybbit", { method: "DELETE" })
+    expect(removed.status).toBe(200)
+    const gone = await analyticsStatus()
+    expect(gone?.ready).toBe(false)
+  })
+
+  test("secret writes validate: unknown site → 404, blank value → 400, unsafe purpose → 400", async () => {
+    const unknownSite = await requestJson(server, "/api/sites/nope/secrets/rybbit", {
+      method: "PUT",
+      body: { value: "value-value" },
+    })
+    expect(unknownSite.status).toBe(404)
+    const blank = await requestJson(server, "/api/sites/keyed/secrets/rybbit", {
+      method: "PUT",
+      body: { value: "   " },
+    })
+    expect(blank.status).toBe(400)
+    const unsafe = await requestJson(server, "/api/sites/keyed/secrets/Rybbit%20Key", {
+      method: "PUT",
+      body: { value: "value-value" },
+    })
+    expect(unsafe.status).toBe(400)
+  })
+
+  test("a server without RP_MASTER_KEY reports encryption unconfigured and refuses writes with 503", async () => {
+    const bare = await startServer({ entry: NEW_SERVER_ENTRY, masterKey: null })
+    try {
+      const listed = await requestJson(bare, "/api/secrets")
+      expect(listed.status).toBe(200)
+      const encryption = (listed.body as { encryption: { configured: boolean; reason: string } }).encryption
+      expect(encryption.configured).toBe(false)
+      expect(encryption.reason).toContain("RP_MASTER_KEY")
+      const put = await requestJson(bare, "/api/secrets/ahrefs", {
+        method: "PUT",
+        body: { value: "value-value" },
+      })
+      expect(put.status).toBe(503)
+    } finally {
+      bare.stop()
+    }
+  })
+})

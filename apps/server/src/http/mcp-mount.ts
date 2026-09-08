@@ -38,7 +38,7 @@ export const makeMcpMount = (ctx: ServerContext): McpHandler => {
   const run: RunTool = async (siteId, effect) => {
     const site = await ctx.siteFor(siteId).catch(() => ctx.firstSite())
     const runnable = effect.pipe(Effect.provide(Config.defaultLayer))
-    return ctx.runtimeFor(site).runPromise(runnable)
+    return (await ctx.runtimeFor(site)).runPromise(runnable)
   }
 
   const webHandler = mcpHandler(run)

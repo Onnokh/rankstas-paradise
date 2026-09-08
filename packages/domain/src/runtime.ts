@@ -14,6 +14,7 @@
 import { Layer, ManagedRuntime } from "effect"
 
 import { Analytics } from "./analytics/analytics.ts"
+import { AppDatabase } from "./app-database/app-database.ts"
 import { Catalog } from "./catalog/catalog.ts"
 import { Config } from "./config/config.ts"
 import { CurrentSite } from "./sites/current-site.ts"
@@ -22,6 +23,7 @@ import { Registry } from "./registry/registry.ts"
 import { Reports } from "./reports/reports.ts"
 import { Revenue } from "./revenue/revenue.ts"
 import { SearchConsole } from "./search-console/search-console.ts"
+import { Secrets } from "./secrets/secrets.ts"
 import { Sitemap } from "./sitemap/sitemap.ts"
 import { Sites } from "./sites/sites.ts"
 import { Storage } from "./storage/storage.ts"
@@ -29,7 +31,9 @@ import { Sync } from "./sync/sync.ts"
 
 export const AppLayer = Layer.mergeAll(
   Config.defaultLayer,
+  AppDatabase.defaultLayer,
   Catalog.defaultLayer,
+  Secrets.defaultLayer,
   CurrentSite.defaultLayer,
   Sites.defaultLayer,
   SearchConsole.defaultLayer,
