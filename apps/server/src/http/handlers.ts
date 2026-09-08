@@ -80,9 +80,23 @@ const catalogStatus = (cause: unknown): number => {
 const inEnvironment = (variable: string): boolean =>
   (Bun.env[variable] ?? "").trim() !== ""
 
-// The key slots of one scope: the purposes the site's providers call for (or
-// Ahrefs, app-wide), plus anything stored beyond those, each with its variable
+// The key slots of one scope: the purposes the site's providers call for (or the
+// app-wide vendors), plus anything stored beyond those, each with its variable
 // and stored status.
+//
+// The app-wide list is written out rather than derived, because these two are
+// not named by any Site setting: a Site says which analytics and commerce
+// provider it uses, but nothing in it mentions Ahrefs or DataForSEO. They are
+// one account each, serving every Site — a Domain Rating is a property of the
+// domain, and a Market lives on the Site while the DataForSEO account does not.
+//
+// A vendor missing from here is not a vendor without a key: it is a key with
+// nowhere to be typed. The slots are what GET /api/secrets offers, so the Mac
+// app's Settings window can only show a field for a purpose named here, and the
+// key has to live in the server's environment instead — which is what
+// CONTEXT.md rules out for a Vendor key.
+const appWideVendors = ["ahrefs", "dataforseo"] as const
+
 const secretSlots = (
   site: Site | null,
   stored: ReadonlyArray<SecretStatus>,
@@ -91,7 +105,7 @@ const secretSlots = (
     ? [site.analytics?.provider, site.revenue?.provider].filter(
         (purpose): purpose is string => purpose !== undefined,
       )
-    : ["ahrefs"]
+    : [...appWideVendors]
   const purposes = [...new Set([...wanted, ...stored.map((s) => s.purpose)])]
   return purposes.map((purpose) => {
     const variable = Secrets.variableFor(site, purpose)

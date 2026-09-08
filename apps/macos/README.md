@@ -28,7 +28,9 @@ The file is JSON:
 Sites on the left; on the right the chosen site's settings (property, origin, sitemap, brand
 terms, and the analytics and revenue provider fields) with a Save button, and one row per
 vendor key showing where it comes from (`stored ····1234`, `server env`, or `not set`) with a
-field to store a new one. "App keys" holds the Ahrefs key. Adding sites, clients, and
+field to store a new one. "App keys" holds the two account-wide vendor keys,
+Ahrefs and DataForSEO — the vendors no Site setting names, because each is one
+account serving every Site. Adding sites, clients, and
 removing keys are API-only for now (see [docs/http-api.md](../../docs/http-api.md)).
 
 ## Run
