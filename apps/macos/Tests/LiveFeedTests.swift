@@ -118,7 +118,7 @@ final class LiveFeedTests: XCTestCase {
 
         let outbound = LiveEvent(
             id: "o", at: "2026-09-08T10:21:10.000Z", kind: .outbound, name: nil, page: "/pricing",
-            properties: ["url": "https://github.com/onnokh/sleevy?tab=readme"], visitor: "v",
+            properties: ["url": "https://www.github.com/onnokh/sleevy?tab=readme"], visitor: "v",
             country: nil, browser: nil, operatingSystem: nil, device: nil, referrer: nil
         )
         let outRow = LiveFeedRow(siteID: "sleevy", siteName: "Sleevy", event: outbound)

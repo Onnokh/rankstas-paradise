@@ -39,6 +39,32 @@ final class OverviewTabState {
     /// The feed's filters: one site or all, the kinds hidden by their chips, and whether
     /// it is held still. Selections, so they survive a tab switch like the site above.
     var feedSiteID: Site.ID?
-    var hiddenKinds: Set<LiveEvent.Kind> = []
+    var feedKinds: FeedKinds = .all
     var feedPaused = false
+}
+
+/// Which kinds the feed shows: a single choice, like the site page's period.
+enum FeedKinds: String, CaseIterable, Identifiable, Sendable {
+    case all
+    case pageviews
+    case events
+
+    var id: Self { self }
+
+    var label: String {
+        switch self {
+        case .all: "All"
+        case .pageviews: "Pageviews"
+        case .events: "Events"
+        }
+    }
+
+    /// The kinds this choice hides. Events are everything that is not a page load.
+    var hidden: Set<LiveEvent.Kind> {
+        switch self {
+        case .all: []
+        case .pageviews: Set(LiveEvent.Kind.allCases).subtracting([.pageview])
+        case .events: [.pageview]
+        }
+    }
 }

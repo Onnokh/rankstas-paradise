@@ -162,7 +162,8 @@ struct LiveFeedRow: Identifiable, Equatable, Sendable {
 
     /// "github.com/onnokh/sleevy": the host and path, without the scheme and query.
     static func shortURL(_ urlString: String) -> String {
-        guard let url = URL(string: urlString), let host = url.host() else { return urlString }
+        guard let url = URL(string: urlString), let rawHost = url.host() else { return urlString }
+        let host = rawHost.hasPrefix("www.") ? String(rawHost.dropFirst(4)) : rawHost
         let path = url.path().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return path.isEmpty ? host : "\(host)/\(path)"
     }
