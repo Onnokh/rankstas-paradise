@@ -5,13 +5,17 @@
 // versioning convention): when the columns change, a schema.v2.ts is added
 // alongside this file, and the reader picks the schema by the header it sees.
 // V1 stays here, unchanged, so any existing keyword-registry.csv keeps decoding.
+//
+// V1 is no longer written. It is read, and every row is up-converted to V2 by
+// dropping its `country` cell — see schema.v2.ts for why that cell holds no
+// information the Site does not already hold.
 import { Schema } from "effect"
 
 export const REGISTRY_CSV_VERSION = 1 as const
 
-// Column order is load-bearing: it is the physical layout of every V1 row and
-// the exact header line written to disk. Do not reorder — a new order is a new
-// version.
+// Column order is load-bearing: it is the physical layout of every V1 row, and
+// the header line that identifies a V1 file on disk. Do not reorder — a new
+// order is a new version.
 export const registryColumnsV1 = [
   "cluster",
   "keyword",

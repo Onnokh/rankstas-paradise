@@ -420,7 +420,6 @@ export const buildMcpServer = (run: RunTool): McpServer => {
         cluster: z.string().optional(),
         intent: z.string().optional(),
         priority: z.string().optional(),
-        country: z.string().optional(),
         why: z.string().optional().describe("Why this is an opportunity."),
         publishedAt: z.string().optional().describe("YYYY-MM-DD."),
         baselineDate: z.string().optional().describe("YYYY-MM-DD."),
@@ -450,7 +449,6 @@ export const buildMcpServer = (run: RunTool): McpServer => {
           .object({
             cluster: z.string().optional(),
             intent: z.string().optional(),
-            country: z.string().optional(),
             priority: z.string().optional(),
             publishedAt: z.string().optional(),
             baselineDate: z.string().optional(),

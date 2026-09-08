@@ -478,7 +478,7 @@ const registryFeed = Effect.gen(function* () {
           ? [{ kind: "dkv", label: "Google coverage", value: progress.coverageState } as DetailNode]
           : []),
         { kind: "dkv", label: "Search intent", value: readableIntent(entry.intent) },
-        { kind: "dkv", label: "Registry", value: `${entry.priority || "—"} · ${entry.country} · ${keywordEntries.length} keywords` },
+        { kind: "dkv", label: "Registry", value: `${entry.priority || "—"} · ${keywordEntries.length} keywords` },
         {
           kind: "dkv",
           label: "Baseline",

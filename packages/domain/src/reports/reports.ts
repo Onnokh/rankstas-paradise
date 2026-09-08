@@ -687,7 +687,6 @@ export const layer = Layer.effect(
                         keyword: entry.keyword,
                         cluster: entry.cluster,
                         intent: entry.intent,
-                        country: entry.country,
                         ...(metric ? { demand: demandReport(metric) } : {}),
                       }
                     }),
@@ -720,7 +719,6 @@ export const layer = Layer.effect(
               targetUrl: input.target,
               intent: input.intent ?? "site-inventory",
               whyOpportunity: input.why ?? "",
-              country: input.country ?? "USA",
               priority: input.priority ?? "",
               publishedAt: input.publishedAt ?? "",
               baselineDate: input.baselineDate ?? "",
@@ -1165,7 +1163,6 @@ export const entrySummary = (entry: RegistryEntry): EntrySummary => ({
   keyword: entry.keyword,
   cluster: entry.cluster,
   intent: entry.intent,
-  country: entry.country,
   priority: entry.priority,
   publishedAt: entry.publishedAt || null,
   baselineDate: entry.baselineDate || null,

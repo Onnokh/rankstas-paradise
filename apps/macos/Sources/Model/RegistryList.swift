@@ -67,6 +67,15 @@ enum RegistryList {
             .map(\.element)
     }
 
+    /// Whether the server sent any keyword demand at all. Drives whether the screen names
+    /// the market: a market label beside no numbers would be a promise the screen does not
+    /// keep.
+    static func hasDemand(_ targets: [RegistryTarget]) -> Bool {
+        targets.contains { target in
+            target.mappedKeywords.contains { $0.demand != nil }
+        }
+    }
+
     /// How many of the pages Google reports as not indexed.
     static func unindexedCount(_ targets: [RegistryTarget]) -> Int {
         targets.filter(\.isUnindexed).count
