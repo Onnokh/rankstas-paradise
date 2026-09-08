@@ -34,48 +34,74 @@ struct LiveFeed: Equatable, Sendable {
         for event in events { byID[event.id] = event }
         for event in update.events { byID[event.id] = event }
 
-        let merged = byID.values
-            .filter { ($0.date ?? fetched) >= cutoff }
+        // Each instant is parsed once, not once per comparison: with hundreds of rows the
+        // sort was the feed's single hottest spot.
+        let dated = byID.values.map { (event: $0, date: $0.date ?? fetched) }
+        let merged = dated
+            .filter { $0.date >= cutoff }
             .sorted { left, right in
-                let leftDate = left.date ?? .distantPast
-                let rightDate = right.date ?? .distantPast
-                return leftDate != rightDate ? leftDate > rightDate : left.id > right.id
+                left.date != right.date ? left.date > right.date : left.event.id > right.event.id
             }
             .prefix(Self.limit)
+            .map { $0.event }
         return LiveFeed(windowMinutes: update.windowMinutes, events: Array(merged), fetchedAt: fetched)
     }
 }
 
-/// One row of the overview's feed: an event, and the site it happened on.
+/// One row of the overview's feed: an event, the site it happened on, and the words the row
+/// shows, worked out once here rather than every time the screen draws. The screen's rows are
+/// rebuilt on every poll, so a row's body must be trivial: text in, text out.
 struct LiveFeedRow: Identifiable, Equatable, Sendable {
     let siteID: Site.ID
     let siteName: String
     let event: LiveEvent
+    /// The clock time, in the local zone.
+    let time: String
+    /// The row's subject: the page for a pageview, the name for an event, the link for an
+    /// outbound click, the control's text for the rest.
+    let primary: String
+    /// What goes with it: where a pageview came from, an event's data, the page the rest
+    /// happened on. Nil when there is nothing to add.
+    let detail: String?
+    /// Who, as far as it is said: a country, a browser and a device.
+    let who: String
 
     var id: String { "\(siteID)|\(event.id)" }
 
+    init(siteID: Site.ID, siteName: String, event: LiveEvent) {
+        self.siteID = siteID
+        self.siteName = siteName
+        self.event = event
+        time = event.date?.formatted(date: .omitted, time: .standard) ?? "—"
+        primary = Self.primary(of: event)
+        detail = Self.detail(of: event)
+        who = [event.country.map(Self.place), event.browser, event.device?.capitalized]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+    }
+
     /// Every site's feed as one stream, newest first, kept to one site when `only` names it and
-    /// without the kinds in `hiding`. At most `limit` rows: the screen's, not the window's.
+    /// without the kinds in `hiding`. At most `limit` rows: the screen's, not the window's. The
+    /// screen draws every row it is given, so the cap is what keeps a busy site cheap.
     static func rows(
         feeds: [Site.ID: LiveFeed],
         sites: [Site],
         only siteID: Site.ID? = nil,
         hiding hidden: Set<LiveEvent.Kind> = [],
-        limit: Int = 200
+        limit: Int = 100
     ) -> [LiveFeedRow] {
-        let rows = sites
-            .filter { siteID == nil || $0.id == siteID }
-            .flatMap { site in
-                (feeds[site.id]?.events ?? [])
-                    .filter { !hidden.contains($0.kind) }
-                    .map { LiveFeedRow(siteID: site.id, siteName: site.name, event: $0) }
+        // Each instant is parsed once, beside its row, not once per comparison.
+        var dated: [(row: LiveFeedRow, date: Date)] = []
+        for site in sites where siteID == nil || site.id == siteID {
+            for event in feeds[site.id]?.events ?? [] where !hidden.contains(event.kind) {
+                let row = LiveFeedRow(siteID: site.id, siteName: site.name, event: event)
+                dated.append((row: row, date: event.date ?? .distantPast))
             }
-            .sorted { left, right in
-                let leftDate = left.event.date ?? .distantPast
-                let rightDate = right.event.date ?? .distantPast
-                return leftDate != rightDate ? leftDate > rightDate : left.id > right.id
-            }
-        return Array(rows.prefix(limit))
+        }
+        dated.sort { left, right in
+            left.date != right.date ? left.date > right.date : left.row.id > right.row.id
+        }
+        return dated.prefix(limit).map { $0.row }
     }
 
     /// How many rows of each kind the stream has before the kind filter, for the chips.
@@ -91,5 +117,59 @@ struct LiveFeedRow: Identifiable, Equatable, Sendable {
             }
         }
         return counts
+    }
+
+    // MARK: Words
+
+    static func primary(of event: LiveEvent) -> String {
+        switch event.kind {
+        case .pageview:
+            event.page
+        case .event:
+            event.name ?? "event"
+        case .outbound:
+            event.properties["url"].map(shortURL) ?? event.name ?? "Outbound link"
+        case .buttonClick, .copy, .formSubmit, .inputChange:
+            event.properties["text"] ?? event.name ?? event.kind.label
+        }
+    }
+
+    static func detail(of event: LiveEvent) -> String? {
+        switch event.kind {
+        case .pageview:
+            event.referrer.flatMap(host).map { "from \($0)" }
+        case .event:
+            data(event.properties)
+        case .outbound, .buttonClick, .copy, .formSubmit, .inputChange:
+            "on \(event.page)"
+        }
+    }
+
+    /// "🇪🇸 Spain" from an ISO code: the flag is two regional indicator symbols.
+    static func place(_ code: String) -> String {
+        let upper = code.uppercased()
+        let flag = upper.unicodeScalars
+            .compactMap { UnicodeScalar(0x1F1E6 + $0.value - 0x41) }
+            .map { String(Character($0)) }
+            .joined()
+        let name = Locale.current.localizedString(forRegionCode: upper) ?? upper
+        return upper.count == 2 ? "\(flag) \(name)" : name
+    }
+
+    static func host(_ urlString: String) -> String? {
+        URL(string: urlString)?.host()?.replacingOccurrences(of: "www.", with: "")
+    }
+
+    /// "github.com/onnokh/sleevy": the host and path, without the scheme and query.
+    static func shortURL(_ urlString: String) -> String {
+        guard let url = URL(string: urlString), let host = url.host() else { return urlString }
+        let path = url.path().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return path.isEmpty ? host : "\(host)/\(path)"
+    }
+
+    /// The first few properties as "key value" pairs; nil when there are none.
+    static func data(_ properties: [String: String]) -> String? {
+        let pairs = properties.keys.sorted().prefix(3).map { "\($0) \(properties[$0] ?? "")" }
+        return pairs.isEmpty ? nil : pairs.joined(separator: ", ")
     }
 }

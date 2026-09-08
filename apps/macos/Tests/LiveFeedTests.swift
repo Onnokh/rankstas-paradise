@@ -93,6 +93,39 @@ final class LiveFeedTests: XCTestCase {
         XCTAssertEqual(feed.events.first?.id, "e\(LiveFeed.limit + 19)")
     }
 
+    func testARowsWordsAreWorkedOutOnce() {
+        let purchase = LiveEvent(
+            id: "p", at: "2026-09-08T10:21:10.000Z", kind: .event, name: "purchase", page: "/pricing",
+            properties: ["plan": "pro", "amount": "29"], visitor: "v",
+            country: "ES", browser: "Chrome", operatingSystem: "Windows", device: "desktop", referrer: nil
+        )
+        let row = LiveFeedRow(siteID: "sleevy", siteName: "Sleevy", event: purchase)
+        XCTAssertEqual(row.primary, "purchase")
+        XCTAssertEqual(row.detail, "amount 29, plan pro")
+        XCTAssertTrue(row.who.hasSuffix("· Chrome · Desktop"))
+        XCTAssertTrue(row.who.contains("🇪🇸"))
+        XCTAssertNotEqual(row.time, "—")
+
+        let view = LiveEvent(
+            id: "v", at: "2026-09-08T10:21:10.000Z", kind: .pageview, name: nil, page: "/shaders/julia",
+            properties: [:], visitor: "v", country: nil, browser: nil, operatingSystem: nil, device: nil,
+            referrer: "https://www.x.com/onnokh/status/1"
+        )
+        let viewRow = LiveFeedRow(siteID: "sleevy", siteName: "Sleevy", event: view)
+        XCTAssertEqual(viewRow.primary, "/shaders/julia")
+        XCTAssertEqual(viewRow.detail, "from x.com")
+        XCTAssertEqual(viewRow.who, "")
+
+        let outbound = LiveEvent(
+            id: "o", at: "2026-09-08T10:21:10.000Z", kind: .outbound, name: nil, page: "/pricing",
+            properties: ["url": "https://github.com/onnokh/sleevy?tab=readme"], visitor: "v",
+            country: nil, browser: nil, operatingSystem: nil, device: nil, referrer: nil
+        )
+        let outRow = LiveFeedRow(siteID: "sleevy", siteName: "Sleevy", event: outbound)
+        XCTAssertEqual(outRow.primary, "github.com/onnokh/sleevy")
+        XCTAssertEqual(outRow.detail, "on /pricing")
+    }
+
     func testRowsMergeSitesNewestFirstAndHonourTheFilters() {
         let sleevy = Site(id: "sleevy", name: "Sleevy", origin: "https://sleevy.com")
         let mounts = Site(id: "mounts", name: "Missing Mounts", origin: "https://missingmounts.com")
@@ -123,5 +156,27 @@ final class LiveFeedTests: XCTestCase {
         // Chip counts ignore the kind filter and follow the site filter.
         XCTAssertEqual(LiveFeedRow.kindCounts(feeds: feeds, sites: [sleevy, mounts]), [.pageview: 2, .event: 1])
         XCTAssertEqual(LiveFeedRow.kindCounts(feeds: feeds, sites: [sleevy, mounts], only: sleevy.id), [.pageview: 1, .event: 1])
+    }
+}
+
+final class RelativeAgeTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    func testInsideAMinuteIsJustNow() {
+        XCTAssertEqual(RelativeAge.label(from: now, to: now), "just now")
+        XCTAssertEqual(RelativeAge.label(from: now.addingTimeInterval(-59), to: now), "just now")
+    }
+
+    func testWholeMinutesUpToAnHour() {
+        XCTAssertEqual(RelativeAge.label(from: now.addingTimeInterval(-60), to: now), "1m ago")
+        XCTAssertEqual(RelativeAge.label(from: now.addingTimeInterval(-149), to: now), "2m ago")
+        XCTAssertEqual(RelativeAge.label(from: now.addingTimeInterval(-3599), to: now), "59m ago")
+    }
+
+    func testAnHourOrMoreHandsBackToTheClock() {
+        XCTAssertNil(RelativeAge.label(from: now.addingTimeInterval(-3600), to: now))
+        let shown = RelativeAge.labelOrTime(from: now.addingTimeInterval(-7200), to: now)
+        XCTAssertNotEqual(shown, "just now")
+        XCTAssertFalse(shown.hasSuffix("ago"))
     }
 }

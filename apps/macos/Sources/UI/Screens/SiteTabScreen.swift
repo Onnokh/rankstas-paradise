@@ -330,7 +330,12 @@ struct SiteTabScreen: View {
                     .controlSize(.small)
             }
             if let generated = Self.instant(overview.dashboard?.generatedAt) {
-                Text("Updated ") + Text(generated, style: .relative) + Text(" ago")
+                // Ticks from a coarse timeline, not SwiftUI's relative date text: that style
+                // asks for a new frame continuously and costs a fifth of a core while idle.
+                TimelineView(.periodic(from: .now, by: 15)) { context in
+                    Text("Updated \(RelativeAge.label(from: generated, to: context.date) ?? "at \(generated.formatted(date: .omitted, time: .shortened))")")
+                        .help(generated.formatted(date: .abbreviated, time: .standard))
+                }
             }
         }
         .font(.callout)

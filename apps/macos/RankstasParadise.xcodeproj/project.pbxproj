@@ -52,6 +52,7 @@
 		E5563277B4AAEF923CCF3024 /* OverviewStartupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EECC279489F2799FC2058D9 /* OverviewStartupTests.swift */; };
 		E6BE7E42DE600F1584F97274 /* PeekProgressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CBE8B0CA6B44C981EE7AE2F /* PeekProgressTests.swift */; };
 		EAFDF604EC61E9E9F81803FB /* SiteSettingsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 263902669DFF0DA465682E2B /* SiteSettingsPage.swift */; };
+		F031E639C1AC38B117298F75 /* RelativeAge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F478A66E4FE597CBECAE492 /* RelativeAge.swift */; };
 		F07371239B0261E7ADCCB0CD /* ViewCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 820003955844F9BAB8BE154E /* ViewCommands.swift */; };
 		F2C353C4EC9A4DB3CA3DA527 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06C1CFB614C75E739336B236 /* APIClient.swift */; };
 		F9BE1413FD53E51A943A6613 /* TabID.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31326E990B111E0658AB101D /* TabID.swift */; };
@@ -90,6 +91,7 @@
 		61874C20B6B2BCAFB1667A61 /* OverviewRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewRepository.swift; sourceTree = "<group>"; };
 		6DC0C05A557F466F42DC086B /* Headband.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Headband.swift; sourceTree = "<group>"; };
 		7A62C64B20653DBC3179A840 /* SettingsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsModelTests.swift; sourceTree = "<group>"; };
+		7F478A66E4FE597CBECAE492 /* RelativeAge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelativeAge.swift; sourceTree = "<group>"; };
 		808292EC68DF3F3F1372857D /* ThreeFingerDragRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreeFingerDragRecognizer.swift; sourceTree = "<group>"; };
 		820003955844F9BAB8BE154E /* ViewCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewCommands.swift; sourceTree = "<group>"; };
 		873FA0566A88AA3A04250DF4 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -157,6 +159,7 @@
 				61874C20B6B2BCAFB1667A61 /* OverviewRepository.swift */,
 				50CD5971030788D8D00BC8D9 /* PeriodStats.swift */,
 				D48AE16DAFEBEDC4046EDBF1 /* RankingStore.swift */,
+				7F478A66E4FE597CBECAE492 /* RelativeAge.swift */,
 				D47884F5C76365B32D976D91 /* RemoteTarget.swift */,
 				A33B8C6DA2F4312E7BD1B2EE /* SettingsModel.swift */,
 				180FE48DAA2E1B49D9795319 /* SettingsModels.swift */,
@@ -390,6 +393,7 @@
 				7B63796B1698692B64A36D1F /* PeriodStats.swift in Sources */,
 				9D1607CB25A2C156E018F215 /* RankingStore.swift in Sources */,
 				FCF8BB7FA387F8E6EF75DE9C /* RankstasParadiseApp.swift in Sources */,
+				F031E639C1AC38B117298F75 /* RelativeAge.swift in Sources */,
 				BC6BF8F8C2FBC906EC76D8D1 /* RemoteTarget.swift in Sources */,
 				AAA57221A6143D5011DA8867 /* RootView.swift in Sources */,
 				49747DECBAF0F2C43A75D190 /* SettingsModel.swift in Sources */,
