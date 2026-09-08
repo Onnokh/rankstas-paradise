@@ -36,7 +36,7 @@ final class KeywordDemandTests: XCTestCase {
     }
 
     func testAVolumeIsRoundedToWholeSearches() {
-        // The vendor sends a twelve-month average, so it arrives fractional. Half a search
+        // The vendor averages the newest twelve months, so it arrives fractional. Half a search
         // a month is not a number worth showing.
         XCTAssertEqual(demand(searchVolume: 480.4).volumeLabel, "480/mo")
         XCTAssertEqual(demand(difficulty: 30.7).difficultyLabel, "KD 31")

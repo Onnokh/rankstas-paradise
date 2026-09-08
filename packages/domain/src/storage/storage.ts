@@ -20,6 +20,7 @@ import {
 import {
   foldKeyword,
   type KeywordMetric,
+  type KeywordMetricSummary,
   type MonthlySearch,
 } from "../keyword-metrics/schema.ts"
 import { type RevenueDay } from "../revenue/schema.ts"
@@ -185,15 +186,27 @@ export interface Interface {
     { readonly rating: number; readonly fetchedAt: string; readonly license: string } | null,
     StorageError
   >
-  // Every stored Keyword metric for one Market, keyword order. Reads only what
-  // is on disk and never reaches DataForSEO, so a report can join volume onto
-  // its rows without a caller waiting on a third party. A Market change leaves
-  // the old Market's rows in place and simply stops reading them, so switching
-  // back does not have to be paid for twice.
+  // Every stored Keyword metric for one Market, keyword order, WITHOUT the
+  // monthly series. Reads only what is on disk and never reaches DataForSEO, so
+  // a report can join volume onto its rows without a caller waiting on a third
+  // party. A Market change leaves the old Market's rows in place and simply
+  // stops reading them, so switching back does not have to be paid for twice.
+  //
+  // The series is left behind on purpose. DataForSEO returns about 94 months a
+  // keyword, and the Opportunity digest calls this on every dashboard load to
+  // use three scalars — decoding the series here would parse megabytes of JSON
+  // that no caller reads. It stays in the column for the surface that wants it.
   readonly keywordMetrics: (
     locationCode: number,
     languageCode: string,
-  ) => Effect.Effect<ReadonlyArray<KeywordMetric>, StorageError>
+  ) => Effect.Effect<ReadonlyArray<KeywordMetricSummary>, StorageError>
+  // The stored monthly series for one Market, keyed by folded keyword. Read
+  // separately from the scalars above because this is the part that costs
+  // something: it is the whole eight-year history DataForSEO sends.
+  readonly keywordMonthlySearches: (
+    locationCode: number,
+    languageCode: string,
+  ) => Effect.Effect<ReadonlyMap<string, ReadonlyArray<MonthlySearch>>, StorageError>
   // The stored Domain Rating series, oldest first.
   readonly domainRatingHistory: (
     limit?: number,
@@ -1394,6 +1407,8 @@ export const layer = Layer.effect(
         }),
       )
 
+    // `monthly_searches` is not in the select list, so the ~94 months a row
+    // holds are never read off the disk, let alone parsed.
     const keywordMetricsI = (locationCode: number, languageCode: string) =>
       Effect.gen(function* () {
         const rows = yield* sql<{
@@ -1403,7 +1418,6 @@ export const layer = Layer.effect(
           costPerClick: number | null
           competition: number | null
           intent: string | null
-          monthlySearches: string
           fetchedAt: string
         }>`
           select keyword,
@@ -1412,7 +1426,6 @@ export const layer = Layer.effect(
                  cost_per_click as "costPerClick",
                  competition,
                  intent,
-                 monthly_searches as "monthlySearches",
                  fetched_at as "fetchedAt"
           from keyword_metric
           where location_code = ${locationCode} and language_code = ${languageCode}
@@ -1421,12 +1434,29 @@ export const layer = Layer.effect(
           ...row,
           locationCode,
           languageCode,
-          // A row this domain wrote always holds a JSON array. A row it cannot
-          // parse reads as no history rather than failing the whole read: the
-          // series is supplementary, and losing it must not cost a caller the
-          // volume it came for.
-          monthlySearches: parseMonthlySearches(row.monthlySearches),
-        })) as ReadonlyArray<KeywordMetric>
+        })) as ReadonlyArray<KeywordMetricSummary>
+      })
+
+    // The monthly series for one Market, keyed by folded keyword. Its own read
+    // because it is the expensive part: about 94 months a keyword, and only the
+    // surfaces that answer a seasonality or trend question want it.
+    const keywordMonthlySearchesI = (locationCode: number, languageCode: string) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{ keyword: string; monthlySearches: string }>`
+          select keyword, monthly_searches as "monthlySearches"
+          from keyword_metric
+          where location_code = ${locationCode} and language_code = ${languageCode}
+          order by keyword`
+        return new Map(
+          rows.map((row) => [
+            row.keyword,
+            // A row this domain wrote always holds a JSON array. A row it
+            // cannot parse reads as no history rather than failing the whole
+            // read: the series is supplementary, and losing it must not cost a
+            // caller the answer it came for.
+            parseMonthlySearches(row.monthlySearches),
+          ]),
+        ) as ReadonlyMap<string, ReadonlyArray<MonthlySearch>>
       })
 
     const savePageIndexStatusesI = (statuses: ReadonlyArray<PageIndexStatus>) =>
@@ -1927,6 +1957,10 @@ export const layer = Layer.effect(
         ),
       keywordMetrics: (locationCode, languageCode) =>
         keywordMetricsI(locationCode, languageCode).pipe(mapErr("keywordMetrics")),
+      keywordMonthlySearches: (locationCode, languageCode) =>
+        keywordMonthlySearchesI(locationCode, languageCode).pipe(
+          mapErr("keywordMonthlySearches"),
+        ),
       saveDomainRating: (rating, fetchedAt, license) =>
         saveDomainRatingI(rating, fetchedAt, license).pipe(
           Effect.asVoid,

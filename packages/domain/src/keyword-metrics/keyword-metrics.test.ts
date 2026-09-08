@@ -114,13 +114,18 @@ const storageStub = (store: Store) =>
             metric,
           )
       }),
+    // Strips the monthly series, because the real Storage does: it is not in
+    // that read's select list. A stub that handed the series back would let a
+    // caller depend on a field production never sends.
     keywordMetrics: (locationCode, languageCode) =>
       Effect.sync(() =>
-        [...store.values()].filter(
-          (metric) =>
-            metric.locationCode === locationCode &&
-            metric.languageCode === languageCode,
-        ),
+        [...store.values()]
+          .filter(
+            (metric) =>
+              metric.locationCode === locationCode &&
+              metric.languageCode === languageCode,
+          )
+          .map(({ monthlySearches: _series, ...scalars }) => scalars),
       ),
   })
 
@@ -177,7 +182,10 @@ test("refresh asks Labs, stores the answer, and cached reads it back", async () 
   expect(metric?.costPerClick).toBe(1.25)
   expect(metric?.competition).toBe(0.42)
   expect(metric?.intent).toBe("informational")
-  expect(metric?.monthlySearches).toHaveLength(2)
+  // `cached` carries scalars only. The series is stored and read separately;
+  // see Storage.keywordMonthlySearches.
+  expect(metric).not.toHaveProperty("monthlySearches")
+  expect(store.get("wow mount tracker|2840|en")?.monthlySearches).toHaveLength(2)
 })
 
 test("no API key yields no metrics and never calls DataForSEO", async () => {

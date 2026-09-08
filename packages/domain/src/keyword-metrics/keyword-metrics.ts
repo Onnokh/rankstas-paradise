@@ -8,9 +8,9 @@
 // numbers are already on disk.
 //
 // Unlike the Domain Rating this store is a cache, not a ledger. Every number
-// here can be asked for again, and `searchVolume` is a rolling twelve-month
-// average rather than a reading of one day, so an old row is stale rather than
-// historical. That is why `refresh` re-asks after `refreshAfterDays` and
+// here can be asked for again, and `searchVolume` is an average of the newest
+// twelve months rather than a reading of one day, so an old row is stale rather
+// than historical. That is why `refresh` re-asks after `refreshAfterDays` and
 // overwrites, where DomainRating accumulates.
 //
 // The whole feature is optional. With no API key configured, `refresh` is a
@@ -34,7 +34,7 @@ import { DataForSeo } from "./dataforseo.ts"
 import { Market } from "./market.ts"
 import {
   foldKeyword as fold,
-  type KeywordMetric,
+  type KeywordMetricSummary,
   type KeywordMetricsRefresh,
   KeywordMetricsError,
   UnservedMarketError,
@@ -42,10 +42,12 @@ import {
 
 export interface Interface {
   // Every stored metric for the Site's Market, keyed by the folded keyword.
+  // Scalars only — the monthly series is not read here; see
+  // Storage.keywordMonthlySearches for why.
   // Never reaches the network and never fails — this is what report reads call,
   // and volume is supplementary: its absence, for any reason, must not cost a
   // caller the report it came for.
-  readonly cached: () => Effect.Effect<ReadonlyMap<string, KeywordMetric>>
+  readonly cached: () => Effect.Effect<ReadonlyMap<string, KeywordMetricSummary>>
   // Ask DataForSEO about the candidates that have no fresh answer, and store
   // what comes back. Returns null when no API key is configured, so an
   // unconfigured deployment simply has no volume. Candidates are folded,
@@ -66,9 +68,9 @@ export class Service extends Context.Service<Service, Interface>()(
 export const use = serviceUse(Service)
 
 // How long a stored answer is treated as current. Thirty days because that is
-// the shape of the data: DataForSEO reports a twelve-month average, so one
-// month of drift moves it by at most a twelfth, and asking more often buys
-// noise at full price. It is deliberately not a Sync constant — this is how
+// the shape of the data: DataForSEO's headline volume averages the newest
+// twelve months, so one month of drift moves it by at most a twelfth, and
+// asking more often buys noise at full price. It is deliberately not a Sync constant — this is how
 // long the vendor's answer stays true, not how often we choose to sync.
 export const refreshAfterDays = 30
 
@@ -126,12 +128,16 @@ export const layer = Layer.effect(
         Effect.gen(function* () {
           const site = yield* currentSite.current()
           const resolved = site.market
-          if (!resolved) return new Map<string, KeywordMetric>()
+          if (!resolved) return new Map<string, KeywordMetricSummary>()
           // An unreadable store reads as "no metrics yet" rather than an error,
           // for the reason given on the interface.
           const rows = yield* storage
             .keywordMetrics(resolved.locationCode, resolved.languageCode)
-            .pipe(Effect.catchCause(() => Effect.succeed([] as ReadonlyArray<KeywordMetric>)))
+            .pipe(
+              Effect.catchCause(() =>
+                Effect.succeed([] as ReadonlyArray<KeywordMetricSummary>),
+              ),
+            )
           return new Map(rows.map((row) => [row.keyword, row]))
         }),
 
