@@ -119,6 +119,12 @@ export const KeywordMetricsRefresh = Schema.Struct({
   asked: Schema.Number,
   // Keywords DataForSEO answered for. Lower than `asked` when it has no data.
   answered: Schema.Number,
+  // Keywords it was asked about and said nothing at all about — no row, not a
+  // row with a null volume. Recorded as asked-and-unreported rather than left
+  // absent, because an absent row reads as "never asked", which is a different
+  // and wrong statement, and because it would be re-asked and re-billed on
+  // every sync for ever.
+  unreported: Schema.Number,
   // Requests actually sent, each one billed.
   requests: Schema.Number,
 }).annotate({ identifier: "KeywordMetricsRefresh" })
