@@ -88,6 +88,7 @@ Write commands:
 Google commands (queued as server jobs):
   sync                            Fetch missing finalized days and reconcile recent ones.
   backfill [--months N]           One-time history fetch (Search Console retains ~16 months).
+  backfill-visits [--months N]    One-time visits fetch from the analytics provider.
 
 Fields: dates are YYYY-MM-DD; CSV fields must not contain commas.`
 
@@ -195,6 +196,7 @@ export const runCli = async (args: readonly string[]): Promise<number> => {
         case "log": return commandLog(flags, positional, siteId)
         case "sync": return ApiClient.use.syncJob(siteId)
         case "backfill": return ApiClient.use.backfillJob(numberFlag(flags, "months") ?? 16, siteId)
+        case "backfill-visits": return ApiClient.use.backfillVisitsJob(numberFlag(flags, "months") ?? 6, siteId)
         default: throw new Error(`Unknown command: ${command}. Run "bun run seo help" for usage.`)
       }
     }

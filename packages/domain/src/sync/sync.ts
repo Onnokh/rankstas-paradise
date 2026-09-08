@@ -25,6 +25,12 @@ export interface Interface {
   readonly backfillSearchConsole: (
     months?: number,
   ) => Effect.Effect<string, SyncError>
+  // The visits twin: re-fetch `months` of days from the site's analytics
+  // provider, reaching back past the ledger's first day. Returns a
+  // human-readable summary, or says so for a site with no provider.
+  readonly backfillVisits: (
+    months?: number,
+  ) => Effect.Effect<string, SyncError>
   // Re-fetch the day in progress from the site's analytics provider (the
   // daily rows for today plus its hours) and from its commerce provider
   // (today's sales) and write them into the ledger. Meant to run every few
@@ -105,10 +111,21 @@ const revenueFirstRunDays = 365
 const backfillChunkSize = 30
 const backfillFetchConcurrency = 3
 
-const chunked = <A>(items: ReadonlyArray<A>): Array<ReadonlyArray<A>> => {
+// The visits backfill chunks only to bound memory and to keep one transaction
+// from covering the whole range: a chunk that lands is history that survives a
+// later failure. An analytics provider is asked one day at a time whatever the
+// chunk, and the adapter already paces those calls, so chunks run one after
+// another rather than in parallel — two of them at once would multiply the
+// in-flight requests the adapter was tuned for.
+const visitsBackfillChunkSize = 30
+
+const chunked = <A>(
+  items: ReadonlyArray<A>,
+  size: number,
+): Array<ReadonlyArray<A>> => {
   const chunks: Array<ReadonlyArray<A>> = []
-  for (let index = 0; index < items.length; index += backfillChunkSize)
-    chunks.push(items.slice(index, index + backfillChunkSize))
+  for (let index = 0; index < items.length; index += size)
+    chunks.push(items.slice(index, index + size))
   return chunks
 }
 
@@ -407,7 +424,7 @@ export const layer = Layer.effect(
       const writeLock = yield* Semaphore.make(1)
 
       const savedPerChunk = yield* Effect.forEach(
-        chunked(missingSnapshots),
+        chunked(missingSnapshots, backfillChunkSize),
         (dates) =>
           Effect.gen(function* () {
             const rows =
@@ -420,7 +437,7 @@ export const layer = Layer.effect(
       const savedRows = savedPerChunk.reduce((total, count) => total + count, 0)
 
       yield* Effect.forEach(
-        chunked(missingTotals),
+        chunked(missingTotals, backfillChunkSize),
         (dates) =>
           Effect.gen(function* () {
             const totals = yield* searchConsole.fetchDailyTotals(dates)
@@ -432,6 +449,67 @@ export const layer = Layer.effect(
       )
 
       return `Backfilled ${missingSnapshots.length} days (${savedRows} rows) and daily totals for ${missingTotals.length} days back to ${retentionStart}; current through ${finalizedThrough}.`
+    })
+
+    // The visits twin of runBackfill. Two things separate it from syncVisits.
+    // It reaches back past the ledger's first day, where syncVisits starts at
+    // it — the daily sync grows the series forward and can never widen it
+    // backwards. And it re-fetches every day in the range rather than only the
+    // days with no row: a day the provider had nothing for when it was first
+    // synced is stored as zeros, not left absent, so "the missing days" would
+    // skip exactly the days a backfill is asked to repair. saveVisits upserts,
+    // so re-fetching a day that was already right costs a write and changes
+    // nothing.
+    const runVisitsBackfill = Effect.fn("Sync.backfillVisits")(function* (
+      months: number,
+    ) {
+      // Same reason as the Search Console backfill: the debug database is
+      // pre-seeded, and a real fetch would pollute it.
+      if (yield* config.debugMode()) {
+        return yield* Effect.fail(
+          new SyncError({
+            message:
+              "Backfill is unavailable in debug mode; the debug database already contains its full fake history.",
+          }),
+        )
+      }
+
+      const status = yield* analytics.status()
+      // No provider is not a failure anywhere else in the domain, and asking
+      // for a backfill should not be the one place it becomes one.
+      if (!status) {
+        return "This site has no analytics provider, so there are no visits to backfill."
+      }
+      // A provider that is configured but unusable fails loudly here. The daily
+      // sync forks and swallows that, because a bad key must not cost the site
+      // its Search Console refresh; a backfill was asked for on its own, so its
+      // caller is owed the reason.
+      if (!status.ready) {
+        return yield* Effect.fail(
+          new SyncError({
+            message: `The ${status.provider} analytics provider is not ready: ${status.reason ?? "no reason given"}.`,
+          }),
+        )
+      }
+
+      const local = yield* analytics.localDay()
+      const newest = newestVisitsDate(local?.date)
+      const start = dateDaysBefore(newest, Math.round(months * 30.4) - 1)
+      const dates = datesBetween(start, newest)
+
+      const saved = yield* Effect.forEach(
+        chunked(dates, visitsBackfillChunkSize),
+        (chunk) =>
+          Effect.gen(function* () {
+            const visits = yield* analytics.fetchVisits(chunk)
+            yield* storage.saveVisits(visits, chunk, status.provider)
+            return visits.site.reduce((total, day) => total + day.visits, 0)
+          }),
+        { concurrency: 1 },
+      )
+      const visits = saved.reduce((total, count) => total + count, 0)
+
+      return `Backfilled ${dates.length} days of visits from ${status.provider}, ${start} to ${newest}: ${visits} visits.`
     })
 
     // Wrap any dependency failure as a SyncError (without double-wrapping the
@@ -447,6 +525,10 @@ export const layer = Layer.effect(
       backfillSearchConsole: (months = 16) =>
         runBackfill(months).pipe(
           Effect.mapError(toSyncError("The Search Console backfill failed.")),
+        ),
+      backfillVisits: (months = 6) =>
+        runVisitsBackfill(months).pipe(
+          Effect.mapError(toSyncError("The visits backfill failed.")),
         ),
       syncToday: () =>
         runToday().pipe(Effect.mapError(toSyncError("The today sync failed."))),

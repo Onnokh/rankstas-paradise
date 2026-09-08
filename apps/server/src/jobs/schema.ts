@@ -5,9 +5,11 @@ import { Schema } from "effect"
 
 import { SiteId } from "@rp/domain/sites/schema"
 
-// The two Google-touching jobs. Each uses delete-then-insert transactions that
-// must not interleave — hence the single-job lock in the service.
-export const JobName = Schema.Literals(["sync", "backfill"])
+// The three background jobs. Each uses delete-then-insert transactions that
+// must not interleave — hence the single-job lock in the service. Two of them
+// touch Google; `backfill-visits` touches the site's analytics provider, and
+// shares the lock because it writes the same ledger the daily sync does.
+export const JobName = Schema.Literals(["sync", "backfill", "backfill-visits"])
 export type JobName = typeof JobName.Type
 
 // A job is running until its background work settles, then done or failed.

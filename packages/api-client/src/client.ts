@@ -130,6 +130,10 @@ export interface Interface {
     months?: number,
     site?: SiteId,
   ) => Effect.Effect<JobResponse, ApiError>
+  readonly backfillVisitsJob: (
+    months?: number,
+    site?: SiteId,
+  ) => Effect.Effect<JobResponse, ApiError>
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -392,6 +396,16 @@ export const layer = Layer.effect(
         site?: SiteId,
       ) {
         return yield* send("POST", "/api/jobs/backfill", JobResponse, {
+          query: { site },
+          body: { months },
+        })
+      }),
+
+      backfillVisitsJob: Effect.fn("ApiClient.backfillVisitsJob")(function* (
+        months?: number,
+        site?: SiteId,
+      ) {
+        return yield* send("POST", "/api/jobs/backfill-visits", JobResponse, {
           query: { site },
           body: { months },
         })

@@ -9,7 +9,7 @@
 //   - fire-and-forget `work().then(...)`             -> `Effect.forkDetach`
 //   - `maybeEnqueueSync` (freshness + in-flight gate) -> a `Cache` with TTL
 //
-// Google-touching jobs (sync, backfill) use delete-then-insert transactions
+// Every job (sync, backfill, backfill-visits) uses delete-then-insert transactions
 // that must not interleave, so at most one runs at a time; a second `startJob`
 // fails fast with `JobAlreadyRunningError` (the 409 signal).
 import {

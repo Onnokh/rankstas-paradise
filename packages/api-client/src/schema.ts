@@ -52,7 +52,7 @@ export {
   StatusReport,
 }
 
-// A queued or settled background job (POST /api/jobs/sync|backfill, GET
+// A queued or settled background job (POST /api/jobs/sync|backfill|backfill-visits, GET
 // /api/jobs). Mirrors the server's Job shape (which isn't exported as a schema).
 export const SyncJob = Schema.Struct({
   id: Schema.Number,
@@ -78,7 +78,7 @@ export const JobsResponse = Schema.Struct({
 }).annotate({ identifier: "JobsResponse" })
 export interface JobsResponse extends Schema.Schema.Type<typeof JobsResponse> {}
 
-// POST /api/jobs/sync|backfill — the single queued job.
+// POST /api/jobs/sync|backfill|backfill-visits — the single queued job.
 export const JobResponse = Schema.Struct({
   job: SyncJob,
 }).annotate({ identifier: "JobResponse" })

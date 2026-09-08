@@ -203,6 +203,19 @@ const noAnalyticsMock = Layer.mock(Analytics.Service)({
   localDay: () => Effect.succeed(null),
 })
 
+// A configured provider that cannot be used at all — no key, a bad site id.
+// `status` says why, and nothing is ever fetched.
+const notReadyAnalyticsMock = Layer.mock(Analytics.Service)({
+  status: () =>
+    Effect.succeed({
+      provider: "fake",
+      siteId: "1",
+      ready: false,
+      reason: "no API key",
+    }),
+  localDay: () => Effect.succeed(null),
+})
+
 // A configured provider whose every fetch fails (a wrong key, a vendor outage).
 const failingAnalyticsMock = Layer.mock(Analytics.Service)({
   status: () =>
@@ -524,5 +537,81 @@ test("a failed sync advances neither instant", async () => {
     expect(await failing.runPromise(Storage.use.latestCheckedAt())).toBeNull()
   } finally {
     await failing.dispose()
+  }
+})
+
+// --- the visits backfill ----------------------------------------------------
+
+test("the visits backfill reaches back past the ledger's first day", async () => {
+  // The daily sync starts the series at its first run and only grows it
+  // forward — `syncVisits` takes its range start from the ledger itself — so a
+  // backfill is the only way the earlier days ever arrive.
+  await run(Sync.use.syncSearchConsole())
+  expect((await run(Storage.use.visitsSummary())).firstDate).toBe(daysAgo(28))
+
+  const summary = await run(Sync.use.backfillVisits(3))
+  expect(summary).toContain("91 days of visits from fake")
+
+  const after = await run(Storage.use.visitsSummary())
+  expect(after.firstDate).toBe(daysAgo(91))
+  expect(after.lastDate).toBe(daysAgo(1))
+  expect(after.days).toBe(91)
+
+  // 91 days go to the provider in chunks of 30, one chunk at a time, on top of
+  // the daily sync's single 28-day call.
+  expect(recorder.visitFetches).toHaveLength(5)
+  expect(recorder.visitFetches.slice(1).map((dates) => dates.length)).toEqual([
+    30, 30, 30, 1,
+  ])
+})
+
+test("the visits backfill re-fetches days the ledger already holds, zeros included", async () => {
+  await run(Sync.use.syncSearchConsole())
+
+  // A day the provider had nothing for is stored as zeros, not left absent, so
+  // it never counts as missing and the daily sync will not look at it again.
+  // Repairing exactly that day is what the backfill is for, so it asks for its
+  // whole range rather than only the gaps.
+  const db = new Database(dbPath)
+  db.run(
+    `update analytics_site_daily set pageviews = 0, visits = 0, visitors = 0 where date = '${daysAgo(5)}'`,
+  )
+  db.run(`delete from analytics_page_daily where date = '${daysAgo(5)}'`)
+  db.close()
+  expect((await run(Storage.use.visitsOfDay(daysAgo(5)))).site[0]).toMatchObject({
+    visits: 0,
+  })
+
+  await run(Sync.use.backfillVisits(1))
+
+  const repaired = await run(Storage.use.visitsOfDay(daysAgo(5)))
+  expect(repaired.site[0]).toMatchObject({ pageviews: 20, visits: 10, visitors: 8 })
+  expect(repaired.pages).toHaveLength(1)
+})
+
+test("a site without analytics says so rather than failing the backfill", async () => {
+  const quiet = makeRuntime(dir, dbPath, recorder, searchConsoleMock(recorder), noAnalyticsMock)
+  try {
+    expect(await quiet.runPromise(Sync.use.backfillVisits(6))).toContain(
+      "no analytics provider",
+    )
+    expect(recorder.visitFetches).toHaveLength(0)
+  } finally {
+    await quiet.dispose()
+  }
+})
+
+test("a provider that is not ready fails the backfill with its reason", async () => {
+  // The daily sync forks the visits refresh and swallows this, so a bad key
+  // cannot cost a site its Search Console run. A backfill was asked for on its
+  // own, so its caller is owed the reason instead of an empty success.
+  const broken = makeRuntime(dir, dbPath, recorder, searchConsoleMock(recorder), notReadyAnalyticsMock)
+  try {
+    const exit = await broken.runPromiseExit(Sync.use.backfillVisits(1))
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect(JSON.stringify(exit)).toContain("no API key")
+    expect(recorder.visitFetches).toHaveLength(0)
+  } finally {
+    await broken.dispose()
   }
 })

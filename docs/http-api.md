@@ -76,6 +76,13 @@ built against an older server keeps decoding:
 Visits have no finalization lag: the newest stored day is yesterday (UTC), and
 the last two days are re-fetched on each sync.
 
+The daily sync grows the series forward from wherever it starts, and cannot
+widen it backwards: its range begins at the ledger's own first day, and a day
+already stored — including one stored as zeros because the provider had nothing
+for it then — never counts as missing again. `POST /api/jobs/backfill-visits`
+is how the earlier days arrive, and how a day the provider has since corrected
+is repaired. It re-fetches every day in its range rather than only the gaps.
+
 `GET /api/live` is the exception to "read endpoints never call out": it asks
 the provider how many distinct people were active in the last 30 minutes and
 answers `{ analytics, live: { visitors, windowMinutes, online, onlineWindowMinutes,
@@ -150,10 +157,11 @@ Bodies use `SiteSettings` (`packages/domain/src/config/schema.ts`): `siteUrl` (t
 - `PATCH /api/registry` — body: `{ target, keyword?, patch: RegistryPatch }`.
 - `POST /api/log` — body: `{ path, kind, date?, note? }`.
 
-## Jobs (Google-touching, asynchronous)
+## Jobs (asynchronous)
 
 - `POST /api/jobs/sync?site=<id>` → `202` with the job record, or `409` if a job is already running. One job at a time — syncs use delete-then-insert transactions that must not interleave.
-- `POST /api/jobs/backfill?site=<id>` — body: `{ months? }` (default 16).
+- `POST /api/jobs/backfill?site=<id>` — body: `{ months? }` (default 16). Search Console history.
+- `POST /api/jobs/backfill-visits?site=<id>` — body: `{ months? }` (default 6). Visits history from the site's analytics provider. Answers `202` with a summary saying so when the site has no provider; fails the job when it has one that is not ready.
 - `GET /api/jobs?site=<id>` — job history for this server process (in-memory). `site` is optional here, unlike the other site-scoped routes: omitting it falls back to the first configured site.
 
 ## Native app format
