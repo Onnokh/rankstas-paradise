@@ -3,6 +3,7 @@
 import { Schema } from "effect"
 
 import { ConfigAnalytics } from "../analytics/schema.ts"
+import { ConfigRevenue } from "../revenue/schema.ts"
 
 // One entry in the `sites` catalog of config.json. Only `id` and `siteUrl` are
 // required; the rest are derived (see the Sites domain) when omitted.
@@ -17,6 +18,10 @@ export const ConfigSite = Schema.Struct({
   // no analytics and every report simply omits visits. The API key is NOT here:
   // like the Ahrefs key it lives in the environment, read by the adapter.
   analytics: Schema.optional(ConfigAnalytics),
+  // The site's commerce provider, one per site, on the same terms: absent
+  // means no revenue, and the key lives in the environment under the variable
+  // `keyVariable` names (default `<PROVIDER>_API_KEY`).
+  revenue: Schema.optional(ConfigRevenue),
 }).annotate({ identifier: "ConfigSite" })
 export interface ConfigSite extends Schema.Schema.Type<typeof ConfigSite> {}
 

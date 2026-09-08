@@ -90,6 +90,69 @@ struct EventRow: Codable, Sendable, Equatable, Identifiable {
     var id: String { name }
 }
 
+/// `/api/revenue`: the site's sales over a window against the window before, from the server's
+/// ledger. Amounts arrive in the currency's minor unit (cents); `Money` shows them.
+struct RevenueReport: Codable, Sendable, Equatable {
+    let generatedAt: String
+    /// Nil when the site has no commerce provider.
+    let revenue: RevenueStatus?
+    let windowDays: Int
+    /// Nil until a row exists.
+    let currency: String?
+    /// The current window's synced days, oldest first. A day never synced is absent.
+    let days: [RevenueDay]
+    let current: RevenueTotals
+    let previous: RevenueTotals
+    let delta: RevenueTotals
+}
+
+struct RevenueStatus: Codable, Sendable, Equatable {
+    let provider: String
+    let accountId: String?
+    let ready: Bool
+    let reason: String?
+}
+
+struct RevenueDay: Codable, Sendable, Equatable, Identifiable {
+    let date: String
+    let orders: Double
+    /// What customers paid, in minor units.
+    let revenue: Double
+    /// Revenue less refunds, in minor units.
+    let net: Double
+    let currency: String
+
+    var id: String { date }
+
+    /// The day as a point in time (noon UTC), for plotting.
+    var day: Date {
+        (ISODay.date(date) ?? .distantPast).addingTimeInterval(12 * 3600)
+    }
+}
+
+struct RevenueTotals: Codable, Sendable, Equatable {
+    let orders: Double
+    let revenue: Double
+    let net: Double
+}
+
+/// Amounts in a currency's minor unit, shown in the currency.
+enum Money {
+    /// "$1,234.50" — or, for a currency the report has not named, a plain number of units.
+    static func format(_ minorUnits: Double, currency: String?) -> String {
+        let units = minorUnits / 100
+        guard let currency else {
+            return units.formatted(.number.precision(.fractionLength(2)))
+        }
+        return units.formatted(.currency(code: currency).precision(.fractionLength(2)))
+    }
+
+    /// "+$12.00" / "−$3.50": a move, with its sign in front of the currency.
+    static func signed(_ minorUnits: Double, currency: String?) -> String {
+        (minorUnits < 0 ? "−" : "+") + format(abs(minorUnits), currency: currency)
+    }
+}
+
 /// `/api/today`: today so far in the site's zone, from the server's ledger, which it refreshes
 /// from the provider every few minutes. Polled with the live count and never cached here.
 struct TodayReport: Codable, Sendable {

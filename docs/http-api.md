@@ -18,6 +18,7 @@
 | `GET /api/live` | — (visitors on the site right now; the one read that asks the analytics provider) |
 | `GET /api/events?window=N` | `events --window N` |
 | `GET /api/today` | — (today so far, from the ledger; re-synced every five minutes) |
+| `GET /api/revenue?window=N` | — (sales per day from the site's commerce provider, from the ledger) |
 
 `GET /api/status` reports two instants in `data`, both ISO 8601
 (`YYYY-MM-DDTHH:MM:SSZ`) and both `null` until they have a value:
@@ -99,6 +100,29 @@ have begun), the day's pages and events, and when the rows were last written
 `GET /api/events` ends its window on the newest finished day of visits
 (yesterday once today has synced), not on the Search Console latest date, so
 the freshest whole days are in it; today's partial day is left to `/api/today`.
+
+### Revenue from the site's commerce provider
+
+A site may also name a commerce provider in its `config.json` entry
+(`revenue: { provider, accountId?, keyVariable?, baseUrl?, timeZone? }`, see
+[adr/0005-revenue-provider-port.md](adr/0005-revenue-provider-port.md)). The
+first adapter is Polar. The key is read from the environment variable
+`keyVariable` names (default `<PROVIDER>_API_KEY`, so `POLAR_API_KEY`); Polar
+issues one token per organisation, so two sites on two organisations name two
+variables. When a site has one, the daily sync fetches its sales beside its
+visits — a year back on the first run, one call — and the today sync refreshes
+today's row every five minutes.
+
+- `GET /api/status` → `revenue`: the provider, whether this deployment can
+  read it (`ready`, with a `reason` when not), and how many days are stored.
+  `null` when the site has no provider.
+- `GET /api/revenue?window=N` → `{ revenue, windowDays, window, currency, days,
+  current, previous, delta }`: one row per synced day of the current window
+  (`date`, `orders`, `revenue`, `net`, `currency`), oldest first, and the
+  totals of the window and the one before with their deltas. Amounts are in
+  the currency's minor unit (cents). The window ends on the newest whole day,
+  as `/api/events` does. `revenue` is `null` for a site without a provider;
+  then `days` is empty and every total zero.
 
 All site-scoped endpoints accept `?site=<id>`. The default is the first configured site. For example:
 

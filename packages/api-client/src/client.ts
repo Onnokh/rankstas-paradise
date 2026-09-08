@@ -33,6 +33,7 @@ import {
   ApiHttpError,
   DashboardSnapshot,
   EventsReport,
+  RevenueReport,
   HistoryReport,
   LiveReport,
   TodayReport,
@@ -100,6 +101,11 @@ export interface Interface {
     window?: number,
     site?: SiteId,
   ) => Effect.Effect<EventsReport, ApiError>
+  // Sales over `window` whole days against the window before (GET /api/revenue).
+  readonly revenue: (
+    window?: number,
+    site?: SiteId,
+  ) => Effect.Effect<RevenueReport, ApiError>
 
   // Writes — the server derives the target site from ?site= here too.
   readonly registryAdd: (
@@ -326,6 +332,15 @@ export const layer = Layer.effect(
         site?: SiteId,
       ) {
         return yield* send("GET", "/api/events", EventsReport, {
+          query: { window, site },
+        })
+      }),
+
+      revenue: Effect.fn("ApiClient.revenue")(function* (
+        window?: number,
+        site?: SiteId,
+      ) {
+        return yield* send("GET", "/api/revenue", RevenueReport, {
           query: { window, site },
         })
       }),

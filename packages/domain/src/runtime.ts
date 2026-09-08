@@ -19,6 +19,7 @@ import { CurrentSite } from "./sites/current-site.ts"
 import { DomainRating } from "./domain-rating/domain-rating.ts"
 import { Registry } from "./registry/registry.ts"
 import { Reports } from "./reports/reports.ts"
+import { Revenue } from "./revenue/revenue.ts"
 import { SearchConsole } from "./search-console/search-console.ts"
 import { Sitemap } from "./sitemap/sitemap.ts"
 import { Sites } from "./sites/sites.ts"
@@ -31,6 +32,7 @@ export const AppLayer = Layer.mergeAll(
   Sites.defaultLayer,
   SearchConsole.defaultLayer,
   Analytics.defaultLayer,
+  Revenue.defaultLayer,
   Storage.defaultLayer,
   Registry.defaultLayer,
   Sitemap.defaultLayer,

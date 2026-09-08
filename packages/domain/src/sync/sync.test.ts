@@ -14,6 +14,7 @@ import { Effect, Exit, Layer, ManagedRuntime } from "effect"
 
 import { Analytics } from "../analytics/analytics.ts"
 import { AnalyticsError, type VisitsDays } from "../analytics/schema.ts"
+import { Revenue } from "../revenue/revenue.ts"
 import { Config } from "../config/config.ts"
 import {
   type DailySnapshot,
@@ -71,6 +72,7 @@ interface Recorder {
   totalFetches: Array<ReadonlyArray<string>>
   inspectFetches: Array<ReadonlyArray<string>>
   visitFetches: Array<ReadonlyArray<string>>
+  revenueFetches: Array<ReadonlyArray<string>>
 }
 
 const searchConsoleMock = (recorder: Recorder) =>
@@ -168,6 +170,33 @@ const analyticsMock = (recorder: Recorder) =>
       }),
   })
 
+// The default site sells nothing: status null, and a fetch would be a bug.
+const noRevenueMock = Layer.mock(Revenue.Service)({
+  status: () => Effect.succeed(null),
+  localDay: () => Effect.succeed(null),
+})
+
+// A site that sells through a ready "fake" commerce provider, recording the
+// dates asked and answering one order a day.
+const revenueMock = (recorder: Recorder) =>
+  Layer.mock(Revenue.Service)({
+    status: () =>
+      Effect.succeed({ provider: "fake", accountId: null, ready: true, reason: null }),
+    localDay: () =>
+      Effect.succeed({ date: daysAgo(0), hour: 12, timeZone: "UTC" }),
+    fetchRevenue: (dates) =>
+      Effect.sync(() => {
+        recorder.revenueFetches.push(dates)
+        return dates.map((date) => ({
+          date,
+          orders: 1,
+          revenue: 1999,
+          net: 1999,
+          currency: "USD",
+        }))
+      }),
+  })
+
 // A site with no analytics configured: status null, and a fetch would be a bug.
 const noAnalyticsMock = Layer.mock(Analytics.Service)({
   status: () => Effect.succeed(null),
@@ -218,11 +247,13 @@ const makeRuntime = (
   recorder: Recorder,
   searchConsole: Layer.Layer<SearchConsole.Service> = searchConsoleMock(recorder),
   analytics: Layer.Layer<Analytics.Service> = analyticsMock(recorder),
+  revenue: Layer.Layer<Revenue.Service> = noRevenueMock,
 ) => {
   const currentSite = currentSiteLayer(dir, dbPath)
   const deps = Layer.mergeAll(
     searchConsole,
     analytics,
+    revenue,
     Storage.layer.pipe(Layer.provide(currentSite)),
     registryMock,
     sitemapMock,
@@ -246,6 +277,7 @@ beforeEach(() => {
     totalFetches: [],
     inspectFetches: [],
     visitFetches: [],
+    revenueFetches: [],
   }
   runtime = makeRuntime(dir, dbPath, recorder)
 })
@@ -364,6 +396,33 @@ test("the today sync writes today's rows and hours, and the daily sync leaves th
   const asked = recorder.visitFetches[1]!
   expect(asked).not.toContain(daysAgo(0))
   expect(asked.at(-1)).toBe(daysAgo(1))
+})
+
+test("a selling site fetches a year of revenue on the first run, then only what is stale", async () => {
+  const selling = makeRuntime(dir, dbPath, recorder, searchConsoleMock(recorder), analyticsMock(recorder), revenueMock(recorder))
+  try {
+    const summary = await selling.runPromise(Sync.use.syncSearchConsole())
+    expect(summary).toContain("Revenue: 365 days from fake.")
+    const asked = recorder.revenueFetches[0]!
+    expect(asked).toHaveLength(365)
+    expect(asked.at(-1)).toBe(daysAgo(1))
+    expect(asked).not.toContain(daysAgo(0))
+    expect((await selling.runPromise(Storage.use.revenueSummary())).days).toBe(365)
+
+    // Everything is fresh, so the second run asks for nothing.
+    const again = await selling.runPromise(Sync.use.syncSearchConsole())
+    expect(again).toContain("Revenue: 0 days from fake.")
+    expect(recorder.revenueFetches).toHaveLength(1)
+
+    // The today sync writes today's sales beside today's visits.
+    const today = await selling.runPromise(Sync.use.syncToday())
+    expect(today).toContain("1 orders, 1999 USD revenue")
+    expect(recorder.revenueFetches[1]).toEqual([daysAgo(0)])
+    const rows = await selling.runPromise(Storage.use.revenueDays(daysAgo(0), daysAgo(0)))
+    expect(rows).toEqual([{ date: daysAgo(0), orders: 1, revenue: 1999, net: 1999, currency: "USD" }])
+  } finally {
+    await selling.dispose()
+  }
 })
 
 test("a site without analytics has no today to sync", async () => {

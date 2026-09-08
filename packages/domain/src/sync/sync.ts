@@ -2,13 +2,14 @@
 // (fetch), Storage (persist + freshness), Registry (targets), and Sitemap
 // (refresh). Site-scoped. FROZEN CONTRACT — Interface/Service/use/defaultLayer
 // are frozen; this is the real `layer`, ported from the legacy `src/automation.ts`.
-import { Cause, Context, Effect, Fiber, Layer, Semaphore } from "effect"
+import { Cause, Context, Effect, Fiber, Layer, Result, Semaphore } from "effect"
 
 import { Analytics } from "../analytics/analytics.ts"
 import { Config } from "../config/config.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { DomainRating } from "../domain-rating/domain-rating.ts"
 import { Registry } from "../registry/registry.ts"
+import { Revenue } from "../revenue/revenue.ts"
 import { SearchConsole } from "../search-console/search-console.ts"
 import { type SitemapPage } from "../sitemap/schema.ts"
 import { serviceUse } from "../service-use.ts"
@@ -24,11 +25,12 @@ export interface Interface {
   readonly backfillSearchConsole: (
     months?: number,
   ) => Effect.Effect<string, SyncError>
-  // Re-fetch the day in progress from the site's analytics provider and write
-  // it into the ledger: the daily rows for today plus its hours. Meant to run
-  // every few minutes for as long as the server is up; the daily sync fetches
-  // the same day once more when it is finished. Returns a summary, or null for
-  // a site with no analytics.
+  // Re-fetch the day in progress from the site's analytics provider (the
+  // daily rows for today plus its hours) and from its commerce provider
+  // (today's sales) and write them into the ledger. Meant to run every few
+  // minutes for as long as the server is up; the daily sync fetches the same
+  // day once more when it is finished. Returns a summary, or null for a site
+  // with neither provider.
   readonly syncToday: () => Effect.Effect<string | null, SyncError>
 }
 
@@ -89,6 +91,14 @@ const newestVisitsDate = (localToday: string | undefined) => {
 const visitsReconcileDays = 2
 const visitsFirstRunDays = 28
 
+// Revenue is the same kind of series with the same "yesterday is whole" rule,
+// but a commerce API answers a year in one call where an analytics API needs
+// one per day, so the first run reaches back a whole year: enough to compare
+// the app's longest period with the one before it. Refunds land on the day of
+// the order, days later, so the reconcile window is a week.
+const revenueReconcileDays = 7
+const revenueFirstRunDays = 365
+
 // Backfill fetches in 30-day chunks (Google's practical query span). The chunk
 // fetches run with bounded concurrency; writes are serialized (one SQLite
 // connection, one transaction at a time).
@@ -111,6 +121,7 @@ export const layer = Layer.effect(
     const sitemap = yield* Sitemap.Service
     const domainRating = yield* DomainRating.Service
     const analytics = yield* Analytics.Service
+    const revenue = yield* Revenue.Service
     const config = yield* Config.Service
     const currentSite = yield* CurrentSite.Service
 
@@ -167,11 +178,43 @@ export const layer = Layer.effect(
       return { provider: status.provider, days: dates.length }
     })
 
-    // Today's rows, straight into the same tables as every other day. The
+    // The revenue refresh, on the visits' terms: the missing days of the
+    // tracked range plus the stale part of the reconcile window, fetched from
+    // the site's commerce provider and saved in canonical form. Null for a
+    // site with no revenue source.
+    const syncRevenue = Effect.fnUntraced(function* () {
+      const status = yield* revenue.status()
+      if (!status) return null
+      const local = yield* revenue.localDay()
+      const newest = newestVisitsDate(local?.date)
+      const summary = yield* storage.revenueSummary()
+      const start = summary.firstDate ?? dateDaysBefore(newest, revenueFirstRunDays - 1)
+      const range = datesBetween(start, newest)
+      const missing = yield* storage.missingRevenueDates(range)
+      const missingSet = new Set(missing)
+      const recent = datesBetween(
+        dateDaysBefore(newest, revenueReconcileDays - 1),
+        newest,
+      )
+      const fresh = new Set(
+        yield* storage.recentlySyncedRevenueDates(recent, reconciliationTtlHours),
+      )
+      const stale = recent.filter(
+        (date) => !missingSet.has(date) && !fresh.has(date),
+      )
+      const dates = [...missing, ...stale]
+      if (dates.length > 0) {
+        const days = yield* revenue.fetchRevenue(dates)
+        yield* storage.saveRevenue(days, dates, status.provider)
+      }
+      return { provider: status.provider, days: dates.length }
+    })
+
+    // Today's visits, straight into the same tables as every other day. The
     // date is the provider's calendar day in the site's zone, the same key the
     // daily fetch writes (its time-series is asked in that zone too), so the
     // daily sync's reconcile of "yesterday" overwrites exactly this row.
-    const runToday = Effect.fn("Sync.syncToday")(function* () {
+    const todayVisits = Effect.fnUntraced(function* () {
       const status = yield* analytics.status()
       const local = yield* analytics.localDay()
       if (!status || !local) return null
@@ -183,6 +226,40 @@ export const layer = Layer.effect(
       yield* storage.saveHours(local.date, hours, status.provider)
       const site = visits.site.find((day) => day.date === local.date)
       return `Today (${local.date} ${local.timeZone}) from ${status.provider}: ${site?.visits ?? 0} visits, ${site?.pageviews ?? 0} pageviews, ${visits.events.length} event names, ${hours.length} hours.`
+    })
+
+    // Today's sales, the same way: one row, overwritten each round and once
+    // more by the daily sync's reconcile when the day is whole.
+    const todayRevenue = Effect.fnUntraced(function* () {
+      const status = yield* revenue.status()
+      const local = yield* revenue.localDay()
+      if (!status || !local) return null
+      const days = yield* revenue.fetchRevenue([local.date])
+      yield* storage.saveRevenue(days, [local.date], status.provider)
+      const today = days.find((day) => day.date === local.date)
+      return `Today (${local.date} ${local.timeZone}) from ${status.provider}: ${today?.orders ?? 0} orders, ${today?.revenue ?? 0} ${today?.currency ?? ""} revenue.`.replace("  ", " ")
+    })
+
+    // Either provider may be absent; one that fails must not cost the other
+    // its round, so the two run apart and a failure is reported in the summary
+    // rather than raised — except when both fail, which is the round failing.
+    const runToday = Effect.fn("Sync.syncToday")(function* () {
+      const [visits, sales] = yield* Effect.all(
+        [Effect.result(todayVisits()), Effect.result(todayRevenue())],
+        { concurrency: 2 },
+      )
+      if (Result.isFailure(visits) && Result.isFailure(sales))
+        return yield* Effect.fail(visits.failure)
+      const outcomes: ReadonlyArray<
+        Result.Result<string | null, { readonly message: string }>
+      > = [visits, sales]
+      const parts = outcomes.map((outcome) =>
+        Result.isSuccess(outcome)
+          ? outcome.success
+          : `Failed: ${outcome.failure.message}`,
+      )
+      const lines = parts.filter((part): part is string => part !== null)
+      return lines.length === 0 ? null : lines.join(" ")
     })
 
     const runSync = Effect.fn("Sync.syncSearchConsole")(function* () {
@@ -215,6 +292,17 @@ export const layer = Layer.effect(
           Effect.catchCause((cause) =>
             Effect.logWarning(
               `The analytics sync failed: ${Cause.pretty(cause)}`,
+            ).pipe(Effect.as(null)),
+          ),
+        ),
+      )
+
+      // Revenue rides along on the visits' terms, logged the same way.
+      const revenueFiber = yield* Effect.forkChild(
+        syncRevenue().pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning(
+              `The revenue sync failed: ${Cause.pretty(cause)}`,
             ).pipe(Effect.as(null)),
           ),
         ),
@@ -270,6 +358,7 @@ export const layer = Layer.effect(
       const sitemapPages = yield* Fiber.join(sitemapFiber)
       const rating = yield* Fiber.join(domainRatingFiber)
       const visits = yield* Fiber.join(visitsFiber)
+      const sales = yield* Fiber.join(revenueFiber)
 
       // Record that this run happened, last, so only a run that got all the way
       // here claims to have asked Google. A run that found every day present and
@@ -288,7 +377,7 @@ export const layer = Layer.effect(
         inspection.failed > 0
           ? `${inspection.inspections.length} indexed-status checks saved (${freshUrls.size} cached); ${inspection.failed} unavailable`
           : `${inspection.inspections.length} indexed-status checks saved (${freshUrls.size} cached)`
-      return `Saved ${snapshots.length} Search Console rows across ${plan.dates.length} finalized days (${plan.missing.length} missing, ${plan.recent.length} reconciled); daily totals for ${totalDates.length} days; ${inspectionSummary}; finalized through ${finalizedThrough}, provisional to ${freshestThrough}. Sitemap: ${sitemapPages.length || "cached"} pages.${rating ? ` Domain Rating: ${rating.rating}.` : ""}${visits ? ` Visits: ${visits.days} days from ${visits.provider}.` : ""}`
+      return `Saved ${snapshots.length} Search Console rows across ${plan.dates.length} finalized days (${plan.missing.length} missing, ${plan.recent.length} reconciled); daily totals for ${totalDates.length} days; ${inspectionSummary}; finalized through ${finalizedThrough}, provisional to ${freshestThrough}. Sitemap: ${sitemapPages.length || "cached"} pages.${rating ? ` Domain Rating: ${rating.rating}.` : ""}${visits ? ` Visits: ${visits.days} days from ${visits.provider}.` : ""}${sales ? ` Revenue: ${sales.days} days from ${sales.provider}.` : ""}`
     })
 
     const runBackfill = Effect.fn("Sync.backfillSearchConsole")(function* (
@@ -368,6 +457,7 @@ export const layer = Layer.effect(
 export const defaultLayer = layer.pipe(
   Layer.provide(SearchConsole.defaultLayer),
   Layer.provide(Analytics.defaultLayer),
+  Layer.provide(Revenue.defaultLayer),
   Layer.provide(Storage.defaultLayer),
   Layer.provide(Registry.defaultLayer),
   Layer.provide(Sitemap.defaultLayer),

@@ -98,6 +98,12 @@ struct SiteTabScreen: View {
         live.todays[overview.id]?.today
     }
 
+    /// The period's sales, once loaded. Nil until then, and for a site without a commerce
+    /// provider the report itself says so and the card is not shown.
+    private var revenueReport: RevenueReport? {
+        rankings.revenue[RankingStore.KeywordsKey(siteID: overview.id, period: state.period)]
+    }
+
     /// Whether the site has an analytics provider with anything to show: a live count, or
     /// at least one day of visits in the series.
     private var hasAnalytics: Bool {
@@ -155,10 +161,15 @@ struct SiteTabScreen: View {
         // The analytics provider's two views, side by side under the Search Console
         // chart and apart from it: the people on the site this half hour, and the
         // period's visits. A site without a provider has neither and gets no row.
+        // A site that also sells gets its commerce provider's view as a third card:
+        // the period's revenue, one bar per day like the visits.
         if hasAnalytics {
             HStack(alignment: .top, spacing: 20) {
                 RealtimeCard(live: liveVisitors)
                 VisitsCard(days: Array(days.suffix(state.period.days)), comparison: visitsComparison)
+                if let report = revenueReport, report.revenue != nil {
+                    RevenueCard(report: report)
+                }
             }
             .column()
             .padding(.top, 36)
@@ -1099,6 +1110,8 @@ private struct Tooltip: View {
 /// The colour of everything that comes from the analytics provider: the header's live dot,
 /// the strip's visits dot, the realtime bars and the visits chart.
 private let visitsColor = Palette.lilac
+/// Money is green: the fourth series, from the site's commerce provider.
+private let revenueColor = Palette.mint
 
 /// The last half hour by the minute: one bar per minute, the newest at the right, with the
 /// window's total beside the title. The people online right now are the header's figure,
@@ -1364,6 +1377,162 @@ private struct VisitsCard: View {
         let origin = geometry[plotFrame].origin
         guard let date: Date = proxy.value(atX: location.x - origin.x) else { return nil }
         return points.min { abs($0.day.timeIntervalSince(date)) < abs($1.day.timeIntervalSince(date)) }
+    }
+}
+
+/// The period's revenue, one bar per day, with the period total and its move in the title
+/// row: the Visits card's twin for the commerce provider. Amounts arrive in cents and are
+/// shown in the report's currency. A day never synced is left empty rather than drawn as
+/// zero; a day without sales is a zero bar, because the ledger knows the difference.
+private struct RevenueCard: View {
+    let report: RevenueReport
+
+    @Environment(\.isTabPreview) private var isPreview
+    @State private var hovered: RevenueDay?
+    /// The hovered day's centre, in the chart's own coordinates, for placing the tooltip.
+    @State private var hoverX: CGFloat = 0
+
+    private var points: [RevenueDay] { report.days }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Revenue")
+                    .font(.headline)
+                Spacer()
+                if !points.isEmpty {
+                    Text(Money.format(report.current.revenue, currency: report.currency))
+                        .font(.subheadline.weight(.semibold))
+                        .monospacedDigit()
+                    // No move when the earlier period has nothing to compare against, as
+                    // the Visits card does; a first month reads as a figure, not as growth.
+                    if report.previous.orders > 0 || report.previous.revenue > 0 {
+                        Text(Money.signed(report.delta.revenue, currency: report.currency))
+                            .font(.caption.weight(.medium))
+                            .monospacedDigit()
+                            .foregroundStyle(report.delta.revenue >= 0 ? Palette.mint : Palette.coral)
+                    }
+                }
+            }
+
+            if points.count >= 2 {
+                Chart {
+                    // A rule at zero rather than the axis grid line, for the reason the
+                    // Visits card gives: it meets the bars exactly.
+                    RuleMark(y: .value("Revenue", 0))
+                        .foregroundStyle(Palette.line)
+                        .lineStyle(StrokeStyle(lineWidth: 1))
+
+                    ForEach(points) { point in
+                        BarMark(
+                            x: .value("Date", point.day, unit: .day),
+                            y: .value("Revenue", point.revenue / 100)
+                        )
+                        .foregroundStyle(revenueColor.opacity(hovered == nil || hovered == point ? 1 : 0.4))
+                        .cornerRadius(2)
+                    }
+
+                    if let hovered {
+                        RuleMark(x: .value("Date", hovered.day))
+                            .foregroundStyle(.secondary.opacity(0.6))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    }
+                }
+                .chartYScale(domain: .automatic(includesZero: true))
+                .chartYAxis(.hidden)
+                .chartXAxis(.hidden)
+                .chartPlotStyle { plot in
+                    plot.padding(.top, 8)
+                }
+                // The same hover arrangement as the Visits card: the tracking view stands
+                // alone and never changes; the tooltip is an overlay shown by opacity.
+                .chartOverlay { proxy in
+                    if !isPreview {
+                        GeometryReader { geometry in
+                            Rectangle()
+                                .fill(.clear)
+                                .contentShape(Rectangle())
+                                .onContinuousHover { phase in
+                                    switch phase {
+                                    case .active(let location):
+                                        hovered = day(at: location, proxy: proxy, geometry: geometry)
+                                        if let hovered,
+                                           let plotFrame = proxy.plotFrame,
+                                           let x = proxy.position(forX: hovered.day) {
+                                            hoverX = geometry[plotFrame].origin.x + x
+                                        }
+                                    case .ended:
+                                        hovered = nil
+                                    }
+                                }
+                        }
+                    }
+                }
+                .frame(height: 96)
+                .overlay(alignment: .topLeading) {
+                    GeometryReader { geometry in
+                        RevenueTooltip(day: hovered ?? points[points.count - 1], currency: report.currency)
+                            .fixedSize()
+                            .alignmentGuide(.leading) { label in
+                                -min(max(hoverX - label.width / 2, 0), max(geometry.size.width - label.width, 0))
+                            }
+                            .alignmentGuide(.top) { label in label.height + 8 }
+                            .opacity(hovered == nil ? 0 : 1)
+                    }
+                    .allowsHitTesting(false)
+                }
+
+                HStack {
+                    Text(points.first!.day, format: .dateTime.day().month(.abbreviated))
+                    Spacer()
+                    Text(points.last!.day, format: .dateTime.day().month(.abbreviated))
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else if let status = report.revenue, !status.ready {
+                Text(status.reason ?? "The commerce provider cannot be read.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
+            } else {
+                Text("Not enough days of revenue yet.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .cardSurface(cornerRadius: 12)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func day(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) -> RevenueDay? {
+        guard let plotFrame = proxy.plotFrame else { return nil }
+        let origin = geometry[plotFrame].origin
+        guard let date: Date = proxy.value(atX: location.x - origin.x) else { return nil }
+        return points.min { abs($0.day.timeIntervalSince(date)) < abs($1.day.timeIntervalSince(date)) }
+    }
+}
+
+/// The day under the pointer in the Revenue card: what was paid, how many orders, and the net.
+private struct RevenueTooltip: View {
+    let day: RevenueDay
+    let currency: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(day.day.formatted(.dateTime.day().month(.abbreviated)))
+                .font(.callout.weight(.semibold))
+            Text("Revenue : \(Money.format(day.revenue, currency: currency))")
+            Text("Orders : \(day.orders.formatted(.number.precision(.fractionLength(0))))")
+            Text("Net : \(Money.format(day.net, currency: currency))")
+        }
+        .font(.callout)
+        .monospacedDigit()
+        .padding(12)
+        .background(.regularMaterial, in: .rect(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+        .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
     }
 }
 

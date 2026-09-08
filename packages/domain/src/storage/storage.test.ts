@@ -507,6 +507,46 @@ test("a day's rows and hours read back as written, and the day knows when it was
   expect(await run(Storage.use.visitsSyncedAt("2024-01-11"))).toBeNull()
 })
 
+test("revenue rows read back as written, quiet fetched days as zeros, unsynced days absent", async () => {
+  const days = [
+    { date: "2024-02-02", orders: 2, revenue: 3998, net: 3998, currency: "USD" },
+    { date: "2024-02-01", orders: 1, revenue: 1999, net: 0, currency: "USD" },
+  ]
+  // Three days fetched, two with sales: the third is a quiet day, not a gap.
+  await run(Storage.use.saveRevenue(days, ["2024-02-01", "2024-02-02", "2024-02-03"], "fake"))
+
+  expect(await run(Storage.use.revenueDays("2024-01-31", "2024-02-04"))).toEqual([
+    { date: "2024-02-01", orders: 1, revenue: 1999, net: 0, currency: "USD" },
+    { date: "2024-02-02", orders: 2, revenue: 3998, net: 3998, currency: "USD" },
+    { date: "2024-02-03", orders: 0, revenue: 0, net: 0, currency: "USD" },
+  ])
+  expect(await run(Storage.use.missingRevenueDates(["2024-02-03", "2024-02-04"]))).toEqual([
+    "2024-02-04",
+  ])
+  expect(
+    await run(Storage.use.recentlySyncedRevenueDates(["2024-02-01", "2024-02-04"], 1)),
+  ).toEqual(["2024-02-01"])
+  expect(await run(Storage.use.revenueSummary())).toEqual({
+    days: 3,
+    firstDate: "2024-02-01",
+    lastDate: "2024-02-03",
+    source: "fake",
+  })
+  expect(await run(Storage.use.latestRevenueSyncedAt())).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+
+  // A refund lands days later: the reconcile overwrites the row.
+  await run(
+    Storage.use.saveRevenue(
+      [{ date: "2024-02-02", orders: 2, revenue: 3998, net: 1999, currency: "USD" }],
+      ["2024-02-02"],
+      "fake",
+    ),
+  )
+  expect(await run(Storage.use.revenueDays("2024-02-02", "2024-02-02"))).toEqual([
+    { date: "2024-02-02", orders: 2, revenue: 3998, net: 1999, currency: "USD" },
+  ])
+})
+
 test("pageVisitsOverview and eventWindow anchor on the end date given", async () => {
   const days = ["2024-01-10", "2024-01-11", "2024-01-12", "2024-01-13"]
   await run(Storage.use.saveVisits(visitsFor(days, ["/a", "/b"]), days, "fake"))

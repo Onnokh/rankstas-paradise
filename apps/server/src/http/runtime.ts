@@ -22,6 +22,7 @@ import { CurrentSite } from "@rp/domain/sites/current-site"
 import { DomainRating } from "@rp/domain/domain-rating/domain-rating"
 import { Registry } from "@rp/domain/registry/registry"
 import { Reports } from "@rp/domain/reports/reports"
+import { Revenue } from "@rp/domain/revenue/revenue"
 import { SearchConsole } from "@rp/domain/search-console/search-console"
 import { type Site, type SiteId } from "@rp/domain/sites/schema"
 import { Sitemap } from "@rp/domain/sitemap/sitemap"
@@ -41,6 +42,7 @@ const siteLayer = (site: Site) =>
     Layer.provideMerge(Sites.layer),
     Layer.provideMerge(SearchConsole.layer),
     Layer.provideMerge(Analytics.layer),
+    Layer.provideMerge(Revenue.layer),
     // Above Storage: DomainRating reads the ledger, and in a provideMerge chain
     // a layer's own requirements are satisfied by the entries below it.
     Layer.provideMerge(DomainRating.layer),
@@ -59,6 +61,7 @@ export type SiteRuntime = ManagedRuntime.ManagedRuntime<
   | Sites.Service
   | SearchConsole.Service
   | Analytics.Service
+  | Revenue.Service
   | Storage.Service
   | Registry.Service
   | Sitemap.Service

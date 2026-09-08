@@ -309,6 +309,32 @@ export const buildMcpServer = (run: RunTool): McpServer => {
   )
 
   server.registerTool(
+    "revenue",
+    {
+      description:
+        "The site's sales from its commerce provider (Polar, …) over the last N " +
+        "whole days against the N days before, from the ledger: one row per day " +
+        "(orders, revenue, net after refunds; amounts in the currency's minor " +
+        "unit, so cents), plus current, previous and delta totals. revenue (the " +
+        "status) is null when the site has no commerce provider; ready false with " +
+        "a reason means one is configured but cannot be read.",
+      inputSchema: {
+        site,
+        window: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Window length in days (default 28)."),
+      },
+    },
+    async ({ site, window }) => {
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.revenueReport(window ?? 28), id))
+    },
+  )
+
+  server.registerTool(
     "today",
     {
       description:

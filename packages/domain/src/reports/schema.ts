@@ -10,6 +10,7 @@ import {
   SiteVisitsDay,
 } from "../analytics/schema.ts"
 import { DomainRating, DomainRatingDay } from "../domain-rating/schema.ts"
+import { RevenueDay, RevenueStatus } from "../revenue/schema.ts"
 
 import {
   EventWindowRow,
@@ -269,6 +270,19 @@ export const StatusReport = Schema.Struct({
       }),
     ),
   ),
+  // The site's commerce provider and how much of its revenue series is in the
+  // ledger, on the same terms as `analytics`.
+  revenue: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        ...RevenueStatus.fields,
+        days: Schema.Number,
+        firstDate: Schema.NullOr(Schema.String),
+        lastDate: Schema.NullOr(Schema.String),
+        lastSyncedAt: Schema.NullOr(Schema.String),
+      }),
+    ),
+  ),
 }).annotate({ identifier: "StatusReport" })
 export interface StatusReport extends Schema.Schema.Type<typeof StatusReport> {}
 
@@ -518,6 +532,40 @@ export const EventsReport = Schema.Struct({
   ),
 }).annotate({ identifier: "EventsReport" })
 export interface EventsReport extends Schema.Schema.Type<typeof EventsReport> {}
+
+// Orders and takings over a window, summed. Amounts in the currency's minor
+// unit, as the rows are.
+export const RevenueTotals = Schema.Struct({
+  orders: Schema.Number,
+  revenue: Schema.Number,
+  net: Schema.Number,
+}).annotate({ identifier: "RevenueTotals" })
+export interface RevenueTotals extends Schema.Schema.Type<typeof RevenueTotals> {}
+
+// The site's sales over a window against the window before it, from its
+// commerce provider, served from the ledger. Anchored like the events report on
+// the newest finished day (yesterday once today has synced), so the freshest
+// whole days are in it and today's partial day is not. `days` is the current
+// window's synced days, oldest first — a chart's bars; a day never synced is
+// absent, a day without sales is a zero row. `revenue` (the status) is null
+// when the site has no commerce provider; then `days` is empty and every total
+// zero. `currency` is null until a row exists.
+export const RevenueReport = Schema.Struct({
+  revenue: Schema.NullOr(RevenueStatus),
+  windowDays: Schema.Number,
+  window: Schema.Struct({
+    currentStart: Schema.NullOr(Schema.String),
+    currentEnd: Schema.NullOr(Schema.String),
+    previousStart: Schema.NullOr(Schema.String),
+    previousEnd: Schema.NullOr(Schema.String),
+  }),
+  currency: Schema.NullOr(Schema.String),
+  days: Schema.Array(RevenueDay),
+  current: RevenueTotals,
+  previous: RevenueTotals,
+  delta: RevenueTotals,
+}).annotate({ identifier: "RevenueReport" })
+export interface RevenueReport extends Schema.Schema.Type<typeof RevenueReport> {}
 
 // The people on the site right now. The ONE report that reaches the provider
 // on a read (cached 30 seconds in the Analytics service), which is why it is

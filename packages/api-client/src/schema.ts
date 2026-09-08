@@ -27,6 +27,7 @@ import {
   RegistryAddResult,
   RegistryListReport,
   RegistrySetResult,
+  RevenueReport,
   StatusReport,
 } from "@rp/domain/reports/schema"
 
@@ -47,6 +48,7 @@ export {
   RegistryAddResult,
   RegistryListReport,
   RegistrySetResult,
+  RevenueReport,
   StatusReport,
 }
 

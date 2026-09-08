@@ -34,6 +34,7 @@ import {
   RegistryAddResult,
   RegistryListReport,
   RegistrySetResult,
+  RevenueReport,
   StatusReport,
 } from "@rp/domain/reports/schema"
 import { RegistryPatch } from "@rp/domain/registry/schema"
@@ -144,6 +145,12 @@ export const apiGroup = HttpApiGroup.make("api")
     HttpApiEndpoint.get("events", "/api/events", {
       query: { site: S, window: S },
       success: enveloped(EventsReport.fields),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("revenue", "/api/revenue", {
+      query: { site: S, window: S },
+      success: enveloped(RevenueReport.fields),
     }),
   )
   .add(

@@ -144,6 +144,21 @@ describe("JSON routes", () => {
     expect(envelope.events).toEqual([])
   })
 
+  test("GET /api/revenue → 200 with a null source and zero totals for a site without one", async () => {
+    const { status, body } = await requestJson(server, `/api/revenue${site}&window=7`)
+    expect(status).toBe(200)
+    const envelope = body as Record<string, unknown>
+    expect(envelope.revenue).toBeNull()
+    expect(envelope.windowDays).toBe(7)
+    expect(envelope.days).toEqual([])
+    expect(envelope.current).toEqual({ orders: 0, revenue: 0, net: 0 })
+  })
+
+  test("GET /api/revenue with a bad ?window= → 400", async () => {
+    const { status } = await requestJson(server, `/api/revenue${site}&window=zero`)
+    expect(status).toBe(400)
+  })
+
   test("GET /api/events with a bad ?window= → 400", async () => {
     const { status } = await requestJson(server, `/api/events${site}&window=zero`)
     expect(status).toBe(400)

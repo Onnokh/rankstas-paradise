@@ -126,6 +126,25 @@ The provider's current calendar day in the site's time zone, so far: totals, one
 **Traffic**:
 Loosely, both. When a number is meant, say which: clicks (Search Console) or visits (analytics).
 
+### Revenue (commerce)
+
+The third ledger. Search Console says how a site is *found*, the analytics provider what people *do* there, the commerce provider what they *buy*. Keyed by day like the other two.
+
+**Commerce provider**:
+The product a site sells through — Polar, Stripe, Lemon Squeezy, or another. One per site, named in the site's config; Ranksta only reads from it, in the same canonical form whichever vendor it is. Its key is per account, so each site names the environment variable that holds it.
+_Avoid_: naming the product where the concept is meant ("the Polar numbers").
+
+**Order**:
+One completed purchase, as the commerce provider counts it, on the day it was paid in the site's zone. Counts sum across days.
+_Avoid_: "sale", "transaction".
+
+**Revenue**:
+What customers paid, summed over a day or a window, in the currency's minor unit (cents) on the wire and shown in the currency. Refunds do not reduce it.
+_Avoid_: "gross".
+
+**Net revenue**:
+Revenue less refunds. Not less the provider's fee, which each vendor defines differently. Shorthand: "net".
+
 ### Work record
 
 **Log**:
