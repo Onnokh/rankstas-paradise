@@ -23,6 +23,7 @@ import {
   type KeywordMetricSummary,
   type MonthlySearch,
 } from "../keyword-metrics/schema.ts"
+import { type KeywordProposal } from "../keyword-discovery/schema.ts"
 import { type RevenueDay } from "../revenue/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import {
@@ -207,6 +208,28 @@ export interface Interface {
     locationCode: number,
     languageCode: string,
   ) => Effect.Effect<ReadonlyMap<string, ReadonlyArray<MonthlySearch>>, StorageError>
+  // Store proposed Keywords, keeping any status already recorded for one. The
+  // status is deliberately not overwritten: a discovery run that finds a
+  // keyword the reader already dismissed must not resurrect it, and a run is
+  // the one thing likely to find it again.
+  readonly saveKeywordProposals: (
+    proposals: ReadonlyArray<KeywordProposal>,
+  ) => Effect.Effect<void, StorageError>
+  // Every Proposal for one Market, whatever its status. Filtering by status is
+  // left to the caller, which also has to remove the ones the Registry has
+  // since taken — a question this table cannot answer.
+  readonly keywordProposals: (
+    locationCode: number,
+    languageCode: string,
+  ) => Effect.Effect<ReadonlyArray<KeywordProposal>, StorageError>
+  // Mark Proposals dismissed; returns how many rows changed. A keyword with no
+  // row is not an error — a caller dismissing a list should not have to know
+  // which of it was ever proposed.
+  readonly dismissKeywordProposals: (
+    keywords: ReadonlyArray<string>,
+    locationCode: number,
+    languageCode: string,
+  ) => Effect.Effect<number, StorageError>
   // The stored Domain Rating series, oldest first.
   readonly domainRatingHistory: (
     limit?: number,
@@ -554,6 +577,29 @@ export const layer = Layer.effect(
         intent text,
         monthly_searches text not null default '[]',
         fetched_at text not null,
+        primary key (keyword, location_code, language_code)
+      )`,
+      // Keywords an expansion found that this Site does not have yet, and what
+      // DataForSEO said about them at that moment. The metrics are duplicated
+      // from keyword_metric on purpose: that table is a cache which is re-asked
+      // and overwritten, and these numbers are the reason a keyword was
+      // proposed. Losing them to a refresh would leave a row whose rationale no
+      // longer matches the row.
+      //
+      // There is no `accepted` status — see ../keyword-discovery/schema.ts.
+      `create table if not exists keyword_proposal (
+        keyword text not null,
+        location_code integer not null,
+        language_code text not null,
+        seed text not null,
+        source text not null,
+        search_volume integer,
+        difficulty integer,
+        cost_per_click real,
+        competition real,
+        intent text,
+        status text not null default 'proposed',
+        discovered_at text not null,
         primary key (keyword, location_code, language_code)
       )`,
       // The analytics provider's series in canonical form (see
@@ -1354,6 +1400,92 @@ export const layer = Layer.effect(
     // `date('now')` is UTC, matching how every other date in this ledger is
     // keyed, so a reading does not land on a different day than the totals
     // fetched beside it.
+    const saveKeywordProposalsI = (proposals: ReadonlyArray<KeywordProposal>) =>
+      sql.withTransaction(
+        Effect.gen(function* () {
+          for (const proposal of proposals)
+            yield* sql`
+              insert into keyword_proposal (
+                keyword, location_code, language_code, seed, source, search_volume,
+                difficulty, cost_per_click, competition, intent, status, discovered_at
+              ) values (
+                ${proposal.keyword}, ${proposal.locationCode}, ${proposal.languageCode},
+                ${proposal.seed}, ${proposal.source}, ${proposal.searchVolume},
+                ${proposal.difficulty}, ${proposal.costPerClick}, ${proposal.competition},
+                ${proposal.intent}, ${proposal.status}, ${proposal.discoveredAt}
+              )
+              on conflict(keyword, location_code, language_code) do update set
+                seed = excluded.seed,
+                source = excluded.source,
+                search_volume = excluded.search_volume,
+                difficulty = excluded.difficulty,
+                cost_per_click = excluded.cost_per_click,
+                competition = excluded.competition,
+                intent = excluded.intent,
+                discovered_at = excluded.discovered_at`
+          // `status` is absent from that update list, so a dismissal survives
+          // being found again. See the interface for why that is the point.
+        }),
+      )
+
+    const keywordProposalsI = (locationCode: number, languageCode: string) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{
+          keyword: string
+          seed: string
+          source: string
+          searchVolume: number | null
+          difficulty: number | null
+          costPerClick: number | null
+          competition: number | null
+          intent: string | null
+          status: string
+          discoveredAt: string
+        }>`
+          select keyword,
+                 seed,
+                 source,
+                 search_volume as "searchVolume",
+                 difficulty,
+                 cost_per_click as "costPerClick",
+                 competition,
+                 intent,
+                 status,
+                 discovered_at as "discoveredAt"
+          from keyword_proposal
+          where location_code = ${locationCode} and language_code = ${languageCode}
+          order by search_volume desc, keyword`
+        return rows.map((row) => ({
+          ...row,
+          locationCode,
+          languageCode,
+        })) as ReadonlyArray<KeywordProposal>
+      })
+
+    const dismissKeywordProposalsI = (
+      keywords: ReadonlyArray<string>,
+      locationCode: number,
+      languageCode: string,
+    ) =>
+      Effect.gen(function* () {
+        let dismissed = 0
+        // One statement a keyword rather than an `in` list: the count has to be
+        // the number of rows that actually changed, and a keyword already
+        // dismissed changes nothing.
+        for (const keyword of keywords) {
+          const rows = yield* sql<{ keyword: string }>`
+            update keyword_proposal
+            set status = 'dismissed'
+            where keyword = ${keyword}
+              and location_code = ${locationCode}
+              and language_code = ${languageCode}
+              and status <> 'dismissed'
+            returning keyword`
+          dismissed += rows.length
+        }
+        return dismissed
+      })
+
     const saveDomainRatingI = (rating: number, fetchedAt: string, license: string) => sql`
       insert into domain_rating (date, rating, fetched_at, license)
       values (date('now'), ${rating}, ${fetchedAt}, ${license})
@@ -1960,6 +2092,19 @@ export const layer = Layer.effect(
       keywordMonthlySearches: (locationCode, languageCode) =>
         keywordMonthlySearchesI(locationCode, languageCode).pipe(
           mapErr("keywordMonthlySearches"),
+        ),
+      saveKeywordProposals: (proposals) =>
+        saveKeywordProposalsI(proposals).pipe(
+          Effect.asVoid,
+          mapErr("saveKeywordProposals"),
+        ),
+      keywordProposals: (locationCode, languageCode) =>
+        keywordProposalsI(locationCode, languageCode).pipe(
+          mapErr("keywordProposals"),
+        ),
+      dismissKeywordProposals: (keywords, locationCode, languageCode) =>
+        dismissKeywordProposalsI(keywords, locationCode, languageCode).pipe(
+          mapErr("dismissKeywordProposals"),
         ),
       saveDomainRating: (rating, fetchedAt, license) =>
         saveDomainRatingI(rating, fetchedAt, license).pipe(
