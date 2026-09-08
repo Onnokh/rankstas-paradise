@@ -6,7 +6,6 @@ import XCTest
 final class FakeSettingsBackend: SettingsBackend, @unchecked Sendable {
     var entries: [String: SiteEntry] = [:]
     var secrets: [String?: SecretsEnvelope] = [:]
-    var clientRecords: [ClientRecord] = []
     var storedSecrets: [String] = []
 
     private func site(for entry: SiteEntry) -> Site {
@@ -28,15 +27,6 @@ final class FakeSettingsBackend: SettingsBackend, @unchecked Sendable {
         return SiteSettingsEnvelope(site: site(for: entry), settings: entry)
     }
 
-    func addSite(_ entry: SiteEntry) async throws -> SiteSettingsEnvelope {
-        entries[entry.id] = entry
-        return SiteSettingsEnvelope(site: site(for: entry), settings: entry)
-    }
-
-    func removeSite(id: String) async throws {
-        entries[id] = nil
-    }
-
     func secrets(siteID: String?) async throws -> SecretsEnvelope {
         secrets[siteID] ?? SecretsEnvelope(encryption: EncryptionStatus(configured: true, reason: nil), slots: [])
     }
@@ -50,31 +40,11 @@ final class FakeSettingsBackend: SettingsBackend, @unchecked Sendable {
         )
         return status
     }
-
-    func removeSecret(siteID: String?, purpose: String) async throws {
-        secrets[siteID] = SecretsEnvelope(encryption: EncryptionStatus(configured: true, reason: nil), slots: [])
-    }
-
-    func clients() async throws -> [ClientRecord] { clientRecords }
-
-    func createClient(label: String) async throws -> ClientCreatedEnvelope {
-        let record = ClientRecord(id: UUID().uuidString, label: label, createdAt: "2026-09-08T00:00:00Z", lastUsedAt: nil, revokedAt: nil)
-        clientRecords.append(record)
-        return ClientCreatedEnvelope(client: record, token: "rp_issued-for-\(label)")
-    }
-
-    func revokeClient(id: String) async throws -> ClientRecord {
-        let record = clientRecords.first { $0.id == id }!
-        let revoked = ClientRecord(id: record.id, label: record.label, createdAt: record.createdAt, lastUsedAt: record.lastUsedAt, revokedAt: "2026-09-08T01:00:00Z")
-        clientRecords = clientRecords.map { $0.id == id ? revoked : $0 }
-        return revoked
-    }
 }
 
 @MainActor
 final class SettingsModelTests: XCTestCase {
     private final class Box: @unchecked Sendable {
-        var savedTargets: [RemoteTarget] = []
         var notifications = 0
     }
 
@@ -85,7 +55,6 @@ final class SettingsModelTests: XCTestCase {
                 guard let target else { throw ConfigurationError.missing(path: "/nowhere/client.json") }
                 return target
             },
-            saveTarget: { box.savedTargets.append($0) },
             notify: { box.notifications += 1 }
         )
     }
@@ -93,8 +62,7 @@ final class SettingsModelTests: XCTestCase {
     func testLoadFetchesSitesTheirSettingsAndKeys() async {
         let backend = FakeSettingsBackend()
         backend.entries["shop"] = SiteEntry(id: "shop", settings: SiteSettings(name: "Shop", siteUrl: "sc-domain:shop.example"))
-        let box = Box()
-        let model = makeModel(backend: backend, box: box)
+        let model = makeModel(backend: backend, box: Box())
 
         await model.load()
 
@@ -114,7 +82,7 @@ final class SettingsModelTests: XCTestCase {
         XCTAssertTrue(model.sites.isEmpty)
     }
 
-    func testSavingAddingAndRemovingSitesUpdateTheListAndNotify() async {
+    func testSavingASiteUpdatesTheListAndNotifies() async {
         let backend = FakeSettingsBackend()
         backend.entries["shop"] = SiteEntry(id: "shop", settings: SiteSettings(siteUrl: "sc-domain:shop.example"))
         let box = Box()
@@ -127,16 +95,7 @@ final class SettingsModelTests: XCTestCase {
         XCTAssertTrue(saved)
         XCTAssertEqual(model.sites.first?.name, "Renamed")
         XCTAssertEqual(model.entries["shop"]?.name, "Renamed")
-
-        let added = await model.addSite(id: "blog", settings: SiteSettings(siteUrl: "sc-domain:blog.example"))
-        XCTAssertEqual(added?.id, "blog")
-        XCTAssertEqual(model.sites.map(\.id), ["shop", "blog"])
-
-        let removed = await model.removeSite(id: "shop")
-        XCTAssertTrue(removed)
-        XCTAssertEqual(model.sites.map(\.id), ["blog"])
-        XCTAssertNil(model.entries["shop"])
-        XCTAssertEqual(box.notifications, 3)
+        XCTAssertEqual(box.notifications, 1)
     }
 
     func testStoringAKeyReloadsTheSlotsAndKeepsTheValueOutOfTheModel() async {
@@ -149,22 +108,22 @@ final class SettingsModelTests: XCTestCase {
         XCTAssertTrue(stored)
         XCTAssertEqual(model.siteSecrets["shop"]?.slots.first?.stored?.last4, "1234")
         XCTAssertEqual(backend.storedSecrets, ["shop:polar=polar-secret-1234"])
-
-        await model.removeSecret(siteID: "shop", purpose: "polar")
-        XCTAssertEqual(model.siteSecrets["shop"]?.slots.count, 0)
     }
 
-    func testAdoptingAnOwnTokenSavesItAndSwitchesToIt() async {
-        let backend = FakeSettingsBackend()
-        let box = Box()
-        let model = makeModel(backend: backend, box: box)
-        await model.load()
+    func testDraftKeepsProviderBlocksAndEditsTheirFields() {
+        var stored = SiteSettings(siteUrl: "sc-domain:shop.example")
+        stored.analytics = AnalyticsSettings(provider: "rybbit", siteId: "1", baseUrl: nil, timeZone: nil)
+        stored.revenue = RevenueSettings(provider: "polar", accountId: nil, keyVariable: "POLAR_API_KEY_SHOP", baseUrl: nil, timeZone: nil)
 
-        await model.adoptOwnToken(label: "Test Mac")
+        var draft = SiteSettingsPage.Draft(stored)
+        draft.analyticsSiteId = "42"
+        draft.brandTerms = "shop, the shop"
+        let result = draft.settings(over: stored)
 
-        XCTAssertEqual(box.savedTargets.last?.token, "rp_issued-for-Test Mac")
-        XCTAssertEqual(model.target?.token, "rp_issued-for-Test Mac")
-        XCTAssertEqual(model.clients.map(\.label), ["Test Mac"])
+        XCTAssertEqual(result.analytics?.siteId, "42")
+        XCTAssertEqual(result.analytics?.provider, "rybbit")
+        XCTAssertEqual(result.revenue?.keyVariable, "POLAR_API_KEY_SHOP")
+        XCTAssertEqual(result.brandTerms, ["shop", "the shop"])
     }
 
     func testBrandTermsRoundTrip() {

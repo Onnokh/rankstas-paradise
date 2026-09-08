@@ -1,8 +1,8 @@
 import Foundation
 
-// The wire shapes of the settings routes (docs/http-api.md): a site's stored settings, the
-// vendor-key slots, and the clients. Mirrors `packages/domain/src/config/schema.ts`,
-// `secrets/schema.ts`, and `clients/schema.ts`.
+// The wire shapes of the settings routes (docs/http-api.md): a site's stored settings and
+// the vendor-key slots. Mirrors `packages/domain/src/config/schema.ts` and
+// `secrets/schema.ts`.
 
 /// The `analytics` block of a site's settings.
 struct AnalyticsSettings: Codable, Sendable, Equatable {
@@ -75,10 +75,6 @@ struct SiteSettingsEnvelope: Codable, Sendable {
     let settings: SiteEntry
 }
 
-struct SiteRemovedEnvelope: Codable, Sendable {
-    let removed: String
-}
-
 /// What the server says about a stored vendor key. Never the value.
 struct SecretStatus: Codable, Sendable, Equatable {
     let scope: String?
@@ -112,39 +108,9 @@ struct SecretEnvelope: Codable, Sendable {
     let secret: SecretStatus
 }
 
-struct SecretRemovedEnvelope: Codable, Sendable {
-    let removed: String
-}
-
 /// The body of a key write.
 struct SecretInput: Codable, Sendable {
     let value: String
-}
-
-/// One client with its own token. The token itself is only ever in `ClientCreatedEnvelope`.
-struct ClientRecord: Codable, Sendable, Equatable, Identifiable {
-    let id: String
-    let label: String
-    let createdAt: String
-    let lastUsedAt: String?
-    let revokedAt: String?
-}
-
-struct ClientsEnvelope: Codable, Sendable {
-    let clients: [ClientRecord]
-}
-
-struct ClientCreatedEnvelope: Codable, Sendable {
-    let client: ClientRecord
-    let token: String
-}
-
-struct ClientEnvelope: Codable, Sendable {
-    let client: ClientRecord
-}
-
-struct ClientInput: Codable, Sendable {
-    let label: String
 }
 
 /// The settings routes, as the settings model needs them. `APIClient` is the real one; tests
@@ -153,14 +119,8 @@ protocol SettingsBackend: Sendable {
     func sites() async throws -> [Site]
     func siteSettings(id: String) async throws -> SiteSettingsEnvelope
     func saveSiteSettings(id: String, settings: SiteSettings) async throws -> SiteSettingsEnvelope
-    func addSite(_ entry: SiteEntry) async throws -> SiteSettingsEnvelope
-    func removeSite(id: String) async throws
     func secrets(siteID: String?) async throws -> SecretsEnvelope
     func setSecret(siteID: String?, purpose: String, value: String) async throws -> SecretStatus
-    func removeSecret(siteID: String?, purpose: String) async throws
-    func clients() async throws -> [ClientRecord]
-    func createClient(label: String) async throws -> ClientCreatedEnvelope
-    func revokeClient(id: String) async throws -> ClientRecord
 }
 
 extension APIClient: SettingsBackend {
@@ -176,14 +136,6 @@ extension APIClient: SettingsBackend {
         try await send(method: "PUT", path: "/api/sites/\(id)/settings", body: settings)
     }
 
-    func addSite(_ entry: SiteEntry) async throws -> SiteSettingsEnvelope {
-        try await send(method: "POST", path: "/api/sites", body: entry)
-    }
-
-    func removeSite(id: String) async throws {
-        let _: SiteRemovedEnvelope = try await send(method: "DELETE", path: "/api/sites/\(id)", body: Optional<Int>.none)
-    }
-
     func secrets(siteID: String?) async throws -> SecretsEnvelope {
         try await get(path: secretsPath(siteID: siteID))
     }
@@ -195,27 +147,5 @@ extension APIClient: SettingsBackend {
             body: SecretInput(value: value)
         )
         return envelope.secret
-    }
-
-    func removeSecret(siteID: String?, purpose: String) async throws {
-        let _: SecretRemovedEnvelope = try await send(
-            method: "DELETE",
-            path: "\(secretsPath(siteID: siteID))/\(purpose)",
-            body: Optional<Int>.none
-        )
-    }
-
-    func clients() async throws -> [ClientRecord] {
-        let envelope: ClientsEnvelope = try await get(path: "/api/clients")
-        return envelope.clients
-    }
-
-    func createClient(label: String) async throws -> ClientCreatedEnvelope {
-        try await send(method: "POST", path: "/api/clients", body: ClientInput(label: label))
-    }
-
-    func revokeClient(id: String) async throws -> ClientRecord {
-        let envelope: ClientEnvelope = try await send(method: "DELETE", path: "/api/clients/\(id)", body: Optional<Int>.none)
-        return envelope.client
     }
 }
