@@ -214,6 +214,91 @@ struct LiveReport: Codable, Sendable {
     let live: LiveVisitors?
 }
 
+/// `/api/live/events`: what visitors did in the last half hour, from the provider. Polled
+/// every few seconds while the overview is shown, and never cached; see `LiveStore`.
+struct LiveEventsReport: Codable, Sendable {
+    let generatedAt: String
+    let analytics: AnalyticsStatus?
+    /// Nil when the site has no provider, or its provider is configured but not ready.
+    let events: LiveEvents?
+}
+
+struct LiveEvents: Codable, Sendable, Equatable {
+    let windowMinutes: Int
+    /// The cut-off the request carried, echoed back; nil when it asked for the whole window.
+    let since: String?
+    /// Newest first.
+    let events: [LiveEvent]
+    let fetchedAt: String
+}
+
+/// One thing a visitor just did: a page they loaded, or a named action with its data.
+struct LiveEvent: Codable, Sendable, Equatable, Identifiable {
+    /// What kind of thing it was. Every provider has pageviews and named events; the rest are
+    /// auto-captured interactions some providers record. A kind this build does not know
+    /// decodes as `.event`, so a newer server never breaks the feed.
+    enum Kind: String, Codable, Sendable, CaseIterable {
+        case pageview
+        case event
+        case outbound
+        case buttonClick = "button_click"
+        case copy
+        case formSubmit = "form_submit"
+        case inputChange = "input_change"
+
+        init(from decoder: Decoder) throws {
+            let raw = try decoder.singleValueContainer().decode(String.self)
+            self = Kind(rawValue: raw) ?? .event
+        }
+
+        var label: String {
+            switch self {
+            case .pageview: "Pageview"
+            case .event: "Event"
+            case .outbound: "Outbound"
+            case .buttonClick: "Button click"
+            case .copy: "Copy"
+            case .formSubmit: "Form submit"
+            case .inputChange: "Input change"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .pageview: "eye"
+            case .event: "bolt"
+            case .outbound: "arrow.up.right.square"
+            case .buttonClick: "cursorarrow.click"
+            case .copy: "doc.on.doc"
+            case .formSubmit: "paperplane"
+            case .inputChange: "character.cursor.ibeam"
+            }
+        }
+    }
+
+    /// Stable across polls for the same row: how the feed tells a new row from one it has.
+    let id: String
+    /// When it happened, an ISO 8601 instant.
+    let at: String
+    let kind: Kind
+    /// The event's name; nil for a pageview.
+    let name: String?
+    /// The page it happened on, as a path.
+    let page: String
+    /// The event's data, flattened to strings. Empty for a plain pageview.
+    let properties: [String: String]
+    /// The same for every row of one person; never a name.
+    let visitor: String
+    /// ISO 3166-1 alpha-2, or nil when the provider does not know.
+    let country: String?
+    let browser: String?
+    let operatingSystem: String?
+    let device: String?
+    let referrer: String?
+
+    var date: Date? { Instant.parse(at) }
+}
+
 struct AnalyticsStatus: Codable, Sendable, Equatable {
     let provider: String
     let siteId: String

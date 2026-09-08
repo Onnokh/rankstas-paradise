@@ -134,6 +134,12 @@ The distinct people active on the site in the last thirty minutes, as the analyt
 **Online**:
 The distinct people active on the site in the last five minutes: the ones there right now. The figure beside a site's name. The five minutes are what Rybbit and Umami call online; Live visitors is the wider window the realtime bars cover.
 
+**Live event**:
+One thing a visitor just did, as the provider recorded it: a Pageview, or an Event with its data, with the page it happened on and the visitor's country, browser and device. The rows of the Live feed. Asked on demand for the last thirty minutes, shown at most a few seconds old; never stored. Not an Event count: that is the per-day ledger.
+
+**Live feed**:
+The Live events of every site, newest first, in one stream on the Overview. Filtered by site and by kind; held still while the pointer is over it. A visitor shows as a country, a browser and a device, never as a made-up name.
+
 **Today**:
 The provider's current calendar day in the site's time zone, so far: totals, one row per hour, pages and events. Stored in the ledger like every other day and re-fetched from the provider every five minutes until the day ends; the daily sync fetches the finished day once more. Search Console lags days, so Today has no Search Console figures.
 

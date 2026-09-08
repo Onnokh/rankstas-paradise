@@ -21,6 +21,7 @@ import {
   DashboardSnapshot,
   HistoryReport,
   EventsReport,
+  LiveEventsReport,
   LiveReport,
   TodayReport,
   LogAddInput,
@@ -164,6 +165,15 @@ export const apiGroup = HttpApiGroup.make("api")
     HttpApiEndpoint.get("live", "/api/live", {
       query: { site: S },
       success: enveloped(LiveReport.fields),
+    }),
+  )
+  .add(
+    // The live feed: what visitors did in the last 30 minutes, newest first,
+    // from the provider (memoised 5 s). `since` (an ISO instant) trims the
+    // answer to the rows newer than it, for a client that polls.
+    HttpApiEndpoint.get("liveEvents", "/api/live/events", {
+      query: { site: S, since: S },
+      success: enveloped(LiveEventsReport.fields),
     }),
   )
   .add(

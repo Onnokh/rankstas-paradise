@@ -36,4 +36,9 @@ final class SiteTabState {
 @Observable
 final class OverviewTabState {
     var selectedSiteID: Site.ID?
+    /// The feed's filters: one site or all, the kinds hidden by their chips, and whether
+    /// it is held still. Selections, so they survive a tab switch like the site above.
+    var feedSiteID: Site.ID?
+    var hiddenKinds: Set<LiveEvent.Kind> = []
+    var feedPaused = false
 }

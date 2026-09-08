@@ -369,6 +369,24 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     },
   )
 
+  server.registerTool(
+    "live-events",
+    {
+      description:
+        "What visitors did on the site in the last 30 minutes, newest first, from " +
+        "its analytics provider: one row per pageview or event with the page, the " +
+        "event name and properties, and the visitor's country, browser, OS and " +
+        "device. events is null when the site has no provider; analytics.ready " +
+        "false with a reason means the provider is configured but cannot be read. " +
+        "Answers are memoised for 5 seconds.",
+      inputSchema: { site },
+    },
+    async ({ site }) => {
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.liveEventsReport(), id))
+    },
+  )
+
   // --- writes (no warm-on-read; recording an action shouldn't fetch) ---
 
   server.registerTool(

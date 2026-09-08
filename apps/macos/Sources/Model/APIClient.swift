@@ -30,6 +30,16 @@ struct APIClient: Sendable {
         try await get(path: "/api/live", query: [URLQueryItem(name: "site", value: siteID)])
     }
 
+    /// What visitors did in the last half hour, newest first, or only what is newer than
+    /// `since` when given. Polled every few seconds while the overview is shown; see `LiveStore`.
+    func liveEvents(siteID: String, since: String?) async throws -> LiveEventsReport {
+        var query = [URLQueryItem(name: "site", value: siteID)]
+        if let since {
+            query.append(URLQueryItem(name: "since", value: since))
+        }
+        return try await get(path: "/api/live/events", query: query)
+    }
+
     /// The strongest search terms over `windowDays`, brand terms included: the card ranks
     /// what brings clicks, and for a small site that is often the brand.
     func queries(siteID: String, windowDays: Int, limit: Int) async throws -> QueriesReport {

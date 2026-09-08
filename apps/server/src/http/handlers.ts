@@ -45,6 +45,16 @@ const numberParam = (value: string | undefined, name: string): number | undefine
   return parsed
 }
 
+// An ISO 8601 instant, or absent. Anything Date cannot read is a 400: a client
+// that sends a bad cut-off would otherwise silently get the whole window.
+const instantParam = (value: string | undefined, name: string): string | undefined => {
+  if (value === undefined) return undefined
+  if (Number.isNaN(new Date(value).getTime())) {
+    throw new Error(`${name} must be an ISO 8601 instant, got: ${value}`)
+  }
+  return value
+}
+
 const messageOf = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause)
 
@@ -452,6 +462,17 @@ export const makeApiGroup = (ctx: ServerContext) => {
       )
       .handle("live", ({ query }) =>
         Effect.promise(() => siteJson(query.site, Reports.use.liveReport())),
+      )
+      .handle("liveEvents", ({ query }) =>
+        Effect.promise(async () => {
+          let since: string | undefined
+          try {
+            since = instantParam(query.since, "since")
+          } catch (cause) {
+            return errorEnvelope(messageOf(cause), ctx.debug, 400)
+          }
+          return siteJson(query.site, Reports.use.liveEventsReport(since))
+        }),
       )
       .handle("today", ({ query }) =>
         Effect.promise(() => siteJson(query.site, Reports.use.todayReport())),

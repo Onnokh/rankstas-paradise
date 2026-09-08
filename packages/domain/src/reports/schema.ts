@@ -5,6 +5,7 @@ import { Schema } from "effect"
 
 import {
   AnalyticsStatus,
+  LiveEvents,
   LiveVisitors,
   TodayVisits,
   SiteVisitsDay,
@@ -579,6 +580,17 @@ export const LiveReport = Schema.Struct({
   live: Schema.NullOr(LiveVisitors),
 }).annotate({ identifier: "LiveReport" })
 export interface LiveReport extends Schema.Schema.Type<typeof LiveReport> {}
+
+// The live feed: what visitors did in the last 30 minutes, the other read
+// that reaches the provider (memoised a few seconds). `events` is null when the
+// site has no provider; `analytics` says why when a provider is configured but
+// not ready.
+export const LiveEventsReport = Schema.Struct({
+  analytics: Schema.NullOr(AnalyticsStatus),
+  events: Schema.NullOr(LiveEvents),
+}).annotate({ identifier: "LiveEventsReport" })
+export interface LiveEventsReport
+  extends Schema.Schema.Type<typeof LiveEventsReport> {}
 
 // Today so far, the other report that reaches the provider (cached a minute).
 // `today` is null when the site has no provider; `analytics` says why when a

@@ -210,11 +210,17 @@ struct RootView: View {
     }
 
     /// Fetches everything a tab shows again. The overview feeds every tab, so it is always
-    /// part of it; a site tab adds its own series, live count and ranked lists for the period
-    /// it is on. Each store keeps what it shows until its answer lands, so nothing blanks.
-    /// Reached from the screens' refresh buttons and from View > Refresh (⌘R).
+    /// part of it; the overview tab adds every site's live count and feed, and a site tab its
+    /// own series, live count and ranked lists for the period it is on. Each store keeps what
+    /// it shows until its answer lands, so nothing blanks. Reached from the screens' refresh
+    /// buttons and from View > Refresh (⌘R).
     private func refresh(_ tab: TabID) {
         Task { await model.refresh() }
+        if case .overview = tab {
+            let siteIDs = model.sites.map(\.id)
+            Task { await live.refreshAll(siteIDs) }
+            Task { await live.refreshFeeds(siteIDs) }
+        }
         guard case .site(let siteID) = tab else { return }
         let period = workspace.state(for: siteID).period
         Task { await history.refresh(siteID) }

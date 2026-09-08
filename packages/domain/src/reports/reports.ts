@@ -39,7 +39,8 @@ import {
   type EventsReport,
   type RevenueReport,
   type RevenueTotals,
-  type LiveReport,
+  type LiveEventsReport,
+  LiveReport,
   type TodayReport,
   type LogAddInput,
   type LogAddResult,
@@ -110,6 +111,11 @@ export interface Interface {
   // The visitors active right now. Reaches the analytics provider (through a
   // 30-second memo); every other read here is served from the ledger.
   readonly liveReport: () => Effect.Effect<LiveReport, ReportsError>
+  // The live feed, newer than `since` when given. Reaches the provider like
+  // liveReport, memoised for a few seconds.
+  readonly liveEventsReport: (
+    since?: string,
+  ) => Effect.Effect<LiveEventsReport, ReportsError>
   readonly eventsReport: (
     windowDays?: number,
   ) => Effect.Effect<EventsReport, ReportsError>
@@ -969,6 +975,17 @@ export const layer = Layer.effect(
               ? yield* analytics.liveVisitors()
               : null
             return { analytics: analyticsStatus, live }
+          }),
+        ),
+
+      liveEventsReport: (since) =>
+        wrap(
+          Effect.gen(function* () {
+            const analyticsStatus = yield* analytics.status()
+            const events = analyticsStatus?.ready
+              ? yield* analytics.liveEvents(since)
+              : null
+            return { analytics: analyticsStatus, events }
           }),
         ),
 

@@ -13,6 +13,7 @@ import { Rybbit } from "./rybbit.ts"
 import {
   type AnalyticsError,
   type AnalyticsSource,
+  type LiveEvent,
   type VisitsDays,
   type SiteVisitsHour,
 } from "./schema.ts"
@@ -43,6 +44,17 @@ export interface Provider {
   readonly fetchHours: (
     date: string,
   ) => Effect.Effect<ReadonlyArray<SiteVisitsHour>, AnalyticsError>
+
+  // What visitors did in the last `windowMinutes`, newest first, at most
+  // `limit` rows: the rows of a live feed. Rybbit lists events since a
+  // timestamp, Umami has a per-website events list, GA4's realtime report can
+  // be asked by event name and minutesAgo (coarser, but the same shape), so
+  // this too is part of the contract. An adapter that cannot say who or where
+  // fills those fields with null rather than failing.
+  readonly liveEvents: (
+    windowMinutes: number,
+    limit: number,
+  ) => Effect.Effect<ReadonlyArray<LiveEvent>, AnalyticsError>
 }
 
 export interface LiveSample {

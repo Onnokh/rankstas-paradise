@@ -25,6 +25,9 @@ import {
   type AnalyticsSource,
   type AnalyticsStatus,
   emptyVisitsDays,
+  type LiveEvent,
+  type LiveEvents,
+  liveEventsLimit,
   type LiveVisitors,
   liveWindowMinutes,
   onlineWindowMinutes,
@@ -35,6 +38,10 @@ import {
 // How long one live answer is served before the provider is asked again. A
 // client polling every few seconds costs the vendor one call per half minute.
 const liveCacheTtl = Duration.seconds(30)
+// The feed moves faster than the count: a new row should show within a few
+// seconds, so its memo is short. Still one vendor call per five seconds however
+// many windows poll.
+const liveEventsCacheTtl = Duration.seconds(5)
 
 // The provider's calendar day right now: its date, how far into it the site's
 // zone is, and the zone itself. What "today" means for a site.
@@ -115,6 +122,14 @@ export interface Interface {
   // a read, unlike every other read in the domain, so it has its own report
   // and its own endpoint and is never part of the dashboard snapshot.
   readonly liveVisitors: () => Effect.Effect<LiveVisitors | null, AnalyticsError>
+  // What visitors did in the last 30 minutes, newest first, fetched from the
+  // provider and cached for a few seconds. Null for a site with no analytics.
+  // With `since` (an ISO instant) only the rows newer than it are returned,
+  // filtered from the same memo, so a polling client pays for one vendor call
+  // per memo however often it asks. Reaches the network like liveVisitors.
+  readonly liveEvents: (
+    since?: string,
+  ) => Effect.Effect<LiveEvents | null, AnalyticsError>
   // What day it is for the site right now, in its provider's zone. Null for a
   // site with no analytics. Never reaches the network.
   readonly localDay: () => Effect.Effect<LocalDay | null>
@@ -137,6 +152,7 @@ const none: Interface = {
   status: () => Effect.succeed(null),
   fetchVisits: () => Effect.succeed(emptyVisitsDays),
   liveVisitors: () => Effect.succeed(null),
+  liveEvents: () => Effect.succeed(null),
   localDay: () => Effect.succeed(null),
   fetchHours: () => Effect.succeed([]),
 }
@@ -151,9 +167,23 @@ const notReady = (source: AnalyticsSource, reason: string): Interface => ({
     }),
   fetchVisits: () => Effect.fail(new AnalyticsError({ message: reason })),
   liveVisitors: () => Effect.fail(new AnalyticsError({ message: reason })),
+  liveEvents: () => Effect.fail(new AnalyticsError({ message: reason })),
   localDay: () => Effect.sync(() => localDayIn(source.timeZone)),
   fetchHours: () => Effect.fail(new AnalyticsError({ message: reason })),
 })
+
+// The rows newer than `since`, or all of them without one. A cut-off that is
+// not an instant is ignored rather than failing the read: the client gets the
+// whole window and its next poll carries a good one.
+const newerThan = (
+  events: ReadonlyArray<LiveEvent>,
+  since: string | undefined,
+): ReadonlyArray<LiveEvent> => {
+  if (since === undefined) return events
+  const cutoff = new Date(since).getTime()
+  if (Number.isNaN(cutoff)) return events
+  return events.filter((event) => new Date(event.at).getTime() > cutoff)
+}
 
 const ready = (source: AnalyticsSource, provider: Provider) =>
   Effect.gen(function* () {
@@ -174,6 +204,19 @@ const ready = (source: AnalyticsSource, provider: Provider) =>
           })),
         ),
     })
+    // The feed's memo, the same way: one key, a few seconds.
+    const feed = yield* Cache.make<
+      "events",
+      { events: ReadonlyArray<LiveEvent>; fetchedAt: string },
+      AnalyticsError
+    >({
+      capacity: 1,
+      timeToLive: liveEventsCacheTtl,
+      lookup: () =>
+        provider.liveEvents(liveWindowMinutes, liveEventsLimit).pipe(
+          Effect.map((events) => ({ events, fetchedAt: new Date().toISOString() })),
+        ),
+    })
     const impl: Interface = {
       status: () =>
         Effect.succeed({
@@ -188,6 +231,15 @@ const ready = (source: AnalyticsSource, provider: Provider) =>
       }),
       liveVisitors: Effect.fn("Analytics.liveVisitors")(function* () {
         return yield* Cache.get(live, "live")
+      }),
+      liveEvents: Effect.fn("Analytics.liveEvents")(function* (since) {
+        const sample = yield* Cache.get(feed, "events")
+        return {
+          windowMinutes: liveWindowMinutes,
+          since: since ?? null,
+          events: newerThan(sample.events, since),
+          fetchedAt: sample.fetchedAt,
+        }
       }),
       localDay: () => Effect.sync(() => localDayIn(source.timeZone)),
       fetchHours: Effect.fn("Analytics.fetchHours")(function* (date) {
