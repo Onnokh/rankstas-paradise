@@ -46,6 +46,7 @@ import {
   PagesReport,
   QueriesReport,
   RegistryAddResult,
+  RegistryHealthReport,
   RegistryListReport,
   RegistrySetResult,
   SitesResponse,
@@ -82,6 +83,9 @@ export interface Interface {
   readonly registry: (
     site?: SiteId,
   ) => Effect.Effect<RegistryListReport, ApiError>
+  readonly registryHealth: (
+    site?: SiteId,
+  ) => Effect.Effect<RegistryHealthReport, ApiError>
   readonly log: (
     path?: string,
     site?: SiteId,
@@ -301,6 +305,14 @@ export const layer = Layer.effect(
 
       registry: Effect.fn("ApiClient.registry")(function* (site?: SiteId) {
         return yield* send("GET", "/api/registry", RegistryListReport, {
+          query: { site },
+        })
+      }),
+
+      registryHealth: Effect.fn("ApiClient.registryHealth")(function* (
+        site?: SiteId,
+      ) {
+        return yield* send("GET", "/api/registry/health", RegistryHealthReport, {
           query: { site },
         })
       }),

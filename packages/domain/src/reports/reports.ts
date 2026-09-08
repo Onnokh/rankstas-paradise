@@ -57,6 +57,8 @@ import {
   type QueriesReport,
   type RegistryAddInput,
   type RegistryAddResult,
+  type RegistryHealthReport,
+  type KeywordHealthVerdict,
   type RegistryListReport,
   type RegistrySetResult,
   ReportsError,
@@ -84,6 +86,13 @@ export interface Interface {
     limit?: number,
   ) => Effect.Effect<OpportunitiesReport, ReportsError>
   readonly registryList: () => Effect.Effect<RegistryListReport, ReportsError>
+  // The Registry judged on demand: which planned Keywords have searches behind
+  // them and which do not. Reads the store only, so a site with no DataForSEO
+  // key gets the shape with every row "unmeasured" rather than an error.
+  readonly registryHealth: () => Effect.Effect<
+    RegistryHealthReport,
+    ReportsError
+  >
   readonly registryAdd: (
     input: RegistryAddInput,
   ) => Effect.Effect<RegistryAddResult, ReportsError>
@@ -696,6 +705,74 @@ export const layer = Layer.effect(
           }),
         ),
 
+      registryHealth: () =>
+        wrap(
+          Effect.gen(function* () {
+            const entries = yield* registry.loadRegistry()
+            const demand = yield* keywordMetrics.cached()
+            // Supplementary, and `cached` cannot fail: a site with no stored
+            // rating gets a null gap rather than no report.
+            const rating = yield* domainRatingService.cached()
+            const domainRating = rating?.rating ?? null
+
+            const keywords = entries
+              // Inventory-only rows have no keyword to judge. They are pages
+              // the sitemap contributed, not claims about demand.
+              .filter((entry) => entry.keyword.trim())
+              .map((entry) => {
+                const metric = demand.get(foldKeyword(entry.keyword))
+                const difficulty = metric?.difficulty ?? null
+                return {
+                  keyword: entry.keyword,
+                  targetUrl: entry.targetUrl,
+                  cluster: entry.cluster,
+                  priority: entry.priority,
+                  intent: entry.intent,
+                  verdict: keywordVerdict(metric),
+                  searchVolume: metric?.searchVolume ?? null,
+                  difficulty,
+                  difficultyGap:
+                    difficulty !== null && domainRating !== null
+                      ? Math.round((difficulty - domainRating) * 10) / 10
+                      : null,
+                  costPerClick: metric?.costPerClick ?? null,
+                  reportedIntent: metric?.intent ?? null,
+                }
+              })
+              .sort((left, right) => {
+                const byVerdict =
+                  healthRank[left.verdict] - healthRank[right.verdict]
+                if (byVerdict !== 0) return byVerdict
+                // Within a verdict: the biggest demand first, and where there
+                // is none to compare, the plan's own order.
+                return (right.searchVolume ?? 0) - (left.searchVolume ?? 0)
+              })
+
+            const count = (verdict: KeywordHealthVerdict) =>
+              keywords.filter((row) => row.verdict === verdict).length
+
+            return {
+              ...(resolved.market ? { market: resolved.market } : {}),
+              domainRating,
+              totals: {
+                keywords: keywords.length,
+                unmeasured: count("unmeasured"),
+                unreported: count("unreported"),
+                noDemand: count("no-demand"),
+                hasDemand: count("has-demand"),
+                monthlyVolume: keywords.reduce(
+                  (total, row) =>
+                    row.verdict === "has-demand"
+                      ? total + (row.searchVolume ?? 0)
+                      : total,
+                  0,
+                ),
+              },
+              keywords,
+            }
+          }),
+        ),
+
       registryAdd: (input) =>
         wrap(
           Effect.gen(function* () {
@@ -1171,6 +1248,29 @@ export const entrySummary = (entry: RegistryEntry): EntrySummary => ({
 })
 
 // An opportunity signal summarized for display.
+// What a stored metric says about a planned Keyword, or "unmeasured" when there
+// is none. See KeywordHealthVerdict for why a null volume and a zero one are
+// kept apart: both mean "expect no traffic here", but only one of them is the
+// vendor saying so.
+export const keywordVerdict = (
+  metric: KeywordMetric | undefined,
+): KeywordHealthVerdict => {
+  if (!metric) return "unmeasured"
+  if (metric.searchVolume === null) return "unreported"
+  return metric.searchVolume > 0 ? "has-demand" : "no-demand"
+}
+
+// The order the health report lists keywords in. Demand first and strongest
+// first, because that is where the plan's weight actually is; then the rows the
+// reader has to decide about, with the measured-and-empty ones ahead of the
+// unmeasured, because those are a decision and these are just a gap in the data.
+const healthRank: Record<KeywordHealthVerdict, number> = {
+  "has-demand": 0,
+  "no-demand": 1,
+  unreported: 2,
+  unmeasured: 3,
+}
+
 // A stored Keyword metric as a report reports it. `monthlySearches` is left
 // out: it is twelve numbers per keyword, and a Registry with forty keywords
 // would carry five hundred of them into every read for a seasonality question

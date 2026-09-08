@@ -13,6 +13,7 @@ The TUI stays as-is for humans. Agents get a non-interactive command surface ove
 
 - `search_snapshot`: per-day `query × page × device × country` rows, finalized data, reconciled daily. Currently 2026-05-17 → 2026-07-13 (site is new; only 53 rows, 3 pages so far).
 - `keyword-registry.csv`: keyword → target URL mapping with `published_at`, `baseline_date`, `priority`, `status`, `why_opportunity` — this is the existing "what was set out" record.
+- `keyword_metric`: what DataForSEO says about a keyword in the site's Market — search volume, difficulty, cost per click, competition, intent. A cache, re-asked after 30 days. This is what makes the registry checkable rather than only measurable: `registryHealth()` in `reports.ts` judges every planned keyword on whether anybody searches for it.
 - `page_baseline`: pre-launch 28-day window per target URL.
 - `opportunityDigest()` in `storage.ts`: classifies striking-distance, CTR, new-demand, and cannibalization signals — this *is* the answer to question 3. It is computed on demand from SQLite and the registry, and exposed live by the TUI, the HTTP service, and the native feed.
 - `targetPerformance()` / `registryTargetProgress()`: per-page 28-day series and progress states.
@@ -60,6 +61,7 @@ New entry point `src/cli.ts` (main.ts dispatches: no args → TUI, args → CLI)
 | `queries [--page P] [--min-impressions N] [--no-brand]` | top/rising queries | `search_snapshot` |
 | `opportunities` | the full `opportunityDigest` signals as JSON → "what to make or improve" | existing classifier |
 | `registry list \| add \| update` | what is set out, when, why; write new mappings | CSV |
+| `registry health` | the plan judged on demand: which planned keywords have searches behind them → "was this worth planning" | CSV + `keyword_metric` |
 | `log add \| list` | record and review interventions | `action_log` |
 | `sync` / `backfill` | fill data | Google API |
 

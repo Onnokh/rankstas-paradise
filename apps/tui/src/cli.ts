@@ -71,6 +71,8 @@ Read commands (never call Google — served from the remote server):
   opportunities [--kind <kind>]   Classified signals (striking-distance, ctr, new-demand,
                                   cannibalization) with recommendations.
   registry                        The SEO plan: targets, intents, keywords, rationale, phases.
+  registry health                 The plan judged on demand: which planned keywords have
+                                  searches behind them, and which the vendor measured empty.
   log list [--path <path>]        Logged interventions.
 
 Write commands:
@@ -150,7 +152,8 @@ const commandRegistry = (flags: Flags, positional: readonly string[], site: Site
     }
     return ApiClient.use.registrySet(target, stringFlag(flags, "keyword"), patch, site)
   }
-  if (action !== undefined && action !== "list") throw new Error(`Unknown registry action: ${action}. Use list, add, or set.`)
+  if (action === "health") return ApiClient.use.registryHealth(site)
+  if (action !== undefined && action !== "list") throw new Error(`Unknown registry action: ${action}. Use list, health, add, or set.`)
   return ApiClient.use.registry(site)
 }
 

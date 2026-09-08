@@ -33,6 +33,7 @@ import {
   QueriesReport,
   RegistryAddInput,
   RegistryAddResult,
+  RegistryHealthReport,
   RegistryListReport,
   RegistrySetResult,
   RevenueReport,
@@ -145,6 +146,12 @@ export const apiGroup = HttpApiGroup.make("api")
     HttpApiEndpoint.get("registry", "/api/registry", {
       query: { site: S },
       success: enveloped(RegistryListReport.fields),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("registryHealth", "/api/registry/health", {
+      query: { site: S },
+      success: enveloped(RegistryHealthReport.fields),
     }),
   )
   .add(

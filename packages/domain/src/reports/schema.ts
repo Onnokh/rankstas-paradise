@@ -470,6 +470,77 @@ export const OpportunitiesReport = Schema.Struct({
 export interface OpportunitiesReport
   extends Schema.Schema.Type<typeof OpportunitiesReport> {}
 
+// What the vendor says about one planned Keyword, reduced to the one thing the
+// Registry cannot otherwise be checked against: whether anybody searches for it.
+//
+//   - "unmeasured": nobody has asked DataForSEO about it. No key configured, or
+//     the sync has not reached it yet. Says nothing about the keyword.
+//   - "unreported": asked, and the vendor has no volume — the term is too rare
+//     for it to report. Not the same as nobody searching it, but close enough
+//     to it that a page aimed here should not expect traffic.
+//   - "no-demand": asked, and the vendor measured zero. The rows to act on.
+//   - "has-demand": asked, and there is real demand behind the plan.
+export const keywordHealthVerdicts = [
+  "unmeasured",
+  "unreported",
+  "no-demand",
+  "has-demand",
+] as const
+export const KeywordHealthVerdict = Schema.Literals(keywordHealthVerdicts)
+export type KeywordHealthVerdict = typeof KeywordHealthVerdict.Type
+
+// One planned Keyword, judged on demand.
+export const KeywordHealth = Schema.Struct({
+  keyword: Schema.String,
+  targetUrl: Schema.String,
+  cluster: Schema.String,
+  priority: Schema.String,
+  // The intent the plan claims for the keyword.
+  intent: Schema.String,
+  verdict: KeywordHealthVerdict,
+  searchVolume: Schema.NullOr(Schema.Number),
+  difficulty: Schema.NullOr(Schema.Number),
+  // Difficulty minus the site's Domain Rating, when both are known. Positive
+  // means the keyword scores harder than the site rates.
+  //
+  // Reported as a number and never as a verdict. The two are different scales
+  // from different vendors measuring related but distinct things, so the gap is
+  // a rough guide and not a threshold — turning it into "reachable" or "not"
+  // would dress a rule of thumb up as a fact. The reader makes that call.
+  difficultyGap: Schema.NullOr(Schema.Number),
+  costPerClick: Schema.NullOr(Schema.Number),
+  // The intent DataForSEO observed, which may disagree with the plan's.
+  reportedIntent: Schema.NullOr(Schema.String),
+}).annotate({ identifier: "KeywordHealth" })
+export interface KeywordHealth extends Schema.Schema.Type<typeof KeywordHealth> {}
+
+// The Registry judged on demand: how much of the plan aims at searches that
+// exist, and which rows do not.
+export const RegistryHealthReport = Schema.Struct({
+  // The Market every number below describes. Absent for a site with none.
+  market: Schema.optional(MarketReport),
+  // The site's Ahrefs Domain Rating, for reading `difficultyGap` against. Null
+  // when no rating is stored.
+  domainRating: Schema.NullOr(Schema.Number),
+  totals: Schema.Struct({
+    keywords: Schema.Number,
+    unmeasured: Schema.Number,
+    unreported: Schema.Number,
+    noDemand: Schema.Number,
+    hasDemand: Schema.Number,
+    // Monthly searches summed over the keywords that have demand — the size of
+    // the plan's addressable market, as far as it has been measured. Not a
+    // traffic forecast: it is every search, not the share a first-page ranking
+    // would win.
+    monthlyVolume: Schema.Number,
+  }),
+  // Keywords with demand first, strongest first, then everything the reader has
+  // to decide about: measured-and-empty rows before unmeasured ones.
+  keywords: Schema.Array(KeywordHealth),
+}).annotate({ identifier: "RegistryHealthReport" })
+export interface RegistryHealthReport
+  extends Schema.Schema.Type<typeof RegistryHealthReport> {}
+
 export const RegistryListReport = Schema.Struct({
   targets: Schema.Array(
     Schema.Struct({

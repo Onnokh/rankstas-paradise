@@ -186,6 +186,35 @@ describe("JSON routes", () => {
     expect(status).toBe(400)
   })
 
+  test("GET /api/registry/health → the plan judged on demand", async () => {
+    const { status, body } = await requestJson(server, `/api/registry/health${site}`)
+    expect(status).toBe(200)
+    const envelope = body as Record<string, unknown>
+    expect(typeof envelope.generatedAt).toBe("string")
+    expect(Object.keys(envelope)).toEqual(
+      expect.arrayContaining(["domainRating", "totals", "keywords"]),
+    )
+
+    // The fixture deployment has no DataForSEO key, which is the shape every
+    // deployment has until one is configured: the report still answers, and
+    // every row says the vendor was never asked rather than claiming it found
+    // nothing.
+    const totals = envelope.totals as Record<string, number>
+    const keywords = envelope.keywords as ReadonlyArray<Record<string, unknown>>
+    expect(totals.keywords).toBe(keywords.length)
+    expect(totals.unmeasured).toBe(keywords.length)
+    expect(totals.monthlyVolume).toBe(0)
+    expect(keywords.every((row) => row.verdict === "unmeasured")).toBe(true)
+    // Every row is actionable on its own: the reader needs the target and the
+    // priority to decide what to do about a keyword.
+    expect(keywords.every((row) => typeof row.targetUrl === "string")).toBe(true)
+  })
+
+  test("GET /api/registry/health with an unknown ?site= → 400", async () => {
+    const { status } = await requestJson(server, "/api/registry/health?site=nope")
+    expect(status).toBe(400)
+  })
+
   test("GET /api/status → debug envelope with generatedAt + expected keys", async () => {
     const { status, body } = await requestJson(server, `/api/status${site}`)
     expect(status).toBe(200)
