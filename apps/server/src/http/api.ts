@@ -37,6 +37,7 @@ import {
   RevenueReport,
   StatusReport,
 } from "@rp/domain/reports/schema"
+import { Client, ClientInput } from "@rp/domain/clients/schema"
 import { ConfigSite, SiteSettings } from "@rp/domain/config/schema"
 import { RegistryPatch } from "@rp/domain/registry/schema"
 import { EncryptionStatus, SecretInput, SecretStatus } from "@rp/domain/secrets/schema"
@@ -80,6 +81,12 @@ const SecretsResponse = enveloped({
 const SecretResponse = enveloped({ secret: SecretStatus })
 const SecretRemovedResponse = enveloped({ removed: Schema.String })
 const purposeParams = { purpose: Schema.String }
+const ClientsResponse = enveloped({ clients: Schema.Array(Client) })
+// The one response that carries a plaintext token: the client keeps it, the
+// server keeps only its hash.
+const ClientCreatedResponse = enveloped({ client: Client, token: Schema.String })
+const ClientResponse = enveloped({ client: Client })
+const clientParams = { id: Schema.String }
 const sitePurposeParams = { id: Schema.String, purpose: Schema.String }
 
 // --- endpoint group -----------------------------------------------------------
@@ -248,6 +255,24 @@ export const apiGroup = HttpApiGroup.make("api")
     HttpApiEndpoint.delete("siteSecretRemove", "/api/sites/:id/secrets/:purpose", {
       params: sitePurposeParams,
       success: SecretRemovedResponse,
+    }),
+  )
+  // --- clients (per-client bearer tokens) ---
+  .add(
+    HttpApiEndpoint.get("clients", "/api/clients", {
+      success: ClientsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("clientCreate", "/api/clients", {
+      payload: ClientInput,
+      success: ClientCreatedResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("clientRevoke", "/api/clients/:id", {
+      params: clientParams,
+      success: ClientResponse,
     }),
   )
   // --- writes ---

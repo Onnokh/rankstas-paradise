@@ -22,12 +22,14 @@
 // configured site's runtime. A truly process-global job view across many sites
 // is out of scope here (the golden fixture is single-site); this matches the
 // legacy single-lock behaviour for the common single-site deployment.
-import { ConfigProvider, Effect, Layer, ManagedRuntime, Redacted } from "effect"
+import { ConfigProvider, Effect, Layer, ManagedRuntime, Option, Redacted } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 
 import { Analytics } from "@rp/domain/analytics/analytics"
 import { AppDatabase } from "@rp/domain/app-database/app-database"
 import { Catalog } from "@rp/domain/catalog/catalog"
+import { type Client } from "@rp/domain/clients/schema"
+import { Clients } from "@rp/domain/clients/clients"
 import { Config } from "@rp/domain/config/config"
 import { type ConfigSite } from "@rp/domain/config/schema"
 import { CurrentSite } from "@rp/domain/sites/current-site"
@@ -117,6 +119,22 @@ export interface SecretOps {
   readonly remove: (scope: SiteId | null, purpose: string) => Promise<void>
 }
 
+// The client-token operations the clients routes need. `create` is the one
+// place a plaintext token is returned.
+export interface ClientOps {
+  readonly list: () => Promise<ReadonlyArray<Client>>
+  readonly create: (
+    label: string,
+  ) => Promise<{ readonly client: Client; readonly token: Redacted.Redacted<string> }>
+  readonly revoke: (id: string) => Promise<Client>
+}
+
+// What the bearer middleware asks about per-client tokens.
+export interface AuthOps {
+  readonly accepts: (token: string) => Promise<boolean>
+  readonly hasActiveClient: () => Promise<boolean>
+}
+
 export interface ServerContext {
   readonly debug: boolean
   readonly loadSites: () => Promise<ReadonlyArray<Site>>
@@ -132,6 +150,8 @@ export interface ServerContext {
   readonly forgetAll: () => Promise<void>
   readonly catalog: CatalogOps
   readonly secrets: SecretOps
+  readonly clients: ClientOps
+  readonly auth: AuthOps
 }
 
 // Build the server context: read the debug flag + site catalog once, and set up
@@ -144,7 +164,7 @@ export const makeServerContext = async (): Promise<ServerContext> => {
   // connection here; the settings and secrets routes write through the same
   // runtime.
   const appRuntime = ManagedRuntime.make(
-    Layer.mergeAll(Sites.layer, Secrets.layer).pipe(
+    Layer.mergeAll(Sites.layer, Secrets.layer, Clients.layer).pipe(
       Layer.provideMerge(Catalog.layer),
       Layer.provideMerge(AppDatabase.layer),
       Layer.provide(Config.defaultLayer),
@@ -218,6 +238,23 @@ export const makeServerContext = async (): Promise<ServerContext> => {
     remove: (scope, purpose) => appRuntime.runPromise(Secrets.use.remove(scope, purpose)),
   }
 
+  const clients: ClientOps = {
+    list: () => appRuntime.runPromise(Clients.use.list()),
+    create: (label) => appRuntime.runPromise(Clients.use.create(label)),
+    revoke: (id) => appRuntime.runPromise(Clients.use.revoke(id)),
+  }
+
+  // A lookup failure reads as "not accepted" rather than a crash of the
+  // middleware; the request then gets its 401.
+  const auth: AuthOps = {
+    accepts: (token) =>
+      appRuntime
+        .runPromise(Clients.use.authenticate(token))
+        .then(Option.isSome, () => false),
+    hasActiveClient: () =>
+      appRuntime.runPromise(Clients.use.hasActive()).catch(() => false),
+  }
+
   return {
     debug,
     loadSites: () => appRuntime.runPromise(Sites.use.loadSites()),
@@ -233,5 +270,7 @@ export const makeServerContext = async (): Promise<ServerContext> => {
     forgetAll,
     catalog,
     secrets,
+    clients,
+    auth,
   }
 }

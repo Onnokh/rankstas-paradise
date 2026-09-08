@@ -22,7 +22,7 @@ Without the volume the key and history are lost on every redeploy.
 
 | Var | Required | Notes |
 |---|---|---|
-| `RP_TOKEN` | yes (secret) | Bearer token required on every request. Use a long random value. |
+| `RP_TOKEN` | yes (secret) | The shared bearer token: the bootstrap credential that creates the first client, and the break-glass one if every client token is revoked. Use a long random value. Per-client tokens (§3d) are accepted beside it. |
 | `XDG_CONFIG_HOME` | yes | Set to `/data` (see above). |
 | `GOOGLE_SERVICE_ACCOUNT_FILE` | no | Override the key path. Defaults to `<app home>/google-service-account.json`. |
 | `SITE_URL` | no | Legacy: the single property a fresh catalog is seeded with when there is no `config.json`. Ignored once the catalog has been imported. |
@@ -49,6 +49,12 @@ Vendor keys (Polar, Rybbit, Ahrefs) can be stored through the API instead of the
 - The server hands a stored key to the provider's adapter under the environment variable it already reads (`RYBBIT_API_KEY`, the site's `revenue.keyVariable`, `AHREFS_API_KEY`), through a per-site ConfigProvider. **A stored key wins over the environment variable; the environment stays the fallback.** So you can move keys over one at a time and remove the env vars in Coolify afterwards.
 - What this protects: copies of the volume and backups. It does not protect against an operator who can read the container's environment — they hold the master key too.
 - **Rotation:** there is no re-encrypt yet. To change `RP_MASTER_KEY`, delete the stored keys, set the new master key, restart, and store them again.
+
+## 3d. Clients: per-client tokens
+
+Instead of copying `RP_TOKEN` into every client, issue each one its own token: `POST /api/clients` with `{ "label": "Onno's MacBook" }` answers `201` with the client and its token, once. The server stores only the token's SHA-256 hash (the Clients service, [packages/domain/src/clients/clients.ts](../packages/domain/src/clients/clients.ts)). `GET /api/clients` lists clients with their last use; `DELETE /api/clients/<id>` revokes one, and its token stops working at the next request. The bearer middleware accepts `RP_TOKEN` and any active client token; it answers `503` only when neither exists.
+
+The Mac app keeps its token in the login Keychain. On first launch after this change it copies the target from `~/.config/rankstas-paradise/client.json` into the Keychain and leaves the file for the TUI and Electron client, which still read it.
 
 ## 4. Google authentication — a service-account key
 
