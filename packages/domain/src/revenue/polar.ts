@@ -5,7 +5,8 @@
 //   GET /v1/metrics?start_date=&end_date=&interval=day&timezone=&metrics=…
 //
 // bucketed by day in the zone asked, with `orders` (a count), `revenue` (what
-// customers paid, in cents) and `net_revenue` (that less refunds) per bucket.
+// customers paid, in cents) and `net_revenue` (what reached the seller: less
+// refunds and less Polar's fees) per bucket.
 // One call covers up to 366 days, so a first run and a daily reconcile cost
 // the same: one request.
 //

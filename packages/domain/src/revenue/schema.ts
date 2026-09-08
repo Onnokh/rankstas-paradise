@@ -46,11 +46,13 @@ export interface RevenueSource extends Schema.Schema.Type<typeof RevenueSource> 
 
 // One day of a site's sales. Amounts are in the currency's MINOR unit (cents
 // for USD and EUR), as every vendor reports them, so they add without rounding;
-// a client divides by 100 to show them. `revenue` is what customers paid;
-// `net` is that less refunds — not less the vendor's fee, which vendors define
-// differently and which would not survive a change of provider. `currency` is
-// an ISO 4217 code, one per row; a vendor that settles everything in one
-// currency writes the same code on every row.
+// a client divides by 100 to show them. `revenue` is what customers paid, the
+// figure that compares across providers. `net` is what the provider calls net:
+// revenue less refunds and less its own fees (Polar's net_revenue is after
+// Polar's cut). Vendors define that differently, so net compares within one
+// provider only; the headline is revenue. `currency` is an ISO 4217 code, one
+// per row; a vendor that settles everything in one currency writes the same
+// code on every row.
 export const RevenueDay = Schema.Struct({
   date: Schema.String,
   orders: Schema.Number,

@@ -120,7 +120,8 @@ today's row every five minutes.
   current, previous, delta }`: one row per synced day of the current window
   (`date`, `orders`, `revenue`, `net`, `currency`), oldest first, and the
   totals of the window and the one before with their deltas. Amounts are in
-  the currency's minor unit (cents). The window ends on the newest whole day,
+  the currency's minor unit (cents); `net` is the provider's own net, after
+  refunds and its fees. The window ends on the newest whole day,
   as `/api/events` does. `revenue` is `null` for a site without a provider;
   then `days` is empty and every total zero.
 

@@ -25,9 +25,11 @@ that carry the series as optional keys.
 `packages/domain/src/revenue/schema.ts` defines one row: **orders, revenue and
 net revenue per day**, with a currency code. That is what Polar, Stripe and
 Lemon Squeezy can all answer per day. Amounts are in the currency's minor unit,
-as every vendor reports them, so they add without rounding. Net is revenue less
-refunds and nothing else — vendor fees are defined differently by each vendor
-and would not survive a change of provider. Per-product breakdowns,
+as every vendor reports them, so they add without rounding. Revenue is what
+customers paid and is the figure that compares across providers. Net is the
+provider's own net — revenue less refunds and less its fees, which each vendor
+defines differently — so it is carried for the tooltip and compared within one
+provider only. Per-product breakdowns,
 subscriptions, MRR and churn are out of scope: Ranksta is not a second billing
 dashboard.
 
