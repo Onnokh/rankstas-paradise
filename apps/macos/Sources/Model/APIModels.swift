@@ -299,6 +299,14 @@ struct LiveEvent: Codable, Sendable, Equatable, Identifiable {
     var date: Date? { Instant.parse(at) }
 }
 
+/// The server's ISO 8601 instants, with or without fractional seconds.
+enum Instant {
+    static func parse(_ text: String) -> Date? {
+        (try? Date(text, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
+            ?? (try? Date(text, strategy: .iso8601))
+    }
+}
+
 struct AnalyticsStatus: Codable, Sendable, Equatable {
     let provider: String
     let siteId: String
