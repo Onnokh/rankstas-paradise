@@ -446,6 +446,54 @@ describe("secrets routes", () => {
     expect(ahrefs?.inEnvironment).toBe(false)
   })
 
+  test("GET /api/secrets offers a DataForSEO slot under the variable the services read", async () => {
+    // Without this slot the key has nowhere to be typed: the Mac app's Settings
+    // window renders one field per slot, so a missing purpose forces the key
+    // into the server's environment — which CONTEXT.md rules out for a Vendor
+    // key. The variable name is the load-bearing part: KeywordMetrics and
+    // KeywordDiscovery both read `DATAFORSEO_API_KEY` from config, and the
+    // site runtime injects a revealed vault secret under exactly that name.
+    const { status, body } = await requestJson(server, "/api/secrets")
+    expect(status).toBe(200)
+    const slots = (body as {
+      slots: ReadonlyArray<{ purpose: string; variable: string; stored: unknown }>
+    }).slots
+    const dataforseo = slots.find((slot) => slot.purpose === "dataforseo")
+    expect(dataforseo?.variable).toBe("DATAFORSEO_API_KEY")
+    expect(dataforseo?.stored).toBeNull()
+  })
+
+  test("a stored DataForSEO key is what the keyword reports then read", async () => {
+    // The round trip that matters. Storing the key must change what a site's
+    // runtime can do, not just what the settings screen lists — and the proof
+    // is that the report stops saying the vendor was never asked.
+    const value = "dataforseo-test-key-0002"
+    const put = await requestJson(server, "/api/secrets/dataforseo", {
+      method: "PUT",
+      body: { value },
+    })
+    expect(put.status).toBe(200)
+    expect(JSON.stringify(put.body)).not.toContain(value)
+
+    const listed = await requestJson(server, "/api/secrets")
+    // The value never comes back, only its last four.
+    expect(JSON.stringify(listed.body)).not.toContain(value)
+    const slots = (listed.body as {
+      slots: ReadonlyArray<{ purpose: string; stored: { last4: string } | null }>
+    }).slots
+    expect(slots.find((slot) => slot.purpose === "dataforseo")?.stored?.last4).toBe("0002")
+
+    // The report still answers with every row unmeasured: a stored key means the
+    // vendor CAN be asked, and nothing has asked yet. A test that expected
+    // volumes here would be asserting that a read spends money.
+    const health = await requestJson(server, `/api/registry/health${site}`)
+    expect(health.status).toBe(200)
+    const totals = (health.body as { totals: { keywords: number; unmeasured: number } }).totals
+    expect(totals.unmeasured).toBe(totals.keywords)
+
+    await requestJson(server, "/api/secrets/dataforseo", { method: "DELETE" })
+  })
+
   test("PUT then DELETE /api/secrets/:purpose; the value never comes back", async () => {
     const value = "ahrefs-test-key-0001"
     const put = await requestJson(server, "/api/secrets/ahrefs", {
