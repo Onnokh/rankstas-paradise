@@ -84,8 +84,11 @@ struct RegistryScreen: View {
         }
     }
 
-    /// What the registry holds, in one line: how many pages, how many carry keywords, and
-    /// how many Google does not hold.
+    /// What the registry holds, in one line: how many pages, how many carry keywords, how
+    /// many Google does not hold, and the market every search volume below is measured in.
+    /// The market is a property of the site, so it belongs here once rather than on each
+    /// keyword — but it has to be somewhere, because a volume without its market is
+    /// ambiguous.
     private var summary: String {
         guard !targets.isEmpty else {
             return loading ? "Loading…" : "No target pages yet."
@@ -96,6 +99,9 @@ struct RegistryScreen: View {
         parts.append("\(mapped) with keywords")
         if unindexed > 0 {
             parts.append("\(unindexed) not indexed")
+        }
+        if let market = overview.site.market, RegistryList.hasDemand(targets) {
+            parts.append(market.summary)
         }
         return parts.joined(separator: " · ")
     }
@@ -336,16 +342,15 @@ private struct RegistryDetail: View {
                     Text("Keywords")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    // A wrapping row of the mapped keywords; the cluster and country sit in
-                    // the tooltip so a long list stays one line per keyword.
+                    // A wrapping row of the mapped keywords, each with its search volume:
+                    // this is what makes the plan checkable rather than a list of
+                    // intentions. A keyword nobody searches for is a page nobody will find,
+                    // whatever its priority says. The cluster, the intent and the rest of
+                    // the vendor's numbers sit in the tooltip, so a long list stays one line
+                    // per keyword.
                     FlowRow(spacing: 6) {
                         ForEach(target.mappedKeywords) { keyword in
-                            Text(keyword.keyword)
-                                .font(.caption)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(Palette.line.opacity(0.7), in: .capsule)
-                                .help("\(keyword.cluster) · \(keyword.intent) · \(keyword.country.uppercased())")
+                            KeywordChip(keyword: keyword)
                         }
                     }
                 }
@@ -415,6 +420,54 @@ private struct RegistryDetail: View {
         case "not-indexed": Palette.coral
         default: .secondary
         }
+    }
+}
+
+/// One mapped keyword, with its search volume when the site has one.
+///
+/// The volume sits on the chip because it is the number that decides whether the mapping
+/// was worth making; everything else the vendor says is in the tooltip, where a reader who
+/// wants it can find it without the list growing a column per number.
+///
+/// A keyword with no stored answer looks exactly as it did before demand existed. That is
+/// deliberate: an absent answer means nobody has asked yet, and showing a "0" or a dash
+/// would claim the vendor said something it did not.
+private struct KeywordChip: View {
+    let keyword: RegistryKeyword
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(keyword.keyword)
+            if let volume = keyword.demand?.volumeLabel {
+                Text(volume)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+        }
+        .font(.caption)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Palette.line.opacity(0.7), in: .capsule)
+        .help(tooltip)
+    }
+
+    /// The cluster and intent the registry holds, then the numbers the vendor reported.
+    /// Difficulty is shown and never ranked on: a term this site cannot reach yet is still
+    /// a real target, just not this quarter's, so the reader weighs it against the site's
+    /// domain rating themselves.
+    private var tooltip: String {
+        var parts = [keyword.cluster, keyword.intent].filter { !$0.isEmpty }
+        if let demand = keyword.demand {
+            if let difficulty = demand.difficultyLabel { parts.append(difficulty) }
+            if let cost = demand.costPerClick {
+                parts.append("CPC \(cost.formatted(.currency(code: "USD")))")
+            }
+            if let intent = demand.intent, !intent.isEmpty, intent != keyword.intent {
+                parts.append("searched as \(intent)")
+            }
+            parts.append("measured \(demand.fetchedAt.prefix(10))")
+        }
+        return parts.joined(separator: " · ")
     }
 }
 
