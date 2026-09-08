@@ -72,16 +72,14 @@ struct SiteSettingsPage: View {
 
     var body: some View {
         Form {
-            Section {
-                TextField("Name", text: $draft.name, prompt: Text(entry.id))
-                TextField("Property", text: $draft.siteUrl)
-                TextField("Origin", text: $draft.origin, prompt: Text("derived"))
-                TextField("Sitemap", text: $draft.sitemapUrl, prompt: Text("derived"))
-                TextField("Brand terms", text: $draft.brandTerms, prompt: Text(entry.id))
-            }
+            TextField("Name", text: $draft.name, prompt: Text(entry.id))
+            TextField("Property", text: $draft.siteUrl)
+            TextField("Origin", text: $draft.origin, prompt: Text("derived"))
+            TextField("Sitemap", text: $draft.sitemapUrl, prompt: Text("derived"))
+            TextField("Brand terms", text: $draft.brandTerms, prompt: Text(entry.id))
 
             if let analytics = entry.analytics {
-                Section("Analytics · \(analytics.provider)") {
+                Section("Analytics (\(analytics.provider))") {
                     TextField("Site id", text: $draft.analyticsSiteId)
                     TextField("Base URL", text: $draft.analyticsBaseUrl, prompt: Text("provider cloud"))
                     TextField("Time zone", text: $draft.analyticsTimeZone, prompt: Text("UTC"))
@@ -89,7 +87,7 @@ struct SiteSettingsPage: View {
             }
 
             if let revenue = entry.revenue {
-                Section("Revenue · \(revenue.provider)") {
+                Section("Revenue (\(revenue.provider))") {
                     TextField("Account id", text: $draft.revenueAccountId, prompt: Text("none"))
                     TextField("Base URL", text: $draft.revenueBaseUrl, prompt: Text("production"))
                     TextField("Time zone", text: $draft.revenueTimeZone, prompt: Text("analytics zone"))
@@ -99,39 +97,39 @@ struct SiteSettingsPage: View {
             if let secrets {
                 KeysSection(secrets: secrets, siteID: entry.id, model: model)
             }
-        }
-        .formStyle(.grouped)
-        .navigationTitle(entry.name ?? entry.id)
-        .toolbar {
-            Button("Save") {
-                isSaving = true
-                Task {
-                    _ = await model.saveSite(id: entry.id, settings: draft.settings(over: entry.settings))
-                    isSaving = false
+
+            HStack {
+                Spacer()
+                Button("Save") {
+                    isSaving = true
+                    Task {
+                        _ = await model.saveSite(id: entry.id, settings: draft.settings(over: entry.settings))
+                        isSaving = false
+                    }
                 }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!isDirty || isSaving || draft.siteUrl.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            .disabled(!isDirty || isSaving || draft.siteUrl.trimmingCharacters(in: .whitespaces).isEmpty)
         }
+        .formStyle(.columns)
         .onChange(of: entry) { _, stored in draft = Draft(stored.settings) }
     }
 }
 
-/// One row per key: its state on the right, a field to store a new value.
+/// One row per key: a field whose placeholder says where the key comes from now, and Store.
 struct KeysSection: View {
     let secrets: SecretsEnvelope
     let siteID: Site.ID?
     let model: SettingsModel
 
     var body: some View {
-        Section {
+        Section("Keys") {
             ForEach(secrets.slots) { slot in
                 KeyRow(slot: slot, siteID: siteID, model: model)
             }
-        } header: {
-            Text("Keys")
-        } footer: {
             if !secrets.encryption.configured {
                 Text(secrets.encryption.reason ?? "Set RP_MASTER_KEY on the server.")
+                    .font(.callout)
                     .foregroundStyle(Palette.amber)
             }
         }
@@ -152,20 +150,14 @@ struct KeyRow: View {
     }
 
     var body: some View {
-        LabeledContent(slot.purpose.capitalized) {
-            HStack(spacing: 8) {
-                Text(state)
-                    .font(.callout)
-                    .foregroundStyle(slot.stored == nil && !slot.inEnvironment ? Palette.amber : .secondary)
-                SecureField("", text: $value, prompt: Text("key"))
-                    .frame(width: 180)
-                Button("Store") {
-                    Task {
-                        if await model.setSecret(siteID: siteID, purpose: slot.purpose, value: value) { value = "" }
-                    }
+        HStack {
+            SecureField(slot.purpose.capitalized, text: $value, prompt: Text(state))
+            Button("Store") {
+                Task {
+                    if await model.setSecret(siteID: siteID, purpose: slot.purpose, value: value) { value = "" }
                 }
-                .disabled(value.trimmingCharacters(in: .whitespaces).isEmpty)
             }
+            .disabled(value.trimmingCharacters(in: .whitespaces).isEmpty)
         }
     }
 }

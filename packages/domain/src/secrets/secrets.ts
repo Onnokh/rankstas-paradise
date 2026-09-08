@@ -49,6 +49,17 @@ export interface Interface {
     scope: string | null,
     purpose: string,
   ) => Effect.Effect<void, SecretsError | UnknownSecretError>
+  // The one-time import of keys the environment already holds: stores every
+  // entry whose slot is empty and records that the import ran. Null when it
+  // did not run — encryption is not configured yet (it runs on a later start),
+  // or it ran before. Otherwise how many were stored.
+  readonly importOnce: (
+    entries: ReadonlyArray<{
+      readonly scope: string | null
+      readonly purpose: string
+      readonly value: Redacted.Redacted<string>
+    }>,
+  ) => Effect.Effect<number | null, SecretsError>
   // Decrypt every secret of one scope. Empty when encryption is not
   // configured. For the server's ConfigProvider only.
   readonly reveal: (
@@ -72,6 +83,7 @@ const keyVersion = 1
 const appScope = ""
 
 const purposePattern = /^[a-z0-9][a-z0-9-]*$/
+const importedKey = "environment_imported_at"
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
@@ -177,6 +189,14 @@ export const layer = Layer.effect(
         )`,
       )
       .pipe(mapErr("initialize"))
+    yield* sql
+      .unsafe(
+        `create table if not exists secret_meta (
+          key text primary key,
+          value text not null
+        )`,
+      )
+      .pipe(mapErr("initialize"))
 
     const storedScope = (scope: string | null) => scope ?? appScope
     const publicScope = (scope: string) => (scope === appScope ? null : scope)
@@ -267,6 +287,36 @@ export const layer = Layer.effect(
         yield* sql`delete from secret where scope = ${stored} and purpose = ${purpose}`
       })
 
+    const importOnceI = (
+      entries: ReadonlyArray<{
+        readonly scope: string | null
+        readonly purpose: string
+        readonly value: Redacted.Redacted<string>
+      }>,
+    ) =>
+      Effect.gen(function* () {
+        if (!cryptoKey) return null
+        const done = yield* sql<{ value: string }>`
+          select value from secret_meta where key = ${importedKey}`
+        if (done.length > 0) return null
+        let stored = 0
+        for (const entry of entries) {
+          const existing = yield* sql<{ n: number }>`select count(*) as n from secret
+            where scope = ${storedScope(entry.scope)} and purpose = ${entry.purpose}`
+          if ((existing[0]?.n ?? 0) > 0) continue
+          // A value the vault would refuse (blank, odd purpose) is skipped, not
+          // fatal: the import must not stop the server from starting.
+          const result = yield* setI(entry.scope, entry.purpose, entry.value).pipe(
+            Effect.catchTag("InvalidSecretError", () => Effect.succeed(null)),
+            Effect.catchTag("EncryptionUnavailableError", (error) => Effect.die(error)),
+          )
+          if (result !== null) stored += 1
+        }
+        yield* sql`insert into secret_meta (key, value)
+          values (${importedKey}, ${new Date().toISOString()})`
+        return stored
+      })
+
     const revealI = (scope: string | null) =>
       Effect.gen(function* () {
         if (!cryptoKey) return []
@@ -289,6 +339,9 @@ export const layer = Layer.effect(
       ),
       remove: Effect.fn("Secrets.remove")((scope, purpose) =>
         removeI(scope, purpose).pipe(mapErr("remove")),
+      ),
+      importOnce: Effect.fn("Secrets.importOnce")((entries) =>
+        importOnceI(entries).pipe(mapErr("importOnce")),
       ),
       reveal: Effect.fn("Secrets.reveal")((scope) => revealI(scope).pipe(mapErr("reveal"))),
     }

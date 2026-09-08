@@ -165,3 +165,46 @@ describe("Secrets", () => {
     }
   })
 })
+
+describe("Secrets.importOnce", () => {
+  test("fills empty slots once, skips filled and invalid ones, then never runs again", async () => {
+    await runtime.runPromise(Secrets.use.set("shop", "polar", Redacted.make("already-there")))
+    const first = await runtime.runPromise(
+      Secrets.use.importOnce([
+        { scope: "shop", purpose: "polar", value: Redacted.make("from-env-ignored") },
+        { scope: "shop", purpose: "rybbit", value: Redacted.make("rybbit-from-env") },
+        { scope: null, purpose: "ahrefs", value: Redacted.make("ahrefs-from-env") },
+        { scope: null, purpose: "Bad Purpose", value: Redacted.make("skipped") },
+      ]),
+    )
+    expect(first).toBe(2)
+    const shop = await runtime.runPromise(Secrets.use.reveal("shop"))
+    expect(shop.map((s) => [s.purpose, Redacted.value(s.value)]).sort()).toEqual([
+      ["polar", "already-there"],
+      ["rybbit", "rybbit-from-env"],
+    ])
+    expect((await runtime.runPromise(Secrets.use.reveal(null))).length).toBe(1)
+
+    const second = await runtime.runPromise(
+      Secrets.use.importOnce([{ scope: "shop", purpose: "stripe", value: Redacted.make("later") }]),
+    )
+    expect(second).toBeNull()
+  })
+
+  test("does not run, and does not mark itself done, without a master key", async () => {
+    const bare = vault(dir, {})
+    try {
+      const result = await bare.runPromise(
+        Secrets.use.importOnce([{ scope: null, purpose: "ahrefs", value: Redacted.make("x-y-z-w") }]),
+      )
+      expect(result).toBeNull()
+    } finally {
+      await bare.dispose()
+    }
+    // With a key, the same import still runs.
+    const later = await runtime.runPromise(
+      Secrets.use.importOnce([{ scope: null, purpose: "ahrefs", value: Redacted.make("x-y-z-w") }]),
+    )
+    expect(later).toBe(1)
+  })
+})
