@@ -17,6 +17,11 @@ import { Effect, Schema } from "effect"
 import { z } from "zod"
 
 import { Config } from "@rp/domain/config/config"
+import { KeywordDiscovery } from "@rp/domain/keyword-discovery/keyword-discovery"
+import type {
+  KeywordDiscoveryError,
+} from "@rp/domain/keyword-discovery/schema"
+import type { UnservedMarketError } from "@rp/domain/keyword-metrics/schema"
 import { RegistryPatch } from "@rp/domain/registry/schema"
 import { Reports } from "@rp/domain/reports/reports"
 import type { ReportsError } from "@rp/domain/reports/schema"
@@ -42,7 +47,11 @@ import { Sites } from "@rp/domain/sites/sites"
 // each call to the matching per-site runtime rather than a single global one.
 // PLO-276 wires this as `(site, effect) => perSiteRuntime(site).runPromise(effect)`;
 // tests pass `(_site, effect) => testRuntime.runPromise(effect)` over a mock `Reports`.
-export type McpRuntimeContext = Reports.Service | Sites.Service | Config.Service
+export type McpRuntimeContext =
+  | Reports.Service
+  | KeywordDiscovery.Service
+  | Sites.Service
+  | Config.Service
 export type RunTool = <A>(
   site: SiteId,
   effect: Effect.Effect<A, never, McpRuntimeContext>,
@@ -57,12 +66,29 @@ const asReport = (payload: unknown): CallToolResult => ({
 
 // A domain tagged error rendered as a structured MCP error result (not a crash).
 const errorResult = (
-  cause: ReportsError | UnknownSiteError,
+  cause:
+    | ReportsError
+    | UnknownSiteError
+    | KeywordDiscoveryError
+    | UnservedMarketError,
 ): CallToolResult => ({
   content: [
     {
       type: "text",
-      text: JSON.stringify({ error: cause._tag, message: cause.message }, null, 2),
+      text: JSON.stringify(
+        {
+          error: cause._tag,
+          // An UnservedMarketError carries no `message` — it carries the pair
+          // DataForSEO will not answer for, and the reason. Naming the pair is
+          // the whole use of it: the fix is a different Market, not a retry.
+          message:
+            cause._tag === "UnservedMarketError"
+              ? `${cause.reason} (location ${cause.locationCode}, language ${cause.languageCode})`
+              : cause.message,
+        },
+        null,
+        2,
+      ),
     },
   ],
   isError: true,
@@ -84,6 +110,27 @@ const scoped = <A>(
     Effect.provide(CurrentSite.layerFor(siteId)),
     Effect.catchTags({
       ReportsError: (cause) => Effect.succeed(errorResult(cause)),
+      UnknownSiteError: (cause) => Effect.succeed(errorResult(cause)),
+    }),
+  )
+
+// The discovery twin of `scoped`. Its own helper because the errors are
+// different ones and because the service is not Reports: a discovery run writes
+// and spends, so it cannot sit behind a report read.
+const scopedDiscovery = <A>(
+  effect: Effect.Effect<
+    A,
+    KeywordDiscoveryError | UnservedMarketError,
+    KeywordDiscovery.Service
+  >,
+  siteId: SiteId,
+): Effect.Effect<CallToolResult, never, McpRuntimeContext> =>
+  effect.pipe(
+    Effect.map(asReport),
+    Effect.provide(CurrentSite.layerFor(siteId)),
+    Effect.catchTags({
+      KeywordDiscoveryError: (cause) => Effect.succeed(errorResult(cause)),
+      UnservedMarketError: (cause) => Effect.succeed(errorResult(cause)),
       UnknownSiteError: (cause) => Effect.succeed(errorResult(cause)),
     }),
   )
@@ -424,6 +471,117 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     async ({ site }) => {
       const id = toSiteId(site)
       return run(id, scoped(Reports.use.liveEventsReport(), id))
+    },
+  )
+
+  // --- keyword discovery (spends money; see the tool descriptions) ---
+
+  server.registerTool(
+    "keywords_discover",
+    {
+      // The description carries the price and the filters because an agent
+      // reads only this before deciding how to call it, and both are things it
+      // would otherwise get wrong: it would run a seed it has already run, and
+      // it would ask for the maximum limit because more looks better.
+      description:
+        "Expand one seed keyword at DataForSEO and store what survives filtering as " +
+        "proposals for review. COSTS MONEY: the Labs expansions bill about $0.0001 " +
+        "per row returned plus $0.01 for the task, so `limit` is the price of the " +
+        "call — leave it at the default of 200 unless a narrower run came back " +
+        "almost empty. Filters out, and counts separately: keywords already in the " +
+        "registry or already proposed or dismissed, brand and site: queries, " +
+        "anything under `minVolume`, and optionally anything over `maxDifficulty` " +
+        "or outside `intents`. Read the drop counts before re-running: an empty " +
+        "result with a high droppedKnown means the seed is exhausted, not that the " +
+        "subject has no demand. Proposals are NOT registry rows — they wait for a " +
+        "person, or for a `registry_add` call once one is agreed.",
+      inputSchema: {
+        site,
+        seed: z.string().describe("The keyword to expand."),
+        source: z
+          .enum(["suggestions", "related"])
+          .optional()
+          .describe(
+            "suggestions (default) returns long-tail phrases containing the seed. " +
+              "related returns terms Google relates to it, which need not contain it " +
+              "— the only one that finds a subject the site does not cover. Ignored " +
+              "in markets DataForSEO serves through Google Ads, which has one " +
+              "expansion and reports no difficulty or intent.",
+          ),
+        limit: z
+          .number()
+          .optional()
+          .describe("Rows to ask for, 1-1000. Default 200. This is the price."),
+        minVolume: z
+          .number()
+          .optional()
+          .describe(
+            "Monthly searches a keyword must report to be proposed. Default 10; a " +
+              "keyword the vendor reports nothing for is not evidence of demand.",
+          ),
+        maxDifficulty: z
+          .number()
+          .optional()
+          .describe(
+            "Drop keywords harder than this (0-100). Absent by default: compare it " +
+              "to the site's domain rating from `dashboard` rather than guessing, " +
+              "and prefer leaving it off so the reader can judge the numbers.",
+          ),
+        intents: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Keep only these search intents, e.g. ["informational"]. Rows with no ' +
+              "reported intent are kept either way.",
+          ),
+      },
+    },
+    async ({ site, ...rest }) => {
+      const id = toSiteId(site)
+      return run(id, scopedDiscovery(KeywordDiscovery.use.discover(rest), id))
+    },
+  )
+
+  server.registerTool(
+    "keywords_proposed",
+    {
+      description:
+        "The stored keyword proposals still waiting on a decision, strongest demand " +
+        "first. Free — reads nothing but this site's own store. Excludes dismissed " +
+        "proposals and any keyword the registry has since taken. Each row carries " +
+        "the vendor's numbers as they read when it was proposed, which is why a row " +
+        "may disagree with `registry_health`: that reports the current metric.",
+      inputSchema: { site },
+    },
+    async ({ site }) => {
+      const id = toSiteId(site)
+      return run(id, scopedDiscovery(KeywordDiscovery.use.proposed(), id))
+    },
+  )
+
+  server.registerTool(
+    "keywords_dismiss",
+    {
+      description:
+        "Set proposals aside by keyword; returns how many changed. Free. A dismissed " +
+        "keyword stays dismissed: a later `keywords_discover` run that finds it again " +
+        "will not propose it, which is what makes repeated runs on one seed useful.",
+      inputSchema: {
+        site,
+        keywords: z.array(z.string()).describe("The keywords to dismiss."),
+      },
+    },
+    async ({ site, keywords }) => {
+      const id = toSiteId(site)
+      return run(
+        id,
+        scopedDiscovery(
+          KeywordDiscovery.use.dismiss(keywords).pipe(
+            Effect.map((dismissed) => ({ dismissed })),
+          ),
+          id,
+        ),
+      )
     },
   )
 

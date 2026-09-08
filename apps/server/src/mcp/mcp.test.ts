@@ -10,6 +10,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 
 import { Config } from "@rp/domain/config/config"
+import { KeywordDiscovery } from "@rp/domain/keyword-discovery/keyword-discovery"
+import { KeywordDiscoveryError } from "@rp/domain/keyword-discovery/schema"
+import type { KeywordProposal } from "@rp/domain/keyword-discovery/schema"
+import { UnservedMarketError } from "@rp/domain/keyword-metrics/schema"
 import { Reports } from "@rp/domain/reports/reports"
 import { ReportsError } from "@rp/domain/reports/schema"
 import { Sites } from "@rp/domain/sites/sites"
@@ -75,7 +79,32 @@ const configMock = Layer.mock(Config.Service)({
   debugMode: () => Effect.succeed(true),
 })
 
-const testLayer = Layer.mergeAll(reportsMock, sitesMock, configMock)
+const fakeProposal: KeywordProposal = {
+  keyword: "acme widget sizes",
+  seed: "acme widget",
+  source: "suggestions",
+  locationCode: 2840,
+  languageCode: "en",
+  searchVolume: 320,
+  difficulty: 18,
+  costPerClick: 0.9,
+  competition: 0.3,
+  intent: "informational",
+  status: "proposed",
+  discoveredAt: "2026-09-08T00:00:00.000Z",
+}
+
+// Mock KeywordDiscovery: `proposed` succeeds, `dismiss` succeeds, and `discover`
+// fails with the domain's tagged error, so the discovery tools' own error
+// mapping is exercised rather than assumed to match Reports'.
+const discoveryMock = Layer.mock(KeywordDiscovery.Service)({
+  proposed: () => Effect.succeed([fakeProposal]),
+  dismiss: () => Effect.succeed(1),
+  discover: () =>
+    Effect.fail(new KeywordDiscoveryError({ message: "no DataForSEO key" })),
+})
+
+const testLayer = Layer.mergeAll(reportsMock, sitesMock, configMock, discoveryMock)
 
 // A test client connected to the adapter over the given runtime seam.
 const connectClient = async (run: RunTool): Promise<Client> => {
@@ -141,4 +170,133 @@ test("a domain tagged error maps to a structured MCP error result", async () => 
       message: "registry unavailable",
     })
   })
+})
+
+test("keywords_proposed returns the stored proposals", async () => {
+  await withClient(async (client) => {
+    const result = await client.callTool({
+      name: "keywords_proposed",
+      arguments: { site: "acme" },
+    })
+    expect(result.isError).toBeFalsy()
+    expect(JSON.parse(textOf(result))).toEqual([fakeProposal])
+  })
+})
+
+test("keywords_dismiss names the count rather than returning a bare number", async () => {
+  await withClient(async (client) => {
+    const result = await client.callTool({
+      name: "keywords_dismiss",
+      arguments: { site: "acme", keywords: ["acme widget sizes"] },
+    })
+    expect(result.isError).toBeFalsy()
+    expect(JSON.parse(textOf(result))).toEqual({ dismissed: 1 })
+  })
+})
+
+test("a discovery error maps to a structured MCP error result", async () => {
+  await withClient(async (client) => {
+    const result = await client.callTool({
+      name: "keywords_discover",
+      arguments: { site: "acme", seed: "acme widget" },
+    })
+    expect(result.isError).toBe(true)
+    expect(JSON.parse(textOf(result))).toEqual({
+      error: "KeywordDiscoveryError",
+      message: "no DataForSEO key",
+    })
+  })
+})
+
+test("an unserved market names the pair, since it carries no message", async () => {
+  const runtime = ManagedRuntime.make(
+    Layer.mergeAll(
+      reportsMock,
+      sitesMock,
+      configMock,
+      Layer.mock(KeywordDiscovery.Service)({
+        discover: () =>
+          Effect.fail(
+            new UnservedMarketError({
+              locationCode: 2528,
+              languageCode: "de",
+              reason: "The Netherlands is served in Dutch only.",
+            }),
+          ),
+      }),
+    ),
+  )
+  const client = await connectClient((_site, effect) => runtime.runPromise(effect))
+  try {
+    const result = await client.callTool({
+      name: "keywords_discover",
+      arguments: { site: "acme", seed: "acme widget" },
+    })
+    expect(result.isError).toBe(true)
+    // The fix for this error is a different Market, so the pair has to be in
+    // the message an agent reads — the error itself has no `message` field.
+    expect(JSON.parse(textOf(result))).toEqual({
+      error: "UnservedMarketError",
+      message:
+        "The Netherlands is served in Dutch only. (location 2528, language de)",
+    })
+  } finally {
+    await client.close()
+    await runtime.dispose()
+  }
+})
+
+test("keywords_discover passes its filters through and never invents a limit", async () => {
+  // The arguments an agent sends have to arrive as the domain's request, or a
+  // filter silently does nothing and the reader pays for rows they asked to
+  // exclude.
+  const seen: Array<unknown> = []
+  const runtime = ManagedRuntime.make(
+    Layer.mergeAll(
+      reportsMock,
+      sitesMock,
+      configMock,
+      Layer.mock(KeywordDiscovery.Service)({
+        discover: (request) =>
+          Effect.sync(() => {
+            seen.push(request)
+            return {
+              seed: request.seed,
+              source: "suggestions" as const,
+              returned: 0,
+              droppedKnown: 0,
+              droppedBrandOrOperator: 0,
+              droppedBelowVolume: 0,
+              droppedAboveDifficulty: 0,
+              droppedByIntent: 0,
+              proposals: [],
+            }
+          }),
+      }),
+    ),
+  )
+  const client = await connectClient((_site, effect) => runtime.runPromise(effect))
+  try {
+    await client.callTool({
+      name: "keywords_discover",
+      arguments: {
+        site: "acme",
+        seed: "acme widget",
+        source: "related",
+        minVolume: 50,
+        intents: ["informational"],
+      },
+    })
+    expect(seen).toEqual([
+      {
+        seed: "acme widget",
+        source: "related",
+        minVolume: 50,
+        intents: ["informational"],
+      },
+    ])
+  } finally {
+    await client.close()
+    await runtime.dispose()
+  }
 })

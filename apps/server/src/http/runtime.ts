@@ -34,6 +34,7 @@ import { Config } from "@rp/domain/config/config"
 import { type ConfigSite } from "@rp/domain/config/schema"
 import { CurrentSite } from "@rp/domain/sites/current-site"
 import { DomainRating } from "@rp/domain/domain-rating/domain-rating"
+import { KeywordDiscovery } from "@rp/domain/keyword-discovery/keyword-discovery"
 import { KeywordMetrics } from "@rp/domain/keyword-metrics/keyword-metrics"
 import { Registry } from "@rp/domain/registry/registry"
 import { Reports } from "@rp/domain/reports/reports"
@@ -68,6 +69,9 @@ const siteLayer = (site: Site, provider: ConfigProvider.ConfigProvider) =>
     // entries below it.
     Layer.provideMerge(DomainRating.layer),
     Layer.provideMerge(KeywordMetrics.layer),
+    // Above Registry as well as Storage: a discovery run reads the Registry to
+    // avoid proposing a keyword the plan already holds.
+    Layer.provideMerge(KeywordDiscovery.layer),
     Layer.provideMerge(Storage.layer),
     Layer.provideMerge(Registry.layer),
     Layer.provideMerge(Sitemap.layer),
@@ -89,6 +93,7 @@ export type SiteRuntime = ManagedRuntime.ManagedRuntime<
   | Revenue.Service
   | Storage.Service
   | Registry.Service
+  | KeywordDiscovery.Service
   | Sitemap.Service
   | CurrentSite.Service,
   never
