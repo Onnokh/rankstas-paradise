@@ -168,7 +168,12 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     "queries",
     {
       description:
-        "Top search queries, optionally scoped to a page, with brand and mapping flags.",
+        "Top search queries, optionally scoped to a page, with brand and mapping flags. " +
+        "Each row carries `demand` when DataForSEO has an answer for it: search volume, " +
+        "difficulty (0-100), cost per click, competition and intent, in the `market` the " +
+        "response names. An absent `demand` means no answer is stored, not that the query " +
+        "has no demand; a null `searchVolume` means the term is too rare for the vendor to " +
+        "report. Brand and operator queries never carry one — they are never asked about.",
       inputSchema: {
         site,
         page: z.string().optional().describe("Page path to scope queries to."),
@@ -213,7 +218,14 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     "opportunities",
     {
       description:
-        "The opportunity digest signals (striking-distance, ctr, new-demand, cannibalization), strongest first. Returns the top `limit` signals; `totalSignals` reports how many matched.",
+        "The opportunity digest signals (striking-distance, ctr, new-demand, cannibalization), " +
+        "strongest first. Returns the top `limit` signals; `totalSignals` reports how many " +
+        "matched. `score` ranks striking-distance, new-demand and cannibalization by search " +
+        "volume when it is known, because impressions at position 18 are structurally tiny " +
+        "and would bury the biggest prizes; ctr stays impression-weighted, since it measures " +
+        "clicks lost on appearances the site already has. Each signal carries `demand` when " +
+        "an answer is stored. `difficulty` is reported and never scored — weigh it against " +
+        "the site's Domain Rating from `status` before acting on a high-volume signal.",
       inputSchema: {
         site,
         kind: z.string().optional().describe("Filter to one signal kind."),
@@ -237,7 +249,11 @@ export const buildMcpServer = (run: RunTool): McpServer => {
       description:
         "The keyword registry: every target URL with its phase, plan, and progress, " +
         "plus visits from the analytics provider over the same 28 days (null " +
-        "without a provider).",
+        "without a provider). Each planned keyword carries `demand` when DataForSEO has " +
+        "an answer for it — search volume, difficulty, cost per click, competition and " +
+        "intent, in the `market` the response names. This is what makes the plan " +
+        "checkable: a keyword with no demand behind it is a page nobody will find, " +
+        "whatever its priority says.",
       inputSchema: { site },
     },
     async ({ site }) => {

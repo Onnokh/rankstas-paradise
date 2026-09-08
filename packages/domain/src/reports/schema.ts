@@ -93,6 +93,18 @@ export const SignalSummary = Schema.Struct({
   previous: Schema.NullOr(TidyMetrics),
   recommendation: Schema.String,
   score: Schema.Number,
+  // The Keyword metric behind the signal, when the vendor has one for the
+  // query in the Site's Market. Absent means no answer is stored — not that
+  // the term has no demand. `searchVolume` is what ranks the signal for three
+  // of the four kinds; `difficulty` is reported and never scored, so a reader
+  // weighs it against the site's Domain Rating themselves.
+  demand: Schema.optional(
+    Schema.Struct({
+      searchVolume: Schema.NullOr(Schema.Number),
+      difficulty: Schema.NullOr(Schema.Number),
+      intent: Schema.NullOr(Schema.String),
+    }),
+  ),
   launch: Schema.optional(
     Schema.Struct({
       daysSinceLaunch: Schema.Number,
@@ -382,6 +394,36 @@ export const PageReport = Schema.Struct({
 }).annotate({ identifier: "PageReport" })
 export interface PageReport extends Schema.Schema.Type<typeof PageReport> {}
 
+// What the vendor says about one Keyword or Query, as a report reports it.
+// Absent on a row means no answer is stored for that term — not that the term
+// has no demand. Every field is nullable for the reasons given on
+// ../keyword-metrics/schema.ts: difficulty and intent do not exist for a
+// Google-Ads Market, and a volume of null means the term is too rare for
+// DataForSEO to report rather than that nobody searches it.
+export const DemandReport = Schema.Struct({
+  searchVolume: Schema.NullOr(Schema.Number),
+  difficulty: Schema.NullOr(Schema.Number),
+  costPerClick: Schema.NullOr(Schema.Number),
+  competition: Schema.NullOr(Schema.Number),
+  intent: Schema.NullOr(Schema.String),
+  fetchedAt: Schema.String,
+}).annotate({ identifier: "DemandReport" })
+export interface DemandReport extends Schema.Schema.Type<typeof DemandReport> {}
+
+// The Market a report's demand numbers describe. Carried on every report that
+// holds them, because a search volume without its Market is ambiguous: the
+// same keyword has a different number in every country.
+export const MarketReport = Schema.Struct({
+  locationCode: Schema.Number,
+  languageCode: Schema.String,
+  label: Schema.String,
+  // "labs" or "google-ads". Says in advance whether `difficulty` and `intent`
+  // can arrive at all, so a client can leave the columns out rather than
+  // render them empty.
+  provider: Schema.String,
+}).annotate({ identifier: "MarketReport" })
+export interface MarketReport extends Schema.Schema.Type<typeof MarketReport> {}
+
 export const QueriesReport = Schema.Struct({
   window: Schema.Struct({
     currentStart: Schema.NullOr(Schema.String),
@@ -397,8 +439,15 @@ export const QueriesReport = Schema.Struct({
       mappedTarget: Schema.NullOr(Schema.String),
       current: TidyMetrics,
       previous: Schema.NullOr(TidyMetrics),
+      // What the vendor says about this observed Query. Absent for a brand
+      // query and for an operator query, which are never asked about, and for
+      // any query no answer is stored for yet.
+      demand: Schema.optional(DemandReport),
     }),
   ),
+  // The Market every `demand` block above describes. Optional so an older
+  // server's answer still decodes.
+  market: Schema.optional(MarketReport),
 }).annotate({ identifier: "QueriesReport" })
 export interface QueriesReport
   extends Schema.Schema.Type<typeof QueriesReport> {}
@@ -452,10 +501,18 @@ export const RegistryListReport = Schema.Struct({
           cluster: Schema.String,
           intent: Schema.String,
           country: Schema.String,
+          // What the vendor says about this planned Keyword. This is what
+          // turns the Registry from a list of intentions into a checkable
+          // plan: a keyword with no demand behind it is a page nobody will
+          // find, whatever its priority says.
+          demand: Schema.optional(DemandReport),
         }),
       ),
     }),
   ),
+  // The Market every `demand` block above describes. Optional so an older
+  // server's answer still decodes.
+  market: Schema.optional(MarketReport),
 }).annotate({ identifier: "RegistryListReport" })
 export interface RegistryListReport
   extends Schema.Schema.Type<typeof RegistryListReport> {}
