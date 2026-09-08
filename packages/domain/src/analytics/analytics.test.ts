@@ -10,7 +10,7 @@ import { CurrentSite } from "../sites/current-site.ts"
 import { Site } from "../sites/schema.ts"
 import { Analytics } from "./analytics.ts"
 import { type ProviderFactory } from "./providers.ts"
-import { AnalyticsError, type VisitsDays } from "./schema.ts"
+import { AnalyticsError, type LiveEvent, type VisitsDays } from "./schema.ts"
 
 const baseSite = {
   id: "test",
@@ -47,12 +47,46 @@ const httpStub = Layer.succeed(
 // A fake adapter that records the dates it is asked for and answers one site
 // row per date, and counts how often it is asked for live visitors.
 const fakeFactory = (
-  seen: { dates?: ReadonlyArray<string>; liveCalls?: number },
+  seen: { dates?: ReadonlyArray<string>; liveCalls?: number; eventCalls?: number },
 ): ProviderFactory =>
   () =>
     Effect.succeed({
       fetchHours: () =>
         Effect.succeed([{ hour: 9, pageviews: 3, visits: 2, visitors: 2 }]),
+      liveEvents: () =>
+        Effect.sync((): ReadonlyArray<LiveEvent> => {
+          seen.eventCalls = (seen.eventCalls ?? 0) + 1
+          return [
+            {
+              id: "b",
+              at: "2026-09-08T10:13:40.000Z",
+              kind: "pageview",
+              name: null,
+              page: "/shaders/julia",
+              properties: {},
+              visitor: "v1",
+              country: "DE",
+              browser: "Chrome",
+              operatingSystem: "macOS",
+              device: "desktop",
+              referrer: null,
+            },
+            {
+              id: "a",
+              at: "2026-09-08T10:12:47.000Z",
+              kind: "event",
+              name: "purchase",
+              page: "/pricing",
+              properties: { plan: "pro" },
+              visitor: "v2",
+              country: "ES",
+              browser: "Firefox",
+              operatingSystem: "Windows",
+              device: "desktop",
+              referrer: "https://x.com/",
+            },
+          ]
+        }),
       liveVisitors: () =>
         Effect.sync(() => {
           seen.liveCalls = (seen.liveCalls ?? 0) + 1
@@ -168,6 +202,35 @@ test("live visitors come from the adapter once per cache window", async () => {
   const third = await Effect.runPromise(program)
   expect(third?.visitors).toBe(7)
   expect(memo.liveCalls).toBe(1)
+})
+
+test("live events come from the adapter once per memo, and `since` trims the same answer", async () => {
+  const memo: { eventCalls?: number } = {}
+  const program = Effect.gen(function* () {
+    const whole = yield* Analytics.use.liveEvents()
+    const newer = yield* Analytics.use.liveEvents("2026-09-08T10:13:00.000Z")
+    const bad = yield* Analytics.use.liveEvents("not a time")
+    return { whole, newer, bad }
+  }).pipe(Effect.provide(buildLayer(withAnalytics, new Map([["fake", fakeFactory(memo)]]))))
+  const { whole, newer, bad } = await Effect.runPromise(program)
+
+  expect(memo.eventCalls).toBe(1)
+  expect(whole?.windowMinutes).toBe(30)
+  expect(whole?.since).toBeNull()
+  expect(whole?.events.map((event) => event.id)).toEqual(["b", "a"])
+  expect(whole?.fetchedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+  expect(newer?.since).toBe("2026-09-08T10:13:00.000Z")
+  expect(newer?.events.map((event) => event.id)).toEqual(["b"])
+  // A cut-off that is not an instant is ignored, not an error.
+  expect(bad?.events).toHaveLength(2)
+})
+
+test("a site without analytics has no live events", async () => {
+  const layer = buildLayer(withoutAnalytics, new Map())
+  const events = await Effect.runPromise(
+    Analytics.use.liveEvents().pipe(Effect.provide(layer)),
+  )
+  expect(events).toBeNull()
 })
 
 test("localDay is the provider's calendar day in the site's zone, hours pass through", async () => {

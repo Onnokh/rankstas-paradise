@@ -13,7 +13,10 @@
 //     this parameter Rybbit's `count` is the number of occurrences, not sessions;
 //   - `GET /live-user-count?minutes=N` for the people active right now, and
 //     `GET /overview/time-series?bucket=minute&past_minutes_start=N` for how
-//     many were seen in each of those minutes.
+//     many were seen in each of those minutes;
+//   - `GET /events?since_timestamp=T` for what visitors did since T, newest
+//     first, at most 500 rows: the rows of the live feed. Rybbit's own realtime
+//     view polls this same route.
 //
 // Everything Rybbit-specific ends at this file: its envelope (`{ data }` around
 // the series, `{ data: { data, totalCount } }` around a metric page), its column
@@ -45,6 +48,9 @@ import { type Provider, type ProviderFactory } from "./providers.ts"
 import {
   AnalyticsError,
   type EventCountDay,
+  type LiveEvent,
+  type LiveEventKind,
+  liveEventKinds,
   type PageVisitsDay,
   type SiteVisitsDay,
   type VisitsDays,
@@ -89,6 +95,9 @@ const MetricResponse = Schema.Struct({
   }),
 })
 const LiveCountResponse = Schema.Struct({ count: Schema.Unknown })
+// `/events` answers `{ data }` when polled since a timestamp, and adds a
+// `cursor` when paged; only the rows matter here.
+const EventsResponse = Schema.Struct({ data: Schema.Array(Row) })
 
 // A count as Rybbit sends it — a number, or a numeric string when ClickHouse
 // quotes a 64-bit integer. Anything else is zero rather than NaN in the ledger.
@@ -109,6 +118,99 @@ const asText = (value: unknown): string =>
 // is its first ten characters, the hour the two after the space.
 const dayOf = (time: unknown): string => asText(time).slice(0, 10)
 const hourOf = (time: unknown): number => asCount(asText(time).slice(11, 13))
+
+// An event's `timestamp` is ClickHouse's "YYYY-MM-DD HH:MM:SS.mmm", in UTC
+// (Rybbit stores events in UTC and the route takes no zone). Made an ISO
+// instant; a value already in ISO form passes through. Unparseable falls back
+// to the text as it came, so a row is never dropped for its clock.
+const instantOf = (value: unknown): string => {
+  const text = asText(value).trim()
+  const spaced = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d+)?)$/.exec(text)
+  const iso = spaced ? `${spaced[1]}T${spaced[2]}Z` : text
+  const parsed = new Date(iso)
+  return Number.isNaN(parsed.getTime()) ? text : parsed.toISOString()
+}
+
+// The form Rybbit's route feeds to `toDateTime64(...)`: ClickHouse's own
+// "YYYY-MM-DD HH:MM:SS.mmm" in UTC, which is what its dashboard sends back
+// from a previous row rather than an ISO string with a zone suffix.
+const clickHouseInstant = (date: Date): string =>
+  date.toISOString().slice(0, 23).replace("T", " ")
+
+// Rybbit's `type` column against the canonical kinds. `custom_event` is the
+// named action every vendor has; the auto-captured kinds share their names.
+// Anything else (a future type) reads as a plain event rather than failing.
+const kindOf = (type: unknown): LiveEventKind => {
+  const text = asText(type)
+  if (text === "pageview") return "pageview"
+  if (text === "custom_event") return "event"
+  return (liveEventKinds as ReadonlyArray<string>).includes(text)
+    ? (text as LiveEventKind)
+    : "event"
+}
+
+// `props` arrives as a JSON string (`toString(props)`); one level, every
+// value made a string, nested values kept as their JSON. Not JSON, or not an
+// object, is no properties: the row still shows.
+const propertiesOf = (value: unknown): Record<string, string> => {
+  const text = asText(value)
+  if (!text) return {}
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return {}
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {}
+  const out: Record<string, string> = {}
+  for (const [key, entry] of Object.entries(parsed)) {
+    if (entry === null || entry === undefined) continue
+    out[key] = typeof entry === "object" ? JSON.stringify(entry) : String(entry)
+  }
+  return out
+}
+
+const textOrNull = (value: unknown): string | null => {
+  const text = asText(value).trim()
+  return text === "" ? null : text
+}
+
+// FNV-1a over the row's identifying fields: short, stable, and the same for the
+// same row on the next poll, which is all a client needs of an id.
+const digest = (text: string): string => {
+  let hash = 0x811c9dc5
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash.toString(16).padStart(8, "0")
+}
+
+// One `/events` row into the canonical shape.
+const liveEventOf = (row: Record<string, unknown>): LiveEvent => {
+  const at = instantOf(row["timestamp"])
+  const kind = kindOf(row["type"])
+  const name = kind === "pageview" ? null : textOrNull(row["event_name"])
+  const page = asText(row["pathname"]) || "/"
+  const visitor = asText(row["user_id"])
+  const properties = propertiesOf(row["properties"])
+  return {
+    id: digest(
+      [at, visitor, kind, page, name ?? "", asText(row["properties"])].join("|"),
+    ),
+    at,
+    kind,
+    name,
+    page,
+    properties,
+    visitor,
+    country: textOrNull(row["country"]),
+    browser: textOrNull(row["browser"]),
+    operatingSystem: textOrNull(row["operating_system"]),
+    device: textOrNull(row["device_type"]),
+    referrer: textOrNull(row["referrer"]),
+  }
+}
 
 // A failure worth retrying: no answer at all, or a 429/5xx. Internal to this
 // file — the port's one error class is what leaves it.
@@ -378,6 +480,22 @@ export const makeWith =
               .sort((left, right) => asText(left["time"]).localeCompare(asText(right["time"])))
               .map((row) => asCount(row["users"])),
           }
+        }),
+        liveEvents: Effect.fn("Rybbit.liveEvents")(function* (windowMinutes, limit) {
+          // One call, since the start of the window. Rybbit answers newest
+          // first and caps this mode at 500 rows itself; the cap asked for is
+          // applied on top in case it is lower.
+          const since = new Date(Date.now() - windowMinutes * 60_000)
+          const body = yield* request(
+            EventsResponse,
+            "/events",
+            { since_timestamp: clickHouseInstant(since) },
+            "events",
+          )
+          return body.data
+            .map(liveEventOf)
+            .sort((left, right) => right.at.localeCompare(left.at))
+            .slice(0, limit)
         }),
         fetchVisits: Effect.fn("Rybbit.fetchVisits")(function* (dates) {
           const sorted = [...new Set(dates)].sort()

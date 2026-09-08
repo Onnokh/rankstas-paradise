@@ -17,6 +17,7 @@
 | `GET /api/log?path=` | `log list` |
 | `GET /api/history?limit=N` | — (TUI history view) |
 | `GET /api/live` | — (visitors on the site right now; the one read that asks the analytics provider) |
+| `GET /api/live/events?since=T` | — (what visitors did in the last 30 minutes, newest first; also asks the provider) |
 | `GET /api/events?window=N` | `events --window N` |
 | `GET /api/today` | — (today so far, from the ledger; re-synced every five minutes) |
 | `GET /api/revenue?window=N` | — (sales per day from the site's commerce provider, from the ledger) |
@@ -93,6 +94,22 @@ It carries positions, not timestamps; the last entry is the minute that just
 ended before `fetchedAt`.
 Answers are memoised for 30 seconds per site, so poll it on its own timer and
 never fold it into the dashboard read, which must stay served from disk.
+
+`GET /api/live/events` is the other read that reaches the provider: the live
+feed. It answers `{ analytics, events: { windowMinutes, since, events, fetchedAt }
+| null }`, where `events.events` is every pageview and event of the last 30
+minutes, newest first, at most 500 rows: `{ id, at, kind, name, page,
+properties, visitor, country, browser, operatingSystem, device, referrer }`.
+`kind` is `pageview`, `event` (a named custom action) or one of Rybbit's
+auto-captured kinds (`outbound`, `button_click`, `copy`, `form_submit`,
+`input_change`); treat an unknown kind as `event`. `name` is null for a
+pageview; `properties` is the event's data flattened to strings; `visitor` is
+an opaque token that is the same for one person's rows, never a name; the
+where-and-on-what fields are null when the provider does not know. `id` is
+stable across polls for the same row. Pass `since=<ISO instant>` to get only the
+rows newer than it (echoed back as `since`); a value that is not an instant is a
+400. Answers are memoised for 5 seconds per site and `since` is applied to the
+memo, so poll it every few seconds and never fold it into another read.
 
 `GET /api/today` is served from the ledger like every other read. The daily
 sync stops at yesterday, so the server re-fetches the day in progress from the

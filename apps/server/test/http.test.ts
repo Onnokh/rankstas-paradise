@@ -130,6 +130,20 @@ describe("JSON routes", () => {
     expect(envelope.live).toBeNull()
   })
 
+  test("GET /api/live/events → 200 with null provider and feed for a site without analytics", async () => {
+    const { status, body } = await requestJson(server, `/api/live/events${site}`)
+    expect(status).toBe(200)
+    const envelope = body as Record<string, unknown>
+    expect(envelope.analytics).toBeNull()
+    expect(envelope.events).toBeNull()
+  })
+
+  test("GET /api/live/events → 400 when since is not an instant", async () => {
+    const { status, body } = await requestJson(server, `/api/live/events${site}&since=yesterday`)
+    expect(status).toBe(400)
+    expect(String((body as Record<string, unknown>).error)).toContain("since")
+  })
+
   test("GET /api/today → 200 with both halves null for a site without analytics", async () => {
     const { status, body } = await requestJson(server, `/api/today${site}`)
     expect(status).toBe(200)

@@ -70,7 +70,7 @@ xcodegen generate
 ## Layout
 
 - `Sources/App` — the app entry and its menu bar additions (`ViewCommands`).
-- `Sources/Model` — API client, DTOs, cache-first repository, `OverviewModel`. Data only, shared by every tab.
+- `Sources/Model` — API client, DTOs, cache-first repository, `OverviewModel`, `LiveStore` (live counts and the live feed, polled, never cached). Data only, shared by every tab.
 - `Sources/Workspace` — `Workspace` (tabs, active tab, bounded mounted set), per-tab state, `PeekProgress` (0 closed, 1 strip, 2 grid).
 - `Sources/Gesture` — three-finger trackpad drag recogniser streaming travel and velocity.
 - `Sources/UI` — `RootView`, `TabBar`, `PeekOverlay`, `TabContentStack`, and `PeekLayout`, the pure struct that turns window size plus peek progress into every frame.

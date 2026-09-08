@@ -131,6 +131,74 @@ export const LiveVisitors = Schema.Struct({
 export interface LiveVisitors
   extends Schema.Schema.Type<typeof LiveVisitors> {}
 
+// One thing a visitor just did, as the provider recorded it: a page they
+// loaded, or a named action they took. The rows of a live feed. Like
+// LiveVisitors this is fetched on demand, briefly cached and never stored; the
+// stored form of the same activity is the per-day counts above.
+//
+// The kinds are the intersection of what providers record as discrete events.
+// `pageview` and `event` (a custom, named action) every vendor has; the rest are
+// Rybbit's auto-captured interactions, which Umami and GA4 report under other
+// names or not at all, so a client must treat an unknown kind as just "event".
+export const liveEventKinds = [
+  "pageview",
+  "event",
+  "outbound",
+  "button_click",
+  "copy",
+  "form_submit",
+  "input_change",
+] as const
+export type LiveEventKind = (typeof liveEventKinds)[number]
+
+export const LiveEvent = Schema.Struct({
+  // Stable within the window: the same row from two polls has the same id, so
+  // a client can tell a new row from one it has drawn. Derived by the adapter
+  // from the row's own fields, since vendors do not number events.
+  id: Schema.String,
+  // When it happened, as an ISO 8601 instant.
+  at: Schema.String,
+  kind: Schema.Literals(liveEventKinds),
+  // The event's name for a custom event; null for a pageview. Auto-captured
+  // kinds carry what the vendor names them by (the link's host, the button's
+  // text) or null.
+  name: Schema.NullOr(Schema.String),
+  // The page it happened on: a PATH ("/pricing"), as PageVisitsDay.page is.
+  page: Schema.String,
+  // The event's properties, flattened to strings: what a client shows as the
+  // row's data. Empty for a plain pageview.
+  properties: Schema.Record(Schema.String, Schema.String),
+  // An opaque token that is the same for every row of one person, so a client
+  // can group or highlight a visitor's path. Never shown as such, and never a
+  // name: the provider's anonymous visitor id.
+  visitor: Schema.String,
+  // Where and on what, as the provider records them; null when it does not
+  // know. `country` is an ISO 3166-1 alpha-2 code.
+  country: Schema.NullOr(Schema.String),
+  browser: Schema.NullOr(Schema.String),
+  operatingSystem: Schema.NullOr(Schema.String),
+  // "desktop", "mobile" or "tablet" in the vendors' shared vocabulary; null
+  // when unknown.
+  device: Schema.NullOr(Schema.String),
+  // The full referrer the visit came from, or null.
+  referrer: Schema.NullOr(Schema.String),
+}).annotate({ identifier: "LiveEvent" })
+export interface LiveEvent extends Schema.Schema.Type<typeof LiveEvent> {}
+
+// The live feed: every LiveEvent of the last `windowMinutes`, newest first,
+// capped at `liveEventsLimit`. `since` echoes the client's cut-off when it gave
+// one, so the rows are only those newer than it.
+export const liveEventsLimit = 500
+
+export const LiveEvents = Schema.Struct({
+  windowMinutes: Schema.Number,
+  since: Schema.NullOr(Schema.String),
+  events: Schema.Array(LiveEvent),
+  // When the provider was asked, as an ISO 8601 instant.
+  fetchedAt: Schema.String,
+}).annotate({ identifier: "LiveEvents" })
+export interface LiveEvents extends Schema.Schema.Type<typeof LiveEvents> {}
+
 // One hour of one day's site visits, in the site's zone. `hour` is 0–23.
 export const SiteVisitsHour = Schema.Struct({
   hour: Schema.Number,

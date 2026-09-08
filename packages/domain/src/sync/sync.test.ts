@@ -149,6 +149,13 @@ const analyticsMock = (recorder: Recorder) =>
       Effect.succeed({ date: daysAgo(0), hour: 12, timeZone: "UTC" }),
     fetchHours: () =>
       Effect.succeed([{ hour: 9, pageviews: 3, visits: 2, visitors: 2 }]),
+    liveEvents: () =>
+      Effect.succeed({
+        windowMinutes: 30,
+        since: null,
+        events: [],
+        fetchedAt: "2026-01-01T00:00:00.000Z",
+      }),
     fetchVisits: (dates) =>
       Effect.sync((): VisitsDays => {
         recorder.visitFetches.push(dates)

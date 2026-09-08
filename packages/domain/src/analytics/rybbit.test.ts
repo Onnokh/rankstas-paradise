@@ -101,6 +101,55 @@ const healthy: Answer = (url) => {
         { time: "2026-09-07 19:01:00", users: 0, sessions: 0, pageviews: 0 },
       ]),
     }
+  if (url.pathname.endsWith("/events"))
+    return {
+      status: 200,
+      // Newest first, as Rybbit sends them; the middle row is out of order on
+      // purpose. ClickHouse's "YYYY-MM-DD HH:MM:SS.mmm" in UTC, props as JSON text.
+      body: {
+        data: [
+          {
+            timestamp: "2026-09-08 10:13:40.120",
+            type: "pageview",
+            event_name: "",
+            properties: "{}",
+            user_id: "u-1",
+            pathname: "/shaders/julia",
+            country: "DE",
+            browser: "Chrome",
+            operating_system: "macOS",
+            device_type: "Desktop",
+            referrer: "",
+          },
+          {
+            timestamp: "2026-09-08 10:12:47.000",
+            type: "outbound",
+            event_name: "",
+            properties: '{"url":"https://github.com/x","text":"GitHub"}',
+            user_id: "u-1",
+            pathname: "/pricing",
+            country: "DE",
+            browser: "Chrome",
+            operating_system: "macOS",
+            device_type: "Desktop",
+            referrer: "https://x.com/",
+          },
+          {
+            timestamp: "2026-09-08 10:13:05.500",
+            type: "custom_event",
+            event_name: "purchase",
+            properties: '{"plan":"pro","amount":29,"meta":{"a":1}}',
+            user_id: "u-2",
+            pathname: "",
+            country: "",
+            browser: "Firefox",
+            operating_system: "Windows",
+            device_type: "Desktop",
+            referrer: null,
+          },
+        ],
+      },
+    }
   if (url.pathname.endsWith("/overview/time-series")) {
     const start = url.searchParams.get("start_date")!
     const end = url.searchParams.get("end_date")!
@@ -272,6 +321,71 @@ test("live visitors ask live-user-count twice and a minute series for the window
   expect(series.url.searchParams.get("past_minutes_end")).toBe("0")
   // A trailing window carries no dates: Rybbit takes one form or the other.
   expect(series.url.searchParams.get("start_date")).toBeNull()
+})
+
+test("live events ask /events since the window start and map rows newest first", async () => {
+  const seen: Seen = { requests: [] }
+  const before = Date.now()
+  const exit = await Effect.runPromiseExit(
+    noRetries(source).pipe(
+      Effect.flatMap((provider) => provider.liveEvents(30, 500)),
+      Effect.provide(
+        Layer.mergeAll(fakeHttp(seen, healthy), configLayer({ RYBBIT_API_KEY: "k" })),
+      ),
+    ),
+  )
+  if (!Exit.isSuccess(exit)) throw new Error("expected success")
+
+  expect(seen.requests).toHaveLength(1)
+  const call = seen.requests[0]!
+  expect(call.url.pathname).toBe("/api/sites/12/events")
+  expect(call.auth).toBe("Bearer k")
+  // ClickHouse's own form, UTC, about thirty minutes ago.
+  const since = call.url.searchParams.get("since_timestamp")!
+  expect(since).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$/)
+  const sinceMs = new Date(`${since.replace(" ", "T")}Z`).getTime()
+  expect(before - sinceMs).toBeGreaterThanOrEqual(30 * 60_000 - 5)
+  expect(before - sinceMs).toBeLessThan(30 * 60_000 + 5_000)
+
+  const events = exit.value
+  expect(events.map((event) => event.at)).toEqual([
+    "2026-09-08T10:13:40.120Z",
+    "2026-09-08T10:13:05.500Z",
+    "2026-09-08T10:12:47.000Z",
+  ])
+  expect(events.map((event) => event.kind)).toEqual(["pageview", "event", "outbound"])
+  // A pageview has no name; a custom event carries its own; an empty path is "/".
+  expect(events[0]!.name).toBeNull()
+  expect(events[1]!.name).toBe("purchase")
+  expect(events[1]!.page).toBe("/")
+  // Properties flattened to strings, nested ones kept as JSON; blanks are null.
+  expect(events[1]!.properties).toEqual({ plan: "pro", amount: "29", meta: '{"a":1}' })
+  expect(events[2]!.properties).toEqual({ url: "https://github.com/x", text: "GitHub" })
+  expect(events[1]!.country).toBeNull()
+  expect(events[0]!.referrer).toBeNull()
+  expect(events[2]!.referrer).toBe("https://x.com/")
+  expect(events[0]!.device).toBe("Desktop")
+  expect(events[0]!.visitor).toBe("u-1")
+  // Ids are stable and distinct.
+  expect(new Set(events.map((event) => event.id)).size).toBe(3)
+  expect(events[0]!.id).toMatch(/^[0-9a-f]{8}$/)
+})
+
+test("live events honour a lower cap", async () => {
+  const seen: Seen = { requests: [] }
+  const exit = await Effect.runPromiseExit(
+    noRetries(source).pipe(
+      Effect.flatMap((provider) => provider.liveEvents(30, 2)),
+      Effect.provide(
+        Layer.mergeAll(fakeHttp(seen, healthy), configLayer({ RYBBIT_API_KEY: "k" })),
+      ),
+    ),
+  )
+  if (!Exit.isSuccess(exit)) throw new Error("expected success")
+  expect(exit.value.map((event) => event.at)).toEqual([
+    "2026-09-08T10:13:40.120Z",
+    "2026-09-08T10:13:05.500Z",
+  ])
 })
 
 test("hours ask one hourly time-series for the day in the site's zone", async () => {

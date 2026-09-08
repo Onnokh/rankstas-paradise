@@ -43,6 +43,8 @@ struct TabScreen: View {
             OverviewScreen(
                 model: model,
                 state: workspace.overviewState,
+                live: live,
+                favicons: favicons,
                 onOpenSite: { actions.activate(.site($0)) },
                 onRefresh: { actions.refresh(.overview) }
             )
