@@ -40,6 +40,26 @@ struct OverviewScreen: View {
     }
 
     var body: some View {
+        // The ages in the feed and the footer tick from this timeline, every quarter minute:
+        // coarse enough to cost nothing, fine enough for "just now" to turn into "1m ago"
+        // when it should. Never SwiftUI's relative date text, which redraws every frame.
+        TimelineView(.periodic(from: .now, by: 15)) { context in
+            content(now: context.date)
+        }
+        .padding(24)
+        // Both polls live exactly as long as the real screen is shown: a preview is a still.
+        // The site list is the id, so a site added or removed restarts them over the new list.
+        .task(id: siteIDs) {
+            guard !isPreview, !siteIDs.isEmpty else { return }
+            await live.pollAll(siteIDs)
+        }
+        .task(id: siteIDs) {
+            guard !isPreview, !siteIDs.isEmpty else { return }
+            await live.pollFeeds(siteIDs)
+        }
+    }
+
+    private func content(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             header
 
@@ -71,25 +91,15 @@ struct OverviewScreen: View {
                             hiddenKinds: $state.hiddenKinds,
                             paused: $state.feedPaused,
                             windowMinutes: windowMinutes,
-                            waiting: live.feeds.isEmpty && live.feedErrors.isEmpty
+                            waiting: live.feeds.isEmpty && live.feedErrors.isEmpty,
+                            now: now
                         )
                     }
                 }
                 .scrollIndicators(.never)
 
-                footer
+                footer(now: now)
             }
-        }
-        .padding(24)
-        // Both polls live exactly as long as the real screen is shown: a preview is a still.
-        // The site list is the id, so a site added or removed restarts them over the new list.
-        .task(id: siteIDs) {
-            guard !isPreview, !siteIDs.isEmpty else { return }
-            await live.pollAll(siteIDs)
-        }
-        .task(id: siteIDs) {
-            guard !isPreview, !siteIDs.isEmpty else { return }
-            await live.pollFeeds(siteIDs)
         }
     }
 
@@ -115,7 +125,7 @@ struct OverviewScreen: View {
         }
     }
 
-    private var footer: some View {
+    private func footer(now: Date) -> some View {
         HStack {
             Text("\(model.loadedSiteCount) of \(model.sites.count) sites loaded")
             if model.isCached {
@@ -129,7 +139,8 @@ struct OverviewScreen: View {
             Spacer()
             Text("Double-click a site to open it")
             if let feedFetchedAt {
-                Text("Feed updated ") + Text(feedFetchedAt, style: .relative) + Text(" ago")
+                Text("Feed updated \(RelativeAge.label(from: feedFetchedAt, to: now) ?? "at \(feedFetchedAt.formatted(date: .omitted, time: .shortened))")")
+                    .help(feedFetchedAt.formatted(date: .abbreviated, time: .standard))
             }
         }
         .font(.callout)
@@ -311,6 +322,10 @@ private struct SiteRow: View {
 
 /// What visitors are doing on every site, newest first. Chips keep it to one site and to the
 /// kinds worth watching; hovering holds the rows still so they can be read, as does Pause.
+///
+/// The rows are a plain stack, drawn in full and never animated. A lazy stack here kept the
+/// main thread busy re-phasing its items on every poll, and a layout animation over a hundred
+/// rows every five seconds is what turned that into a hang; the rows are capped instead.
 private struct FeedCard: View {
     let rows: [LiveFeedRow]
     let counts: [LiveEvent.Kind: Int]
@@ -321,11 +336,16 @@ private struct FeedCard: View {
     let windowMinutes: Int
     /// No feed has answered yet, and nothing has failed.
     let waiting: Bool
+    /// The moment the ages are measured from; ticks from the screen's timeline.
+    let now: Date
 
     @Environment(\.isTabPreview) private var isPreview
     @State private var hovering = false
     /// The rows as they were when the feed was held; nil while it moves.
     @State private var frozen: [LiveFeedRow]?
+    /// The visitor under the pointer, as site and visitor token, so every row of that
+    /// person's visit lights up together: their path through the site.
+    @State private var hoveredVisitor: String?
 
     private var held: Bool { paused || hovering }
     private var shown: [LiveFeedRow] { frozen ?? rows }
@@ -349,10 +369,23 @@ private struct FeedCard: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 96)
             } else {
-                LazyVStack(spacing: 0) {
+                VStack(spacing: 0) {
                     ForEach(shown) { row in
-                        FeedRow(row: row)
-                        Palette.line.frame(height: 1)
+                        let visitor = Self.visitorKey(row)
+                        FeedRow(
+                            row: row,
+                            age: row.event.date.map { RelativeAge.labelOrTime(from: $0, to: now) } ?? row.time,
+                            isHighlighted: hoveredVisitor == visitor
+                        )
+                        .equatable()
+                        .onHover { inside in
+                            guard !isPreview else { return }
+                            if inside {
+                                hoveredVisitor = visitor
+                            } else if hoveredVisitor == visitor {
+                                hoveredVisitor = nil
+                            }
+                        }
                     }
                 }
             }
@@ -365,7 +398,11 @@ private struct FeedCard: View {
         .onChange(of: held) { _, isHeld in
             frozen = isHeld ? rows : nil
         }
-        .animation(.snappy(duration: 0.3), value: shown.map(\.id))
+    }
+
+    /// One person on one site. The token is per provider, so it is scoped by site too.
+    private static func visitorKey(_ row: LiveFeedRow) -> String {
+        "\(row.siteID)|\(row.event.visitor)"
     }
 
     private var chips: some View {
@@ -407,18 +444,38 @@ private struct FeedCard: View {
     }
 }
 
-/// One row: when, where, what kind, what, and who — as a country, a browser and a device.
-private struct FeedRow: View {
+/// One row: when, where, what kind, what, and who — as a country, a browser and a device. The
+/// words come ready from the row; nothing is formatted here, so an unchanged row is skipped.
+private struct FeedRow: View, Equatable {
     let row: LiveFeedRow
+    /// "just now", "3m ago", or the clock time once it is an hour old; the exact time is on
+    /// hover.
+    let age: String
+    /// Whether the pointer is on one of this visitor's rows.
+    let isHighlighted: Bool
 
     private var event: LiveEvent { row.event }
 
+    nonisolated static func == (left: FeedRow, right: FeedRow) -> Bool {
+        left.row == right.row && left.age == right.age && left.isHighlighted == right.isHighlighted
+    }
+
     var body: some View {
         HStack(spacing: 12) {
-            Text(time)
-                .font(.callout.monospaced())
+            // The guide's list marker, the tabs' own headband, on every row of the visitor
+            // under the pointer. The slot is always there, so the row never shifts.
+            Headband()
+                .fill(Palette.acid)
+                .frame(width: Headband.markerSize.width, height: Headband.markerSize.height)
+                .opacity(isHighlighted ? 1 : 0)
+                .accessibilityHidden(true)
+
+            Text(age)
+                .font(.callout)
+                .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .frame(width: 72, alignment: .leading)
+                .help(row.time)
 
             Text(row.siteName)
                 .font(.caption)
@@ -433,9 +490,9 @@ private struct FeedRow: View {
                 .frame(width: 18)
 
             HStack(spacing: 6) {
-                Text(primary)
+                Text(row.primary)
                     .fontWeight(event.kind == .event ? .semibold : .regular)
-                if let detail {
+                if let detail = row.detail {
                     Text("· \(detail)")
                         .foregroundStyle(.secondary)
                 }
@@ -443,82 +500,19 @@ private struct FeedRow: View {
             .lineLimit(1)
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(who)
+            Text(row.who)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .frame(width: 200, alignment: .trailing)
         }
         .font(.callout)
-        .padding(.horizontal, 16)
+        .padding(.leading, 12)
+        .padding(.trailing, 16)
         .padding(.vertical, 8)
         .background(event.kind == .event ? visitsColor.opacity(0.08) : Color.clear)
+        .overlay(alignment: .bottom) { Palette.line.frame(height: 1) }
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-    }
-
-    private var time: String {
-        event.date?.formatted(date: .omitted, time: .standard) ?? "—"
-    }
-
-    /// The row's subject: the page for a pageview, the name for an event, the link for an
-    /// outbound click, the control's text for the rest.
-    private var primary: String {
-        switch event.kind {
-        case .pageview:
-            event.page
-        case .event:
-            event.name ?? "event"
-        case .outbound:
-            event.properties["url"].map(Self.shortURL) ?? event.name ?? "Outbound link"
-        case .buttonClick, .copy, .formSubmit, .inputChange:
-            event.properties["text"] ?? event.name ?? event.kind.label
-        }
-    }
-
-    /// What goes with it: where a pageview came from, an event's data, the page the rest
-    /// happened on.
-    private var detail: String? {
-        switch event.kind {
-        case .pageview:
-            event.referrer.flatMap(Self.host).map { "from \($0)" }
-        case .event:
-            Self.data(event.properties)
-        case .outbound, .buttonClick, .copy, .formSubmit, .inputChange:
-            "on \(event.page)"
-        }
-    }
-
-    private var who: String {
-        [event.country.map(Self.place), event.browser, event.device?.capitalized]
-            .compactMap { $0 }
-            .joined(separator: " · ")
-    }
-
-    /// "🇪🇸 Spain" from an ISO code: the flag is two regional indicator symbols.
-    static func place(_ code: String) -> String {
-        let upper = code.uppercased()
-        let flag = upper.unicodeScalars
-            .compactMap { UnicodeScalar(0x1F1E6 + $0.value - 0x41) }
-            .map { String(Character($0)) }
-            .joined()
-        let name = Locale.current.localizedString(forRegionCode: upper) ?? upper
-        return upper.count == 2 ? "\(flag) \(name)" : name
-    }
-
-    static func host(_ urlString: String) -> String? {
-        URL(string: urlString)?.host()?.replacingOccurrences(of: "www.", with: "")
-    }
-
-    /// "github.com/onnokh/sleevy": the host and path, without the scheme and query.
-    static func shortURL(_ urlString: String) -> String {
-        guard let url = URL(string: urlString), let host = url.host() else { return urlString }
-        let path = url.path().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        return path.isEmpty ? host : "\(host)/\(path)"
-    }
-
-    /// The first few properties as "key value" pairs; nil when there are none.
-    static func data(_ properties: [String: String]) -> String? {
-        let pairs = properties.keys.sorted().prefix(3).map { "\($0) \(properties[$0] ?? "")" }
-        return pairs.isEmpty ? nil : pairs.joined(separator: ", ")
     }
 }
 
