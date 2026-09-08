@@ -3,6 +3,7 @@
 import { Schema } from "effect"
 
 import { ConfigAnalytics } from "../analytics/schema.ts"
+import { ConfigMarket } from "../keyword-metrics/schema.ts"
 import { ConfigRevenue } from "../revenue/schema.ts"
 
 // The editable settings of one site: everything a site entry holds except its
@@ -23,6 +24,11 @@ export const SiteSettings = Schema.Struct({
   // means no revenue, and the key lives in the environment under the variable
   // `keyVariable` names (default `<PROVIDER>_API_KEY`).
   revenue: Schema.optional(ConfigRevenue),
+  // The country and language the site's Keyword metrics describe. Absent means
+  // the United States in English (see ../keyword-metrics/market.ts). One per
+  // site, not one per Keyword: a site sells into one search market, and a
+  // Keyword's volume is only comparable to another Keyword's in the same one.
+  market: Schema.optional(ConfigMarket),
 }).annotate({ identifier: "SiteSettings" })
 export interface SiteSettings extends Schema.Schema.Type<typeof SiteSettings> {}
 

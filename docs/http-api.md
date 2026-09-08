@@ -77,6 +77,35 @@ built against an older server keeps decoding:
 Visits have no finalization lag: the newest stored day is yesterday (UTC), and
 the last two days are re-fetched on each sync.
 
+### Keyword demand
+
+With a `dataforseo` key in the vault (or `DATAFORSEO_API_KEY` in the
+environment, see [deploy.md](deploy.md)), the daily sync also fetches Keyword
+metrics for the site's Market, and three reports carry them as **optional
+keys** on the same terms as visits:
+
+- `GET /api/queries` and `GET /api/registry` → `market`: `{ locationCode,
+  languageCode, label, provider }`, the country and language every `demand`
+  block in the response describes. `provider` is `labs` or `google-ads`, and
+  says in advance whether `difficulty` and `intent` can arrive at all.
+- each row of `GET /api/queries`, and each keyword of each target of
+  `GET /api/registry` → `demand`: `{ searchVolume, difficulty, costPerClick,
+  competition, intent, fetchedAt }`.
+- each signal of `GET /api/opportunities` → `demand`: `{ searchVolume,
+  difficulty, intent }`.
+
+Two absences mean different things. **No `demand` key** means no answer is
+stored for that term — the site has no key, the sync has not run, or the term
+was never worth asking about (a brand query and an operator query are never
+asked about, because the vendor charges per term). **A null `searchVolume`**
+means DataForSEO was asked and has no volume for the term: it is too rare to
+report, which is not the same as nobody searching it. Nothing here treats
+either absence as a zero.
+
+`searchVolume` is what ranks three of the four Opportunity kinds. `difficulty`
+is reported and never scored — read it against the site's Domain Rating from
+`GET /api/status`.
+
 The daily sync grows the series forward from wherever it starts, and cannot
 widen it backwards: its range begins at the ledger's own first day, and a day
 already stored — including one stored as zeros because the provider had nothing
@@ -162,7 +191,7 @@ The site catalog lives in the app-level database `rankstas-paradise.sqlite` in t
 
 ## Site catalog and settings
 
-Bodies use `SiteSettings` (`packages/domain/src/config/schema.ts`): `siteUrl` (the Search Console property) is required; `name`, `origin`, `sitemapUrl`, `brandTerms`, `analytics`, and `revenue` are optional and derived when absent. Every write answers `{ site, settings }`: the resolved Site next to what was stored. Vendor keys are never part of the settings.
+Bodies use `SiteSettings` (`packages/domain/src/config/schema.ts`): `siteUrl` (the Search Console property) is required; `name`, `origin`, `sitemapUrl`, `brandTerms`, `market`, `analytics`, and `revenue` are optional and derived when absent. A `market` names a DataForSEO `locationCode` and optionally a `languageCode`; absent, it resolves to the United States in English, and an absent language takes the country's primary search language. Every write answers `{ site, settings }`: the resolved Site next to what was stored. Vendor keys are never part of the settings.
 
 - `POST /api/sites` — body: `{ id, ...SiteSettings }`. `201` with the new site; `409` when the id is taken; `400` when the id is not lower-case letters, digits, and hyphens, or the property/origin is not a URL.
 - `PUT /api/sites/:id/settings` — body: `SiteSettings`. Replaces the whole entry. `404` for an unknown id.

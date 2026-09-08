@@ -4,7 +4,7 @@
 // specific fields that matter per report (counts, sorting, verdicts, filtering);
 // the dashboardSnapshot assertions confirm it returns the RAW internal shapes
 // (un-tidied metrics, full-URL pages).
-import { afterAll, beforeAll, expect, test } from "bun:test"
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -27,6 +27,8 @@ import { Sitemap } from "../sitemap/sitemap.ts"
 import { type SitemapPage } from "../sitemap/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { DomainRating } from "../domain-rating/domain-rating.ts"
+import { KeywordMetrics } from "../keyword-metrics/keyword-metrics.ts"
+import { type KeywordMetric } from "../keyword-metrics/schema.ts"
 import { type Site } from "../sites/schema.ts"
 import { type StorageError } from "../storage/schema.ts"
 import { Storage } from "../storage/storage.ts"
@@ -288,7 +290,35 @@ const site: Site = {
   origin: ORIGIN,
   sitemapUrl: `${ORIGIN}/sitemap.xml`,
   brandTerms: ["sleevy"],
+  market: {
+    locationCode: 2840,
+    languageCode: "en",
+    label: "United States",
+    provider: "labs",
+  },
 } satisfies Site
+
+// The Keyword metrics the KeywordMetrics stub reports. Filled by the demand
+// tests and emptied after each one, so every other test in this file reads the
+// ordinary case: a site whose metrics have never been fetched.
+const storedDemand = new Map<string, KeywordMetric>()
+
+const demandMetric = (
+  keyword: string,
+  over: Partial<KeywordMetric> = {},
+): KeywordMetric => ({
+  keyword,
+  locationCode: 2840,
+  languageCode: "en",
+  searchVolume: 1_900,
+  difficulty: 31,
+  costPerClick: 2.4,
+  competition: 0.18,
+  intent: "commercial",
+  monthlySearches: [{ year: 2026, month: 7, searchVolume: 1_900 }],
+  fetchedAt: "2026-09-08T00:00:00.000Z",
+  ...over,
+})
 
 // --- layer wiring ---
 
@@ -338,6 +368,12 @@ beforeAll(async () => {
   const domainRatingLayer = Layer.mock(DomainRating.Service)({
     cached: () => Effect.succeed(null),
   })
+  // Reads whatever the demand tests put in `storedDemand`. Empty for every
+  // other test, so the reports must read every number exactly as they did
+  // before demand existed.
+  const keywordMetricsLayer = Layer.mock(KeywordMetrics.Service)({
+    cached: () => Effect.succeed(storedDemand),
+  })
   // Reports only ask which provider is configured; the visits themselves are
   // read from the ledger, seeded below. A ready "fake" provider stands in.
   const analyticsLayer = Layer.mock(Analytics.Service)({
@@ -379,6 +415,7 @@ beforeAll(async () => {
     registryLayer,
     sitemapLayer,
     domainRatingLayer,
+    keywordMetricsLayer,
     analyticsLayer,
     revenueLayer,
     currentSiteLayer,
@@ -499,6 +536,96 @@ test("pageReport rejects a non-slash path", async () => {
   expect(exit._tag).toBe("Failure")
 })
 
+afterEach(() => {
+  storedDemand.clear()
+})
+
+test("queriesReport carries the Market and the demand behind each Query", async () => {
+  storedDemand.set(
+    "pocket alternative",
+    demandMetric("pocket alternative", { searchVolume: 1_900, difficulty: 31 }),
+  )
+
+  const report = await run(Reports.use.queriesReport())
+  // A search volume without its Market is ambiguous — the same keyword has a
+  // different number in every country — so the Market travels with it.
+  expect(report.market).toEqual({
+    locationCode: 2840,
+    languageCode: "en",
+    label: "United States",
+    provider: "labs",
+  })
+
+  const known = report.queries.find((query) => query.query === "pocket alternative")
+  expect(known?.demand).toEqual({
+    searchVolume: 1_900,
+    difficulty: 31,
+    costPerClick: 2.4,
+    competition: 0.18,
+    intent: "commercial",
+    fetchedAt: "2026-09-08T00:00:00.000Z",
+  })
+  // The twelve-month series is deliberately left out: a report with forty
+  // rows would carry five hundred numbers for a question nobody asked.
+  expect(known?.demand).not.toHaveProperty("monthlySearches")
+
+  // A Query with no stored answer simply has no demand block, rather than one
+  // full of zeroes.
+  const others = report.queries.filter((query) => query.query !== "pocket alternative")
+  expect(others.length).toBeGreaterThan(0)
+  expect(others.every((query) => query.demand === undefined)).toBe(true)
+})
+
+test("registryList carries the demand behind each planned Keyword", async () => {
+  storedDemand.set("pocket alternative", demandMetric("pocket alternative"))
+  storedDemand.set(
+    "chrome read later extension",
+    // The case this exists for: a planned keyword nobody searches for. A page
+    // aimed at it will not be found, whatever its priority says.
+    demandMetric("chrome read later extension", { searchVolume: 0, difficulty: 4 }),
+  )
+
+  const report = await run(Reports.use.registryList())
+  expect(report.market?.label).toBe("United States")
+
+  const keywords = report.targets.flatMap((target) => target.keywords)
+  expect(
+    keywords.find((keyword) => keyword.keyword === "pocket alternative")?.demand
+      ?.searchVolume,
+  ).toBe(1_900)
+  expect(
+    keywords.find((keyword) => keyword.keyword === "chrome read later extension")
+      ?.demand?.searchVolume,
+  ).toBe(0)
+  // Every other planned keyword has no answer stored, which is not the same as
+  // no demand.
+  expect(
+    keywords
+      .filter(
+        (keyword) =>
+          keyword.keyword !== "pocket alternative" &&
+          keyword.keyword !== "chrome read later extension",
+      )
+      .every((keyword) => keyword.demand === undefined),
+  ).toBe(true)
+})
+
+test("a report reads no demand at all when nothing is stored", async () => {
+  // The site with no DataForSEO key, which is every site until one is
+  // configured. The Market is still reported — it is a Site property, not a
+  // vendor answer — but no row claims a number.
+  const queries = await run(Reports.use.queriesReport())
+  expect(queries.market?.label).toBe("United States")
+  expect(queries.queries.every((query) => query.demand === undefined)).toBe(true)
+
+  const registryReport = await run(Reports.use.registryList())
+  expect(
+    registryReport.targets
+      .flatMap((target) => target.keywords)
+      .every((keyword) => keyword.demand === undefined),
+  ).toBe(true)
+})
+
 test("queriesReport excludes brand queries by default", async () => {
   const report = await run(Reports.use.queriesReport())
   expect(report.queries.length).toBeGreaterThan(0)
@@ -531,6 +658,51 @@ test("opportunitiesReport surfaces the expected signal kinds", async () => {
   ])
   expect([...kinds].every((kind) => known.has(kind))).toBe(true)
   expect(kinds.has("striking-distance")).toBe(true)
+})
+
+test("opportunitiesReport carries the demand behind each signal", async () => {
+  // The digest reads the store directly rather than the KeywordMetrics
+  // service, so this seeds the real table the way a sync would.
+  await runtime.runPromise(
+    Effect.gen(function* () {
+      const storage = yield* Storage.Service
+      yield* storage.saveKeywordMetrics([
+        demandMetric("pocket alternative", { searchVolume: 1_900, difficulty: 31 }),
+      ])
+    }),
+  )
+
+  const report = await run(Reports.use.opportunitiesReport())
+  const known = report.signals.find(
+    (signal) => signal.query === "pocket alternative",
+  )
+  expect(known?.demand).toEqual({
+    searchVolume: 1_900,
+    difficulty: 31,
+    intent: "commercial",
+  })
+  // Difficulty is reported and never scored: a term the site cannot reach yet
+  // is still a real opportunity, and folding that judgement into one number
+  // would hide it from the reader who has to make the call.
+  expect(known!.score).not.toBe(31)
+  // A signal with no stored answer carries no demand block.
+  expect(
+    report.signals
+      .filter((signal) => signal.query !== "pocket alternative")
+      .every((signal) => signal.demand === undefined),
+  ).toBe(true)
+
+  // Unlike `storedDemand`, this row is in the shared temp database, so it is
+  // blanked rather than left to re-rank a later test's digest. A null volume
+  // restores the impression-only weighting.
+  await runtime.runPromise(
+    Effect.gen(function* () {
+      const storage = yield* Storage.Service
+      yield* storage.saveKeywordMetrics([
+        demandMetric("pocket alternative", { searchVolume: null }),
+      ])
+    }),
+  )
 })
 
 test("opportunitiesReport filters by a single kind", async () => {

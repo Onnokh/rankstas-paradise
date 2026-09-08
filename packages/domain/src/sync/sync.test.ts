@@ -26,6 +26,8 @@ import { SearchConsole } from "../search-console/search-console.ts"
 import { Registry } from "../registry/registry.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { DomainRating } from "../domain-rating/domain-rating.ts"
+import { KeywordMetrics } from "../keyword-metrics/keyword-metrics.ts"
+import { KeywordMetricsError } from "../keyword-metrics/schema.ts"
 import { type Site } from "../sites/schema.ts"
 import { Sitemap } from "../sitemap/sitemap.ts"
 import { Storage } from "../storage/storage.ts"
@@ -73,6 +75,7 @@ interface Recorder {
   inspectFetches: Array<ReadonlyArray<string>>
   visitFetches: Array<ReadonlyArray<string>>
   revenueFetches: Array<ReadonlyArray<string>>
+  keywordCandidates: Array<ReadonlyArray<string>>
 }
 
 const searchConsoleMock = (recorder: Recorder) =>
@@ -246,6 +249,18 @@ const domainRatingMock = Layer.mock(DomainRating.Service)({
   refresh: () => Effect.succeed(null),
 })
 
+// A site with no DataForSEO key behaves exactly like this: `refresh` reports
+// that it did nothing. The recorder captures the candidates so the composition
+// (Registry keywords plus non-brand Queries) can be asserted without a network.
+const keywordMetricsMock = (recorder: Recorder) =>
+  Layer.mock(KeywordMetrics.Service)({
+    refresh: (candidates) =>
+      Effect.sync(() => {
+        recorder.keywordCandidates.push(candidates)
+        return null
+      }),
+  })
+
 const configMock = Layer.mock(Config.Service)({
   debugMode: () => Effect.succeed(false),
 })
@@ -278,6 +293,7 @@ const makeRuntime = (
     registryMock,
     sitemapMock,
     domainRatingMock,
+    keywordMetricsMock(recorder),
     configMock,
     currentSite,
   )
@@ -298,6 +314,7 @@ beforeEach(() => {
     inspectFetches: [],
     visitFetches: [],
     revenueFetches: [],
+    keywordCandidates: [],
   }
   runtime = makeRuntime(dir, dbPath, recorder)
 })
@@ -326,6 +343,72 @@ test("a first sync writes the tracked window to Storage", async () => {
     "https://example.com/widgets",
   ])
   expect(summary).toContain("Saved 28 Search Console rows across 28 finalized days")
+})
+
+test("keyword candidates are the Registry's plan plus this run's own Queries", async () => {
+  await run(Sync.use.syncSearchConsole())
+
+  // One offer per sync.
+  expect(recorder.keywordCandidates).toHaveLength(1)
+  // Two candidates from two sources: the Registry keyword ("widget") and the
+  // observed Query ("widget"). They happen to be the same term here, so the
+  // count is what proves both sources contributed — folding and
+  // de-duplication are KeywordMetrics' job, and are tested there.
+  expect(recorder.keywordCandidates[0]).toEqual(["widget", "widget"])
+})
+
+test("keyword candidates are read after this run's rows are saved", async () => {
+  // The Query can only be a candidate if the snapshot rows were already in the
+  // ledger when the candidates were read. This is why the keyword-metrics call
+  // runs in sequence at the end rather than forked at the start with the other
+  // third-party reads: it is the one that depends on this run's own output.
+  await run(Sync.use.syncSearchConsole())
+  expect(recorder.keywordCandidates[0]).toContain("widget")
+
+  // The second sync fetches nothing new, so the ledger it reads is the first
+  // run's — and the Query is still there.
+  await run(Sync.use.syncSearchConsole())
+  expect(recorder.keywordCandidates[1]).toEqual(["widget", "widget"])
+})
+
+test("a failing keyword-metrics refresh does not fail the Search Console sync", async () => {
+  // The same rule the visits and revenue reads follow: a third party that is
+  // slow, rate-limited or holding a wrong key must not cost the sync its
+  // Search Console work. Logged rather than swallowed, because an empty answer
+  // and a wrong key look identical from the stored side.
+  const failing = Layer.mock(KeywordMetrics.Service)({
+    refresh: () =>
+      Effect.fail(
+        new KeywordMetricsError({ message: "DataForSEO rejected the API key." }),
+      ),
+  })
+  const own = ManagedRuntime.make(
+    Sync.layer.pipe(
+      Layer.provideMerge(
+        Layer.mergeAll(
+          searchConsoleMock(recorder),
+          analyticsMock(recorder),
+          noRevenueMock,
+          Storage.layer.pipe(Layer.provide(currentSiteLayer(dir, dbPath))),
+          registryMock,
+          sitemapMock,
+          domainRatingMock,
+          failing,
+          configMock,
+          currentSiteLayer(dir, dbPath),
+        ),
+      ),
+    ),
+  )
+
+  try {
+    const summary = await own.runPromise(Sync.use.syncSearchConsole())
+    expect(summary).toContain("Saved 28 Search Console rows")
+    // A failed refresh contributes no sentence of its own.
+    expect(summary).not.toContain("Keyword metrics:")
+  } finally {
+    await own.dispose()
+  }
 })
 
 test("an immediate re-sync fetches no new snapshots (idempotent)", async () => {

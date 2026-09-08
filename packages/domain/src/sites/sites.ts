@@ -15,6 +15,8 @@ import {
 import { Catalog } from "../catalog/catalog.ts"
 import { Config } from "../config/config.ts"
 import { type ConfigSite } from "../config/schema.ts"
+import { type ConfigMarket, type Market as MarketShape } from "../keyword-metrics/schema.ts"
+import { Market } from "../keyword-metrics/market.ts"
 import {
   type ConfigRevenue,
   defaultKeyVariable,
@@ -67,10 +69,31 @@ const revenueFor = (
   timeZone: revenue.timeZone ?? analytics?.timeZone ?? defaultTimeZone,
 })
 
+// The Market with its defaults filled: no market at all means the United
+// States in English, and a market that names only a country takes that
+// country's primary search language. `label` and `provider` are looked up so a
+// caller does not need the country table to say which market a site is in, or
+// whether keyword difficulty can arrive for it.
+//
+// An unserved country or language is *not* rejected here. A Market that
+// DataForSEO will not answer is a settings mistake, and refusing to normalize
+// it would take the whole site out of the catalog — a site whose keyword
+// numbers cannot be fetched still has Search Console history worth serving. The
+// check happens where it costs something, in the KeywordMetrics service.
+const marketFor = (market: ConfigMarket | undefined): MarketShape => {
+  const locationCode = market?.locationCode ?? Market.defaultLocationCode
+  return {
+    locationCode,
+    languageCode: market?.languageCode ?? Market.languageFor(locationCode),
+    label: Market.locationFor(locationCode)?.label ?? `Location ${locationCode}`,
+    provider: Market.providerFor(locationCode),
+  }
+}
+
 // Fill in every derived field: origin (no trailing slash), sitemapUrl
 // (defaults to https://<hostname>/sitemap.xml), brandTerms (defaults to [id]),
-// and the analytics and revenue sources when the entry has them. Throws when
-// the origin is not a URL; `resolve` below is the checked form.
+// the Market, and the analytics and revenue sources when the entry has them.
+// Throws when the origin is not a URL; `resolve` below is the checked form.
 const normalize = (site: ConfigSite): Site => {
   const origin = originFor(site.siteUrl, site.origin)
   const hostname = new URL(origin).hostname
@@ -84,6 +107,7 @@ const normalize = (site: ConfigSite): Site => {
     brandTerms: site.brandTerms ?? [site.id],
     ...(analytics ? { analytics } : {}),
     ...(site.revenue ? { revenue: revenueFor(site.revenue, analytics) } : {}),
+    market: marketFor(site.market),
   }
 }
 

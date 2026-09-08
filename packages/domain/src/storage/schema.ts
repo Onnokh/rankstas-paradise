@@ -58,6 +58,22 @@ export const OpportunitySignal = Schema.Struct({
   mapped: Schema.Boolean,
   recommendation: Schema.String,
   score: Schema.Number,
+  // The Keyword metric behind this signal, when the vendor has one for the
+  // query in the Site's Market. Optional rather than nullable so every stored
+  // fixture and every api-client decode of an older server stays valid.
+  //
+  // `searchVolume` is why the signal is ranked where it is (see `score`), and
+  // `difficulty` is deliberately *not* in the score: a term the site cannot
+  // realistically reach is still a real opportunity, just not this quarter's,
+  // and folding that judgement into one number would hide it. It travels here
+  // so a reader can make the call against the site's Domain Rating.
+  demand: Schema.optional(
+    Schema.Struct({
+      searchVolume: Schema.NullOr(Schema.Number),
+      difficulty: Schema.NullOr(Schema.Number),
+      intent: Schema.NullOr(Schema.String),
+    }),
+  ),
   launch: Schema.optional(
     Schema.Struct({
       daysSinceLaunch: Schema.Number,

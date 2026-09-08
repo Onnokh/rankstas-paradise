@@ -13,6 +13,8 @@ import { Revenue } from "../revenue/revenue.ts"
 import { type RevenueDay } from "../revenue/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { DomainRating } from "../domain-rating/domain-rating.ts"
+import { KeywordMetrics } from "../keyword-metrics/keyword-metrics.ts"
+import { foldKeyword, type KeywordMetric } from "../keyword-metrics/schema.ts"
 import { type RegistryEntry, type RegistryPatch } from "../registry/schema.ts"
 import { type RegistryError } from "../registry/schema.ts"
 import { Registry } from "../registry/registry.ts"
@@ -34,6 +36,7 @@ import {
 } from "../storage/schema.ts"
 import {
   type DashboardSnapshot,
+  type DemandReport,
   type EntrySummary,
   type HistoryReport,
   type EventsReport,
@@ -139,6 +142,7 @@ export const layer = Layer.effect(
     const registry = yield* Registry.Service
     const sitemap = yield* Sitemap.Service
     const domainRatingService = yield* DomainRating.Service
+    const keywordMetrics = yield* KeywordMetrics.Service
     const analytics = yield* Analytics.Service
     const revenue = yield* Revenue.Service
     const site = yield* CurrentSite.Service
@@ -534,6 +538,14 @@ export const layer = Layer.effect(
         wrap(
           Effect.gen(function* () {
             const entries = yield* registry.loadRegistry()
+            // From the store only: a Queries read must not block on DataForSEO,
+            // and it must not *ask* it either — every term here would be a
+            // billed row, and the sync already decides what is worth paying for.
+            const demand = yield* keywordMetrics.cached()
+            const demandFor = (query: string) => {
+              const metric = demand.get(foldKeyword(query))
+              return metric ? { demand: demandReport(metric) } : {}
+            }
             const result = yield* storage.topQueries({
               page: options.page ? `${origin}${options.page}` : undefined,
               windowDays: options.windowDays ?? 28,
@@ -564,7 +576,9 @@ export const layer = Layer.effect(
                   keywordTargets.get(row.query.toLowerCase()) ?? null,
                 current: tidy(row.current),
                 previous: row.previous ? tidy(row.previous) : null,
+                ...demandFor(row.query),
               })),
+              ...(resolved.market ? { market: resolved.market } : {}),
             }
           }),
         ),
@@ -625,6 +639,9 @@ export const layer = Layer.effect(
         wrap(
           Effect.gen(function* () {
             const entries = yield* registry.loadRegistry()
+            // Read from the store, never from DataForSEO: a Registry view must
+            // not block on a third party, and `cached` cannot fail.
+            const demand = yield* keywordMetrics.cached()
             const targets = yield* storage.registryTargetProgress(entries)
             // Visits over the same 28 days a target's window covers, anchored
             // on the Search Console latest date like the target itself.
@@ -640,6 +657,7 @@ export const layer = Layer.effect(
             )
             const hasVisits = yield* hasSyncedVisits(analyticsStatus)
             return {
+              ...(resolved.market ? { market: resolved.market } : {}),
               targets: targets.map((progress) => {
                 const first = progress.entries[0]!
                 return {
@@ -663,12 +681,16 @@ export const layer = Layer.effect(
                     : null,
                   keywords: progress.entries
                     .filter((entry) => entry.keyword.trim())
-                    .map((entry) => ({
-                      keyword: entry.keyword,
-                      cluster: entry.cluster,
-                      intent: entry.intent,
-                      country: entry.country,
-                    })),
+                    .map((entry) => {
+                      const metric = demand.get(foldKeyword(entry.keyword))
+                      return {
+                        keyword: entry.keyword,
+                        cluster: entry.cluster,
+                        intent: entry.intent,
+                        country: entry.country,
+                        ...(metric ? { demand: demandReport(metric) } : {}),
+                      }
+                    }),
                 }
               }),
             }
@@ -1058,6 +1080,7 @@ export const layer = Layer.effect(
 
 export const defaultLayer = layer.pipe(
   Layer.provide(DomainRating.defaultLayer),
+  Layer.provide(KeywordMetrics.defaultLayer),
   Layer.provide(Analytics.defaultLayer),
   Layer.provide(Revenue.defaultLayer),
   Layer.provide(Storage.defaultLayer),
@@ -1151,6 +1174,19 @@ export const entrySummary = (entry: RegistryEntry): EntrySummary => ({
 })
 
 // An opportunity signal summarized for display.
+// A stored Keyword metric as a report reports it. `monthlySearches` is left
+// out: it is twelve numbers per keyword, and a Registry with forty keywords
+// would carry five hundred of them into every read for a seasonality question
+// nobody asked. It gets its own surface when something needs it.
+export const demandReport = (metric: KeywordMetric): DemandReport => ({
+  searchVolume: metric.searchVolume,
+  difficulty: metric.difficulty,
+  costPerClick: metric.costPerClick,
+  competition: metric.competition,
+  intent: metric.intent,
+  fetchedAt: metric.fetchedAt,
+})
+
 export const signalSummary = (
   signal: OpportunitySignal,
   origin: string,
@@ -1164,6 +1200,7 @@ export const signalSummary = (
   previous: signal.previous ? tidy(signal.previous) : null,
   recommendation: signal.recommendation,
   score: Math.round(signal.score),
+  ...(signal.demand ? { demand: signal.demand } : {}),
   ...(signal.launch
     ? {
         launch: {

@@ -896,3 +896,392 @@ test("isOperatorQuery matches the listed tokens and nothing else", () => {
   ])
     expect(Storage.isOperatorQuery(query)).toBe(false)
 })
+
+test("Keyword metrics round-trip through the store, monthly searches included", async () => {
+  await runtime.runPromise(
+    Storage.use.saveKeywordMetrics([
+      {
+        keyword: "wow mount tracker",
+        locationCode: 2840,
+        languageCode: "en",
+        searchVolume: 480,
+        difficulty: 17,
+        costPerClick: 1.25,
+        competition: 0.42,
+        intent: "informational",
+        monthlySearches: [
+          { year: 2026, month: 8, searchVolume: 480 },
+          { year: 2026, month: 7, searchVolume: 390 },
+        ],
+        fetchedAt: "2026-09-08T00:00:00.000Z",
+      },
+    ]),
+  )
+
+  const rows = await runtime.runPromise(Storage.use.keywordMetrics(2840, "en"))
+  expect(rows).toHaveLength(1)
+  expect(rows[0]!.searchVolume).toBe(480)
+  expect(rows[0]!.difficulty).toBe(17)
+  expect(rows[0]!.costPerClick).toBe(1.25)
+  expect(rows[0]!.competition).toBe(0.42)
+  expect(rows[0]!.intent).toBe("informational")
+  // Stored as JSON and read back as rows: nothing queries inside the series,
+  // so it travels whole.
+  expect(rows[0]!.monthlySearches).toEqual([
+    { year: 2026, month: 8, searchVolume: 480 },
+    { year: 2026, month: 7, searchVolume: 390 },
+  ])
+})
+
+test("a Keyword metric is keyed by Market, so a second Market is a second row", async () => {
+  const shared = {
+    keyword: "kado",
+    searchVolume: 100,
+    difficulty: 5,
+    costPerClick: null,
+    competition: null,
+    intent: null,
+    monthlySearches: [],
+    fetchedAt: "2026-09-08T00:00:00.000Z",
+  }
+  await runtime.runPromise(
+    Storage.use.saveKeywordMetrics([
+      { ...shared, locationCode: 2528, languageCode: "nl" },
+      { ...shared, locationCode: 2056, languageCode: "nl", searchVolume: 40 },
+    ]),
+  )
+
+  // A site that changes Market keeps both answers and reads only the one it is
+  // in, so switching back does not have to be paid for twice.
+  expect(
+    (await runtime.runPromise(Storage.use.keywordMetrics(2528, "nl")))[0]!.searchVolume,
+  ).toBe(100)
+  expect(
+    (await runtime.runPromise(Storage.use.keywordMetrics(2056, "nl")))[0]!.searchVolume,
+  ).toBe(40)
+  // And a Market nobody has asked about yet simply has no rows.
+  expect(await runtime.runPromise(Storage.use.keywordMetrics(2840, "en"))).toEqual([])
+})
+
+test("a second answer for the same Keyword replaces the first", async () => {
+  const shared = {
+    keyword: "wow mount tracker",
+    locationCode: 2840,
+    languageCode: "en",
+    difficulty: null,
+    costPerClick: null,
+    competition: null,
+    intent: null,
+    monthlySearches: [],
+  }
+  await runtime.runPromise(
+    Storage.use.saveKeywordMetrics([
+      { ...shared, searchVolume: 100, fetchedAt: "2026-08-01T00:00:00.000Z" },
+    ]),
+  )
+  await runtime.runPromise(
+    Storage.use.saveKeywordMetrics([
+      { ...shared, searchVolume: 480, fetchedAt: "2026-09-08T00:00:00.000Z" },
+    ]),
+  )
+
+  // This is a cache, not a ledger: search volume is a rolling twelve-month
+  // average, so the older row is stale rather than historical and must not
+  // survive beside the new one.
+  const rows = await runtime.runPromise(Storage.use.keywordMetrics(2840, "en"))
+  expect(rows).toHaveLength(1)
+  expect(rows[0]!.searchVolume).toBe(480)
+  expect(rows[0]!.fetchedAt).toBe("2026-09-08T00:00:00.000Z")
+})
+
+test("an absent vendor number stays null rather than becoming a zero", async () => {
+  // A Google-Ads Market reports no difficulty and no intent, and a keyword too
+  // rare to report has no volume. "Nobody searches this" and "we were not
+  // told" lead to opposite decisions about a Keyword, so they must not collapse
+  // into the same stored value.
+  await runtime.runPromise(
+    Storage.use.saveKeywordMetrics([
+      {
+        keyword: "obscure long tail thing",
+        locationCode: 2020,
+        languageCode: "ca",
+        searchVolume: null,
+        difficulty: null,
+        costPerClick: null,
+        competition: null,
+        intent: null,
+        monthlySearches: [],
+        fetchedAt: "2026-09-08T00:00:00.000Z",
+      },
+    ]),
+  )
+
+  const rows = await runtime.runPromise(Storage.use.keywordMetrics(2020, "ca"))
+  expect(rows[0]!.searchVolume).toBeNull()
+  expect(rows[0]!.difficulty).toBeNull()
+  expect(rows[0]!.competition).toBeNull()
+  expect(rows[0]!.intent).toBeNull()
+  expect(rows[0]!.monthlySearches).toEqual([])
+})
+
+test("an unreadable monthly-searches value costs the series, not the volume", async () => {
+  // The column is written by this domain and always holds a JSON array, so a
+  // value that cannot be parsed is a hand-edited or truncated row. The honest
+  // answer for it is "no history", not a failed read of the volume beside it.
+  await runtime.runPromise(
+    Storage.use.saveKeywordMetrics([
+      {
+        keyword: "wow mount tracker",
+        locationCode: 2840,
+        languageCode: "en",
+        searchVolume: 480,
+        difficulty: 17,
+        costPerClick: null,
+        competition: null,
+        intent: null,
+        monthlySearches: [],
+        fetchedAt: "2026-09-08T00:00:00.000Z",
+      },
+    ]),
+  )
+  const db = new Database(dbPath)
+  db.run("update keyword_metric set monthly_searches = 'not json'")
+  db.close()
+
+  const rows = await runtime.runPromise(Storage.use.keywordMetrics(2840, "en"))
+  expect(rows[0]!.searchVolume).toBe(480)
+  expect(rows[0]!.monthlySearches).toEqual([])
+})
+
+// --- Opportunity ranking by demand ------------------------------------------
+
+// A Site in one Market, so the digest has somewhere to look up volume.
+const marketSite = {
+  ...site,
+  market: {
+    locationCode: 2840,
+    languageCode: "en",
+    label: "United States",
+    provider: "labs" as const,
+  },
+} satisfies Site
+
+// Two striking-distance rows that rank in the opposite order under the two
+// weightings. `deep term` sits on the second page, where almost nobody looks,
+// so it draws few impressions however much demand is behind it. `shallow term`
+// sits at position 5 and catches most of its own small demand.
+const strikingRows = [
+  snapshot({ query: "deep term", clicks: 0, impressions: 25, position: 18 }),
+  snapshot({ query: "shallow term", clicks: 5, impressions: 200, position: 5 }),
+]
+
+const withMarketStorage = async <A>(
+  fn: (
+    run: <B, E>(effect: Effect.Effect<B, E, Storage.Service>) => Promise<B>,
+  ) => Promise<A>,
+): Promise<A> => {
+  const ownDir = mkdtempSync(join(tmpdir(), "rp-storage-market-"))
+  const own = ManagedRuntime.make(
+    Storage.layer.pipe(
+      Layer.provide(
+        currentSiteLayer(ownDir, join(ownDir, "search-console.sqlite"), marketSite),
+      ),
+    ),
+  )
+  try {
+    return await fn((effect) => own.runPromise(effect))
+  } finally {
+    await own.dispose()
+    rmSync(ownDir, { recursive: true, force: true })
+  }
+}
+
+const metric = (keyword: string, searchVolume: number | null) => ({
+  keyword,
+  locationCode: 2840,
+  languageCode: "en",
+  searchVolume,
+  difficulty: 22,
+  costPerClick: null,
+  competition: null,
+  intent: "informational",
+  monthlySearches: [],
+  fetchedAt: "2026-09-08T00:00:00.000Z",
+})
+
+test("without Keyword metrics, striking-distance still ranks by impressions", () =>
+  withMarketStorage(async (run) => {
+    // The behaviour before any volume is fetched, and the behaviour a site with
+    // no DataForSEO key keeps: `shallow term` wins on its 200 impressions even
+    // though it is the smaller prize.
+    await run(Storage.use.saveSnapshots(strikingRows))
+    const digest = await run(Storage.use.opportunityDigest([]))
+    const striking = digest.signals.filter(
+      (signal) => signal.kind === "striking-distance",
+    )
+    expect(striking.map((signal) => signal.query)).toEqual([
+      "shallow term",
+      "deep term",
+    ])
+    // And no signal claims a demand it does not have.
+    expect(striking[0]!.demand).toBeUndefined()
+  }))
+
+test("search volume promotes the under-observed striking-distance term", () =>
+  withMarketStorage(async (run) => {
+    await run(Storage.use.saveSnapshots(strikingRows))
+    await run(
+      Storage.use.saveKeywordMetrics([
+        // Real demand, buried at position 18.
+        metric("deep term", 10_000),
+        // A small term the site already catches most of.
+        metric("shallow term", 250),
+      ]),
+    )
+
+    const digest = await run(Storage.use.opportunityDigest([]))
+    const striking = digest.signals.filter(
+      (signal) => signal.kind === "striking-distance",
+    )
+    // The order is reversed: this is the defect the weighting exists to fix.
+    expect(striking.map((signal) => signal.query)).toEqual([
+      "deep term",
+      "shallow term",
+    ])
+    // 10,000 demand at position 18 → 10,000 × (21 − 18).
+    expect(striking[0]!.score).toBe(30_000)
+    // The metric travels with the signal, difficulty included, so a reader can
+    // weigh it against the site's Domain Rating.
+    expect(striking[0]!.demand).toEqual({
+      searchVolume: 10_000,
+      difficulty: 22,
+      intent: "informational",
+    })
+  }))
+
+test("learning a volume never demotes a well-observed term", () =>
+  withMarketStorage(async (run) => {
+    // Volume is scoped to one Market while impressions are counted worldwide,
+    // so a site can honestly draw more impressions than its Market's volume.
+    // The larger of the two is taken, which makes fetching a keyword's volume
+    // a strictly promoting change: it can raise an under-observed term but
+    // cannot bury a well-observed one.
+    await run(Storage.use.saveSnapshots(strikingRows))
+    const before = await run(Storage.use.opportunityDigest([]))
+    const scoreBefore = before.signals.find(
+      (signal) => signal.query === "shallow term" && signal.kind === "striking-distance",
+    )!.score
+
+    await run(Storage.use.saveKeywordMetrics([metric("shallow term", 3)]))
+
+    const after = await run(Storage.use.opportunityDigest([]))
+    const signal = after.signals.find(
+      (candidate) =>
+        candidate.query === "shallow term" && candidate.kind === "striking-distance",
+    )!
+    expect(signal.score).toBe(scoreBefore)
+    // The metric is still reported — the volume is simply not what ranks it.
+    expect(signal.demand?.searchVolume).toBe(3)
+  }))
+
+test("a Query with no stored metric keeps its impression-only score", () =>
+  withMarketStorage(async (run) => {
+    // A partially-fetched store must not distort the terms it does not cover.
+    await run(Storage.use.saveSnapshots(strikingRows))
+    await run(Storage.use.saveKeywordMetrics([metric("deep term", 10_000)]))
+
+    const digest = await run(Storage.use.opportunityDigest([]))
+    const shallow = digest.signals.find(
+      (signal) => signal.query === "shallow term" && signal.kind === "striking-distance",
+    )!
+    expect(shallow.score).toBe(200 * (21 - 5))
+    expect(shallow.demand).toBeUndefined()
+  }))
+
+test("a null search volume is not read as no demand", () =>
+  withMarketStorage(async (run) => {
+    // DataForSEO answers null when a term is too rare to report, which is not
+    // the same as zero searches. A null must leave the impression weighting
+    // alone rather than zeroing the score.
+    await run(Storage.use.saveSnapshots(strikingRows))
+    await run(Storage.use.saveKeywordMetrics([metric("deep term", null)]))
+
+    const digest = await run(Storage.use.opportunityDigest([]))
+    const deep = digest.signals.find(
+      (signal) => signal.query === "deep term" && signal.kind === "striking-distance",
+    )!
+    expect(deep.score).toBe(25 * (21 - 18))
+    expect(deep.demand?.searchVolume).toBeNull()
+  }))
+
+test("a CTR Opportunity stays weighted by impressions", () =>
+  withMarketStorage(async (run) => {
+    // This kind estimates clicks lost on appearances the site already has, and
+    // every row in it ranks in the top ten — so the observed impressions are
+    // the right number and volume must not touch the score.
+    await run(
+      Storage.use.saveSnapshots([
+        // Three top-ten rows set the band benchmark, and the fourth
+        // under-performs it.
+        snapshot({ query: "band one", page: "https://example.com/a", clicks: 20, impressions: 100, position: 2 }),
+        snapshot({ query: "band two", page: "https://example.com/b", clicks: 22, impressions: 100, position: 2 }),
+        snapshot({ query: "band three", page: "https://example.com/c", clicks: 18, impressions: 100, position: 3 }),
+        snapshot({ query: "laggard", page: "https://example.com/d", clicks: 2, impressions: 100, position: 2 }),
+      ]),
+    )
+    const before = await run(Storage.use.opportunityDigest([]))
+    const scoreBefore = before.signals.find(
+      (signal) => signal.kind === "ctr" && signal.query === "laggard",
+    )!.score
+
+    await run(Storage.use.saveKeywordMetrics([metric("laggard", 50_000)]))
+
+    const after = await run(Storage.use.opportunityDigest([]))
+    const ctr = after.signals.find(
+      (signal) => signal.kind === "ctr" && signal.query === "laggard",
+    )!
+    expect(ctr.score).toBe(scoreBefore)
+    // It still carries the metric, so a reader sees the demand behind it.
+    expect(ctr.demand?.searchVolume).toBe(50_000)
+  }))
+
+test("new-demand and cannibalization are weighted by demand too", () =>
+  withMarketStorage(async (run) => {
+    await run(
+      Storage.use.saveSnapshots([
+        // One phrase split across two pages: a cannibalization signal.
+        snapshot({ query: "split term", page: "https://example.com/a", clicks: 1, impressions: 30, position: 9 }),
+        snapshot({ query: "split term", page: "https://example.com/b", clicks: 1, impressions: 30, position: 12 }),
+      ]),
+    )
+    await run(Storage.use.saveKeywordMetrics([metric("split term", 5_000)]))
+
+    const digest = await run(Storage.use.opportunityDigest([]))
+    // Nothing in the Registry, so the phrase is new demand as well.
+    const newDemand = digest.signals.find((signal) => signal.kind === "new-demand")!
+    expect(newDemand.score).toBe(5_000)
+    expect(newDemand.demand?.searchVolume).toBe(5_000)
+    // Two pages splitting a high-demand term is a worse problem than two pages
+    // splitting a rare one: 5,000 × 2 pages.
+    const cannibalization = digest.signals.find(
+      (signal) => signal.kind === "cannibalization",
+    )!
+    expect(cannibalization.score).toBe(10_000)
+  }))
+
+test("a Site with no Market reads no metrics and scores as it always did", async () => {
+  // The `site` fixture has no market. A Keyword metric written under some other
+  // Market must not leak into its digest.
+  await runtime.runPromise(Storage.use.saveSnapshots(strikingRows))
+  await runtime.runPromise(Storage.use.saveKeywordMetrics([metric("deep term", 10_000)]))
+
+  const digest = await runtime.runPromise(Storage.use.opportunityDigest([]))
+  const striking = digest.signals.filter(
+    (signal) => signal.kind === "striking-distance",
+  )
+  expect(striking.map((signal) => signal.query)).toEqual([
+    "shallow term",
+    "deep term",
+  ])
+  expect(striking[0]!.demand).toBeUndefined()
+})

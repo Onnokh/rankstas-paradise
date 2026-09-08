@@ -1,6 +1,7 @@
 // Sync service: orchestrates a Search Console refresh — composes SearchConsole
-// (fetch), Storage (persist + freshness), Registry (targets), and Sitemap
-// (refresh). Site-scoped. FROZEN CONTRACT — Interface/Service/use/defaultLayer
+// (fetch), Storage (persist + freshness), Registry (targets), Sitemap
+// (refresh), and the third-party reads that ride along (Domain Rating, visits,
+// revenue, Keyword metrics). Site-scoped. FROZEN CONTRACT — Interface/Service/use/defaultLayer
 // are frozen; this is the real `layer`, ported from the legacy `src/automation.ts`.
 import { Cause, Context, Effect, Fiber, Layer, Result, Semaphore } from "effect"
 
@@ -8,6 +9,7 @@ import { Analytics } from "../analytics/analytics.ts"
 import { Config } from "../config/config.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { DomainRating } from "../domain-rating/domain-rating.ts"
+import { KeywordMetrics } from "../keyword-metrics/keyword-metrics.ts"
 import { Registry } from "../registry/registry.ts"
 import { Revenue } from "../revenue/revenue.ts"
 import { SearchConsole } from "../search-console/search-console.ts"
@@ -119,6 +121,23 @@ const backfillFetchConcurrency = 3
 // in-flight requests the adapter was tuned for.
 const visitsBackfillChunkSize = 30
 
+// How many non-brand Queries are offered to KeywordMetrics as candidates, and
+// how many impressions a Query needs to be one. The Registry's own keywords are
+// always offered, however small: those are the plan, and the point of asking is
+// to find out whether the plan aims at demand that exists. A Query is offered
+// only once it has drawn real impressions, because a keyword costs money to ask
+// about and a one-impression long-tail Query is not a decision waiting on data.
+// The cap is one DataForSEO batch: past that a single sync would send a second
+// billed request for the least important terms it could find.
+const keywordCandidateQueries = 700
+const keywordCandidateMinImpressions = 5
+
+// The window the candidate Queries are read over. Longer than the 28 days the
+// reports use: this is asking "has this site ever ranked for this", where a
+// report asks "how is it doing now", and a seasonal term that drew impressions
+// in spring is still worth a volume number in autumn.
+const keywordCandidateWindowDays = 90
+
 const chunked = <A>(
   items: ReadonlyArray<A>,
   size: number,
@@ -137,6 +156,7 @@ export const layer = Layer.effect(
     const registry = yield* Registry.Service
     const sitemap = yield* Sitemap.Service
     const domainRating = yield* DomainRating.Service
+    const keywordMetrics = yield* KeywordMetrics.Service
     const analytics = yield* Analytics.Service
     const revenue = yield* Revenue.Service
     const config = yield* Config.Service
@@ -372,6 +392,34 @@ export const layer = Layer.effect(
       yield* storage.savePageIndexStatuses(inspection.inspections)
       yield* storage.pruneIndexStatuses(targetUrls)
 
+      // Keyword metrics run last and in sequence, not forked with the others,
+      // because they are the one third-party call that depends on this run's
+      // own output: the candidate Queries come from the rows saved above. The
+      // failure is logged rather than swallowed — an empty answer and a wrong
+      // key look identical from the stored side, and the second one costs
+      // money to leave unnoticed.
+      //
+      // Nearly every run reaches no further than the freshness cutoff inside
+      // `refresh` and sends nothing. A run that does send is bounded to one
+      // batch by `keywordCandidateQueries`.
+      const candidateQueries = yield* storage.topQueries({
+        windowDays: keywordCandidateWindowDays,
+        minImpressions: keywordCandidateMinImpressions,
+        limit: keywordCandidateQueries,
+      })
+      const keywords = yield* keywordMetrics
+        .refresh([
+          ...entries.map((entry) => entry.keyword),
+          ...candidateQueries.rows.map((row) => row.query),
+        ])
+        .pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning(
+              `The keyword-metrics refresh failed: ${Cause.pretty(cause)}`,
+            ).pipe(Effect.as(null)),
+          ),
+        )
+
       const sitemapPages = yield* Fiber.join(sitemapFiber)
       const rating = yield* Fiber.join(domainRatingFiber)
       const visits = yield* Fiber.join(visitsFiber)
@@ -394,7 +442,7 @@ export const layer = Layer.effect(
         inspection.failed > 0
           ? `${inspection.inspections.length} indexed-status checks saved (${freshUrls.size} cached); ${inspection.failed} unavailable`
           : `${inspection.inspections.length} indexed-status checks saved (${freshUrls.size} cached)`
-      return `Saved ${snapshots.length} Search Console rows across ${plan.dates.length} finalized days (${plan.missing.length} missing, ${plan.recent.length} reconciled); daily totals for ${totalDates.length} days; ${inspectionSummary}; finalized through ${finalizedThrough}, provisional to ${freshestThrough}. Sitemap: ${sitemapPages.length || "cached"} pages.${rating ? ` Domain Rating: ${rating.rating}.` : ""}${visits ? ` Visits: ${visits.days} days from ${visits.provider}.` : ""}${sales ? ` Revenue: ${sales.days} days from ${sales.provider}.` : ""}`
+      return `Saved ${snapshots.length} Search Console rows across ${plan.dates.length} finalized days (${plan.missing.length} missing, ${plan.recent.length} reconciled); daily totals for ${totalDates.length} days; ${inspectionSummary}; finalized through ${finalizedThrough}, provisional to ${freshestThrough}. Sitemap: ${sitemapPages.length || "cached"} pages.${rating ? ` Domain Rating: ${rating.rating}.` : ""}${visits ? ` Visits: ${visits.days} days from ${visits.provider}.` : ""}${sales ? ` Revenue: ${sales.days} days from ${sales.provider}.` : ""}${keywords && keywords.requests > 0 ? ` Keyword metrics: ${keywords.answered} of ${keywords.asked} keywords in ${keywords.requests} request(s).` : ""}`
     })
 
     const runBackfill = Effect.fn("Sync.backfillSearchConsole")(function* (
@@ -544,6 +592,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Registry.defaultLayer),
   Layer.provide(Sitemap.defaultLayer),
   Layer.provide(DomainRating.defaultLayer),
+  Layer.provide(KeywordMetrics.defaultLayer),
   Layer.provide(Config.defaultLayer),
   Layer.provide(CurrentSite.defaultLayer),
 )

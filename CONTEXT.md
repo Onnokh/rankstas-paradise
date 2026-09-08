@@ -16,8 +16,12 @@ _Avoid_: "config" for the list of sites.
 **Site settings**:
 Everything a catalog entry holds except its id: the Search Console property, name, origin, sitemap URL, brand terms, and the analytics and revenue provider blocks. Never a vendor key.
 
+**Market**:
+The country and language a site's keyword demand is measured in — one per site, stored as a DataForSEO location code and language code. Every Keyword metric belongs to exactly one market, because a search volume is only comparable with another volume from the same one. A site that names no market is measured in the United States in English. Language, not country, is the axis that matters: a German visitor to an English site searches in English.
+_Avoid_: "location" or "locale" on their own; "country" (a market is a country *and* a language); the registry's `country` column, which is unvalidated free text and predates this term.
+
 **Vendor key**:
-The API key a provider (Polar, Rybbit, Ahrefs) is read with. Stored encrypted in the vault, addressed by scope (a site, or the app) and purpose (the provider name), and handed to the provider's adapter under the environment variable it reads. The environment variable is the fallback. Never part of Site settings.
+The API key a provider (Polar, Rybbit, Ahrefs, DataForSEO) is read with. Stored encrypted in the vault, addressed by scope (a site, or the app) and purpose (the provider name), and handed to the provider's adapter under the environment variable it reads. The environment variable is the fallback. Never part of Site settings.
 _Avoid_: "secret" for the concept in prose (the code's name for the vault entry); "credential".
 
 **Client**:
@@ -83,6 +87,29 @@ A rolling N-day period (default 28). Reports compare the current window against 
 
 **Baseline**:
 A target URL's pre-launch 28-day window — the reference point for measuring lift after launch.
+
+### Keyword demand
+
+**Keyword metric**:
+What DataForSEO says about one term in one Market: its search volume, difficulty, cost per click, competition, intent, and monthly searches. Cached, not accumulated — every number can be asked for again, so a stored answer older than thirty days is stale rather than historical, and is replaced. Held for planned Keywords and for observed non-brand Queries alike. A brand query and an operator query are never asked about, because the vendor charges per term and neither answer could change a decision.
+_Avoid_: "keyword data"; "SEO metrics"; treating an absent number as a zero — a null means "not told", which leads to the opposite decision from "nobody searches this".
+
+**Search volume**:
+A term's average monthly searches over the last twelve months, in its Market. The number that tells you whether demand exists behind a Keyword the Registry aims at, or behind a Query the site already draws impressions on.
+_Avoid_: "volume" for anything else; "traffic" (that is clicks and visits).
+
+**Difficulty**:
+How hard the first page of results is to reach for a term, 0–100, in its Market. Read against the site's Domain Rating: a term is worth planning when demand is real and difficulty is within reach. Absent for the countries DataForSEO serves from Google Ads rather than Labs, which does not measure it.
+_Avoid_: "KD"; "competition" as a synonym — that is the paid-auction measure below.
+
+**Cost per click**:
+What an advertiser pays for one click on the term, in its Market's currency. A proxy for commercial value, not for organic effort.
+
+**Competition**:
+How contested the term is among *advertisers*, 0–1. A paid-auction measure, and not a substitute for difficulty.
+
+**Monthly searches**:
+A term's volume month by month for the last twelve complete months. The seasonality behind the twelve-month average: a term with a December peak and a term with flat demand can report the same search volume.
 
 ### Analysis & status
 
