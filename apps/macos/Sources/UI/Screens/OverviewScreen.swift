@@ -97,7 +97,6 @@ struct OverviewScreen: View {
                         sites: model.sites,
                         siteFilter: $state.feedSiteID,
                         kinds: $state.feedKinds,
-                        paused: $state.feedPaused,
                         windowMinutes: windowMinutes,
                         waiting: live.feeds.isEmpty && live.feedErrors.isEmpty,
                         now: now
@@ -402,8 +401,8 @@ private struct SiteRow: View {
 // MARK: - Feed
 
 /// What visitors are doing on every site, newest first. The header's words keep it to one
-/// site and to page loads or events, the way a site tab's period switch works; hovering holds
-/// the rows still so they can be read, as does Pause.
+/// site and to page loads or events, the way a site tab's period switch works. The feed keeps
+/// moving under the pointer: a new row simply appears at the top.
 ///
 /// The rows are a plain stack, drawn in full and never animated. A lazy stack here kept the
 /// main thread busy re-phasing its items on every poll, and a layout animation over the rows
@@ -413,7 +412,6 @@ private struct FeedCard: View {
     let sites: [Site]
     @Binding var siteFilter: Site.ID?
     @Binding var kinds: FeedKinds
-    @Binding var paused: Bool
     let windowMinutes: Int
     /// No feed has answered yet, and nothing has failed.
     let waiting: Bool
@@ -421,21 +419,9 @@ private struct FeedCard: View {
     let now: Date
 
     @Environment(\.isTabPreview) private var isPreview
-    @State private var hovering = false
-    /// The newest instant on screen when the feed was held; nil while it moves. A hold keeps
-    /// newer rows from arriving, and nothing else: the switches above still apply at once,
-    /// since the pointer is over the card whenever they are clicked.
-    @State private var heldAt: Date?
     /// The visitor under the pointer, as site and visitor token, so every row of that
     /// person's visit lights up together: their path through the site.
     @State private var hoveredVisitor: String?
-
-    private var held: Bool { paused || hovering }
-
-    private var shown: [LiveFeedRow] {
-        guard let heldAt else { return rows }
-        return rows.filter { ($0.event.date ?? .distantPast) <= heldAt }
-    }
 
     /// The site choices as the word switch takes them: all first, then each site.
     private var siteChoices: [SiteChoice] {
@@ -454,12 +440,6 @@ private struct FeedCard: View {
             HStack(spacing: 16) {
                 Text("Feed")
                     .font(.headline)
-                if held {
-                    Text(paused ? "Paused" : "Held")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .transition(.opacity)
-                }
                 Spacer()
                 WordSwitch(options: siteChoices, selection: siteChoice, label: \.label, font: .subheadline)
                     .accessibilityLabel("Site")
@@ -468,31 +448,23 @@ private struct FeedCard: View {
                     .frame(width: 1, height: 14)
                 WordSwitch(options: FeedKinds.allCases, selection: $kinds, label: \.label, font: .subheadline)
                     .accessibilityLabel("Kinds")
-                Button(paused ? "Resume" : "Pause", systemImage: paused ? "play.fill" : "pause.fill") {
-                    paused.toggle()
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help(paused ? "Let the feed move again" : "Hold the feed still (hovering holds it too)")
             }
             .disabled(isPreview)
-            .animation(.snappy(duration: 0.2), value: held)
 
-            if shown.isEmpty {
+            if rows.isEmpty {
                 Text(waiting ? "Waiting for the provider…" : "Nothing in the last \(windowMinutes) minutes.")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
             } else {
                 VStack(spacing: 0) {
-                    ForEach(Array(shown.enumerated()), id: \.element.id) { index, row in
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                         let visitor = Self.visitorKey(row)
                         FeedRow(
                             row: row,
                             age: row.event.date.map { RelativeAge.labelOrTime(from: $0, to: now) } ?? row.time,
                             showsSite: siteFilter == nil,
                             isHighlighted: hoveredVisitor == visitor,
-                            isLast: index == shown.count - 1
+                            isLast: index == rows.count - 1
                         )
                         .equatable()
                         .onHover { inside in
@@ -510,13 +482,6 @@ private struct FeedCard: View {
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .cardSurface(cornerRadius: 12)
-        .onHover { inside in
-            guard !isPreview else { return }
-            hovering = inside
-        }
-        .onChange(of: held) { _, isHeld in
-            heldAt = isHeld ? (rows.first?.event.date ?? .now) : nil
-        }
     }
 
     /// One person on one site. The token is per provider, so it is scoped by site too.
