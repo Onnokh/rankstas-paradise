@@ -558,7 +558,7 @@ export const showTui = async (initialStatus?: string, backgroundRefresh?: (site:
           ? `Previous baseline: ${progress.baseline.impressions} impressions · ${performance.total.impressions - progress.baseline.impressions >= 0 ? "+" : ""}${performance.total.impressions - progress.baseline.impressions} impressions`
           : "Previous baseline: not captured",
         `Search intent: ${readableIntent(entry.intent)}`,
-        `Registry: ${entry.priority} · ${entry.country} · ${keywordEntries.length} keywords`,
+        `Registry: ${entry.priority} · ${keywordEntries.length} keywords`,
         `Google index: ${indexDetail}`,
       ].join("\n")
       detailTitle.content = inventoryOnly ? "PAGE PERFORMANCE · ALL QUERIES" : "NON-BRAND PERFORMANCE"

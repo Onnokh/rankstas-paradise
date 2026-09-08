@@ -213,7 +213,7 @@ Vendor keys are stored encrypted (see [deploy.md](deploy.md) §3c) and addressed
 
 ## Write endpoints
 
-- `POST /api/registry` — body: `RegistryAddInput` (`target`, optional `keyword`/`cluster`/`intent`/`priority`/`country`/`why`/`publishedAt`/`baselineDate`/`status`). Keyword rows require cluster, intent, and priority.
+- `POST /api/registry` — body: `RegistryAddInput` (`target`, optional `keyword`/`cluster`/`intent`/`priority`/`why`/`publishedAt`/`baselineDate`/`status`). Keyword rows require cluster, intent, and priority.
 - `PATCH /api/registry` — body: `{ target, keyword?, patch: RegistryPatch }`.
 - `POST /api/log` — body: `{ path, kind, date?, note? }`.
 

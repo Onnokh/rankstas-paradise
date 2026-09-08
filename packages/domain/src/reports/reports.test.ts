@@ -215,7 +215,6 @@ const entry = (over: Partial<RegistryEntry>): RegistryEntry => ({
   targetUrl: "/",
   intent: "",
   whyOpportunity: "",
-  country: "USA",
   priority: "",
   publishedAt: "",
   baselineDate: "",

@@ -73,7 +73,6 @@ export const EntrySummary = Schema.Struct({
   keyword: Schema.String,
   cluster: Schema.String,
   intent: Schema.String,
-  country: Schema.String,
   priority: Schema.String,
   publishedAt: Schema.NullOr(Schema.String),
   baselineDate: Schema.NullOr(Schema.String),
@@ -174,7 +173,6 @@ export const RegistryAddInput = Schema.Struct({
   cluster: Schema.optional(Schema.String),
   intent: Schema.optional(Schema.String),
   priority: Schema.optional(Schema.String),
-  country: Schema.optional(Schema.String),
   why: Schema.optional(Schema.String),
   publishedAt: Schema.optional(Schema.String),
   baselineDate: Schema.optional(Schema.String),
@@ -500,7 +498,6 @@ export const RegistryListReport = Schema.Struct({
           keyword: Schema.String,
           cluster: Schema.String,
           intent: Schema.String,
-          country: Schema.String,
           // What the vendor says about this planned Keyword. This is what
           // turns the Registry from a list of intentions into a checkable
           // plan: a keyword with no demand behind it is a page nobody will

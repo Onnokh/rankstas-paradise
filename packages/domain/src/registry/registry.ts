@@ -10,34 +10,37 @@ import {
   RegistryError,
   type RegistryPatch,
 } from "./schema.ts"
+import { RegistryCsvRowV1, registryColumnsV1, registryHeaderV1 } from "./schema.v1.ts"
 import {
-  type RegistryColumnV1,
-  RegistryCsvRowV1,
-  registryColumnsV1,
-  registryHeaderV1,
-} from "./schema.v1.ts"
+  type RegistryColumnV2,
+  RegistryCsvRowV2,
+  registryColumnsV2,
+  registryHeaderV2,
+} from "./schema.v2.ts"
 
-// --- CSV codec (V1) ---------------------------------------------------------
-// Parse/serialize go through the versioned `RegistryCsvRowV1` schema so the
-// on-disk shape is owned by schema.v1.ts. The domain <-> wire mapping is the
-// only place that knows both key sets.
+// --- CSV codec (V2 on disk, V1 still readable) ------------------------------
+// Parse and serialize go through the versioned row schemas, so the on-disk
+// shape is owned by schema.v1.ts and schema.v2.ts. The domain <-> wire mapping
+// below is the only place that knows both key sets.
+//
+// Reads accept either version and answer in V2; writes are always V2. A V1
+// file is therefore rewritten as V2 the first time anything writes to it, and
+// its `country` cells are dropped then. Every writer here already rewrote the
+// whole file, so this costs no new risk — see schema.v2.ts for why the column
+// went.
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 const fail = (message: string): Effect.Effect<never, RegistryError> =>
   Effect.fail(new RegistryError({ message }))
 
-const colIndex = (column: RegistryColumnV1): number =>
-  registryColumnsV1.indexOf(column)
-
-// Domain patch field -> V1 column (newTargetUrl is handled separately).
+// Domain patch field -> V2 column (newTargetUrl is handled separately).
 const patchColumn: Record<
   Exclude<keyof RegistryPatch, "newTargetUrl">,
-  RegistryColumnV1
+  RegistryColumnV2
 > = {
   cluster: "cluster",
   intent: "intent",
-  country: "country",
   priority: "priority",
   publishedAt: "published_at",
   baselineDate: "baseline_date",
@@ -45,25 +48,23 @@ const patchColumn: Record<
   whyOpportunity: "why_opportunity",
 }
 
-const rowToEntry = (row: RegistryCsvRowV1): RegistryEntry => ({
+const rowToEntry = (row: RegistryCsvRowV2): RegistryEntry => ({
   cluster: row.cluster,
   keyword: row.keyword,
   targetUrl: row.target_url,
   intent: row.intent,
   whyOpportunity: row.why_opportunity,
-  country: row.country,
   priority: row.priority,
   publishedAt: row.published_at,
   baselineDate: row.baseline_date,
   status: row.status,
 })
 
-const entryToRow = (entry: RegistryEntry): RegistryCsvRowV1 => ({
+const entryToRow = (entry: RegistryEntry): RegistryCsvRowV2 => ({
   cluster: entry.cluster,
   keyword: entry.keyword,
   target_url: entry.targetUrl,
   intent: entry.intent,
-  country: entry.country,
   priority: entry.priority,
   published_at: entry.publishedAt,
   baseline_date: entry.baselineDate,
@@ -71,36 +72,60 @@ const entryToRow = (entry: RegistryEntry): RegistryCsvRowV1 => ({
   why_opportunity: entry.whyOpportunity,
 })
 
-const decodeRow = Schema.decodeEffect(RegistryCsvRowV1)
-const encodeRow = Schema.encodeSync(RegistryCsvRowV1)
+// A V1 row read as a V2 one: the `country` cell is dropped. Nothing else moves,
+// because V2 is V1 with that one column removed and the rest in order.
+const v1ToV2 = ({
+  country: _country,
+  ...rest
+}: RegistryCsvRowV1): RegistryCsvRowV2 => rest
 
-// Split one CSV line into a validated V1 row (decoded through the schema).
-const parseLine = Effect.fnUntraced(function* (line: string) {
+const decodeRowV1 = Schema.decodeEffect(RegistryCsvRowV1)
+const decodeRowV2 = Schema.decodeEffect(RegistryCsvRowV2)
+const encodeRow = Schema.encodeSync(RegistryCsvRowV2)
+
+// The on-disk version a header line names, or null when it names neither.
+const versionOfHeader = (header: string | undefined): 1 | 2 | null =>
+  header === registryHeaderV2 ? 2 : header === registryHeaderV1 ? 1 : null
+
+// Split one CSV line into a validated row, decoded through the schema of the
+// version the file's header named, and answered as V2.
+const parseLine = Effect.fnUntraced(function* (version: 1 | 2, line: string) {
+  const columns = version === 1 ? registryColumnsV1 : registryColumnsV2
   const values = line.split(",")
-  if (values.length !== registryColumnsV1.length) {
+  if (values.length !== columns.length) {
     return yield* fail(`Invalid registry row: ${line}`)
   }
   const input = Object.fromEntries(
-    registryColumnsV1.map((column, index) => [column, values[index] ?? ""]),
-  ) as RegistryCsvRowV1
-  return yield* decodeRow(input).pipe(
-    Effect.mapError(
-      (cause) => new RegistryError({ message: `Invalid registry row: ${line}`, cause }),
-    ),
+    columns.map((column, index) => [column, values[index] ?? ""]),
   )
+  const invalid = (cause: unknown) =>
+    new RegistryError({ message: `Invalid registry row: ${line}`, cause })
+  return version === 1
+    ? v1ToV2(
+        yield* decodeRowV1(input as RegistryCsvRowV1).pipe(
+          Effect.mapError(invalid),
+        ),
+      )
+    : yield* decodeRowV2(input as RegistryCsvRowV2).pipe(
+        Effect.mapError(invalid),
+      )
 })
 
-// Serialize a domain entry into a CSV line in the frozen V1 column order.
-const serializeEntry = (entry: RegistryEntry): string => {
-  const row = encodeRow(entryToRow(entry))
-  return registryColumnsV1.map((column) => row[column]).join(",")
+// Serialize a wire row into a CSV line in the frozen V2 column order.
+const serializeRow = (row: RegistryCsvRowV2): string => {
+  const encoded = encodeRow(row)
+  return registryColumnsV2.map((column) => encoded[column]).join(",")
 }
+
+// The whole file, header included, as V2.
+const serializeFile = (rows: ReadonlyArray<RegistryCsvRowV2>): string =>
+  `${registryHeaderV2}\n${rows.map(serializeRow).join("\n")}${rows.length > 0 ? "\n" : ""}`
 
 // --- validation -------------------------------------------------------------
 
 const validateEntry = Effect.fnUntraced(function* (entry: RegistryEntry) {
   const row = entryToRow(entry)
-  for (const column of registryColumnsV1) {
+  for (const column of registryColumnsV2) {
     const value = row[column]
     if (value.includes(",") || value.includes("\n")) {
       return yield* fail(
@@ -193,53 +218,46 @@ export const layer = Layer.effect(
           new RegistryError({ message: `Failed to write ${path}`, cause }),
       })
 
-    // Read `[header, ...rows]`; fail on a header that isn't the V1 header.
-    const readLines = (path: string) =>
+    // Every row of the file, decoded and answered as V2 whichever version the
+    // header names. A file that names neither is not this file — refused
+    // rather than guessed at, because guessing the column order would write
+    // somebody's plan into the wrong cells.
+    const readRows = (path: string) =>
       Effect.gen(function* () {
         const source = yield* readFile(path)
         const [header, ...lines] = source.trim().split("\n")
-        if (header !== registryHeaderV1) {
+        const version = versionOfHeader(header)
+        if (version === null) {
           return yield* fail("keyword-registry.csv has an unexpected header")
         }
-        return { source, lines }
+        const rows: Array<RegistryCsvRowV2> = []
+        for (const line of lines) rows.push(yield* parseLine(version, line))
+        return rows
       })
 
-    // Rewrite one CSV line's cells; validates the row shape (column count).
-    const editLine = Effect.fnUntraced(function* (
-      line: string,
-      edit: (values: Array<string>) => boolean,
-    ) {
-      const values = line.split(",")
-      if (values.length !== registryColumnsV1.length) {
-        return yield* fail(`Invalid registry row: ${line}`)
-      }
-      const changed = edit(values)
-      return { line: changed ? values.join(",") : line, changed }
-    })
+    // Every write rewrites the whole file as V2, so a V1 file is upgraded by
+    // the first write and its `country` cells go then.
+    const writeRows = (path: string, rows: ReadonlyArray<RegistryCsvRowV2>) =>
+      writeFile(path, serializeFile(rows))
 
     const loadRegistry: Interface["loadRegistry"] = Effect.fn(
       "Registry.loadRegistry",
     )(function* () {
       const path = yield* registryPath()
       if (!(yield* fileExists(path))) return []
-      const { lines } = yield* readLines(path)
+      const rows = yield* readRows(path)
       const debug = yield* config.debugMode()
-      const entries: Array<RegistryEntry> = []
-      for (const line of lines) {
-        const row = yield* parseLine(line)
+      return rows.map((row) => {
         const entry = rowToEntry(row)
-        entries.push(
-          debug
-            ? {
-                ...entry,
-                publishedAt: "2026-06-16",
-                baselineDate: "2026-06-15",
-                status: "Debug: measuring",
-              }
-            : entry,
-        )
-      }
-      return entries
+        return debug
+          ? {
+              ...entry,
+              publishedAt: "2026-06-16",
+              baselineDate: "2026-06-15",
+              status: "Debug: measuring",
+            }
+          : entry
+      })
     })
 
     const appendRegistryEntry: Interface["appendRegistryEntry"] = Effect.fn(
@@ -264,10 +282,11 @@ export const layer = Layer.effect(
         return yield* fail(`An inventory-only row for ${entry.targetUrl} already exists.`)
       }
       const path = yield* registryPath()
-      const source = (yield* fileExists(path))
-        ? (yield* readFile(path)).trimEnd()
-        : registryHeaderV1
-      yield* writeFile(path, `${source}\n${serializeEntry(entry)}\n`)
+      // Read and rewrite rather than append a line. A V1 file cannot take a V2
+      // line on the end, and the other writers here already rewrite the whole
+      // file, so this is the same risk they carry.
+      const rows = (yield* fileExists(path)) ? yield* readRows(path) : []
+      yield* writeRows(path, [...rows, entryToRow(entry)])
     })
 
     const updateRegistryRows: Interface["updateRegistryRows"] = Effect.fn(
@@ -279,32 +298,27 @@ export const layer = Layer.effect(
     ) {
       yield* validatePatch(patch)
       const path = yield* registryPath()
-      const { lines } = yield* readLines(path)
-      const targetIndex = colIndex("target_url")
-      const keywordIndex = colIndex("keyword")
+      const rows = yield* readRows(path)
       let updated = 0
-      const nextLines: Array<string> = []
-      for (const line of lines) {
-        const result = yield* editLine(line, (values) => {
-          if (values[targetIndex] !== targetUrl) return false
-          if (
-            keyword !== undefined &&
-            (values[keywordIndex] ?? "").toLowerCase() !== keyword.toLowerCase()
-          ) {
-            return false
-          }
-          for (const [field, column] of Object.entries(patchColumn)) {
-            const value = patch[field as keyof typeof patchColumn]
-            if (value !== undefined) values[colIndex(column)] = value
-          }
-          if (patch.newTargetUrl !== undefined) {
-            values[targetIndex] = patch.newTargetUrl
-          }
-          return true
-        })
-        if (result.changed) updated += 1
-        nextLines.push(result.line)
-      }
+      const next = rows.map((row) => {
+        if (row.target_url !== targetUrl) return row
+        if (
+          keyword !== undefined &&
+          row.keyword.toLowerCase() !== keyword.toLowerCase()
+        ) {
+          return row
+        }
+        updated += 1
+        const patched = { ...row }
+        for (const [field, column] of Object.entries(patchColumn)) {
+          const value = patch[field as keyof typeof patchColumn]
+          if (value !== undefined) patched[column] = value
+        }
+        if (patch.newTargetUrl !== undefined) {
+          patched.target_url = patch.newTargetUrl
+        }
+        return patched
+      })
       if (updated === 0) {
         return yield* fail(
           keyword !== undefined
@@ -312,7 +326,7 @@ export const layer = Layer.effect(
             : `No registry rows found for target ${targetUrl}`,
         )
       }
-      yield* writeFile(path, `${registryHeaderV1}\n${nextLines.join("\n")}\n`)
+      yield* writeRows(path, next)
       return updated
     })
 
@@ -320,20 +334,14 @@ export const layer = Layer.effect(
       "Registry.markMissingBaselines",
     )(function* (baselineDate: string) {
       const path = yield* registryPath()
-      const { lines } = yield* readLines(path)
-      const baselineIndex = colIndex("baseline_date")
+      const rows = yield* readRows(path)
       let updated = 0
-      const nextLines: Array<string> = []
-      for (const line of lines) {
-        const result = yield* editLine(line, (values) => {
-          if (values[baselineIndex]) return false
-          values[baselineIndex] = baselineDate
-          return true
-        })
-        if (result.changed) updated += 1
-        nextLines.push(result.line)
-      }
-      yield* writeFile(path, `${registryHeaderV1}\n${nextLines.join("\n")}\n`)
+      const next = rows.map((row) => {
+        if (row.baseline_date) return row
+        updated += 1
+        return { ...row, baseline_date: baselineDate }
+      })
+      yield* writeRows(path, next)
       return updated
     })
 

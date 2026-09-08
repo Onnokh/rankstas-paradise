@@ -13,6 +13,7 @@ import { CurrentSite } from "../sites/current-site.ts"
 import { Registry } from "./registry.ts"
 import { type RegistryEntry, RegistryError } from "./schema.ts"
 import { registryHeaderV1 } from "./schema.v1.ts"
+import { registryHeaderV2 } from "./schema.v2.ts"
 
 const entry = (over: Partial<RegistryEntry> = {}): RegistryEntry => ({
   cluster: "cluster-a",
@@ -20,7 +21,6 @@ const entry = (over: Partial<RegistryEntry> = {}): RegistryEntry => ({
   targetUrl: "/widgets",
   intent: "informational",
   whyOpportunity: "high volume",
-  country: "us",
   priority: "1",
   publishedAt: "",
   baselineDate: "",
@@ -86,10 +86,131 @@ test("append then load round-trips through the CSV", async () => {
     const rows = await run(path, Registry.use.loadRegistry())
     expect(rows).toEqual([e])
 
-    // Header + column order is the frozen V1 layout.
+    // Header + column order is the frozen V2 layout — what writes now emit.
     const text = await Bun.file(path).text()
     const [header] = text.trim().split("\n")
-    expect(header).toBe(registryHeaderV1)
+    expect(header).toBe(registryHeaderV2)
+  })
+})
+
+// --- the V1 -> V2 column drop -----------------------------------------------
+
+// A V1 file as it sits on a real volume: ten columns, with a `country` cell
+// holding one of the values sites actually used.
+const v1File = [
+  registryHeaderV1,
+  "Alternatives,pocket alternative,/pocket-alternative,comparison,Worldwide,P1,2026-05-20,2026-05-18,Measuring,High-intent switchers",
+  "Extension,chrome read later,/chrome-extension,product-solution,USA,P2,,,Planned,Strong demand",
+].join("\n")
+
+test("a V1 file still loads, and its country cell is simply not read", async () => {
+  await withTemp(async (path) => {
+    await writeFile(path, `${v1File}\n`)
+    const rows = await run(path, Registry.use.loadRegistry())
+
+    // Both rows decode, every remaining cell lands in the right field. The
+    // point of keeping V1 readable is that nobody's plan has to be re-typed.
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toEqual(
+      entry({
+        cluster: "Alternatives",
+        keyword: "pocket alternative",
+        targetUrl: "/pocket-alternative",
+        intent: "comparison",
+        whyOpportunity: "High-intent switchers",
+        priority: "P1",
+        publishedAt: "2026-05-20",
+        baselineDate: "2026-05-18",
+        status: "Measuring",
+      }),
+    )
+    expect(rows[1]?.priority).toBe("P2")
+    expect(rows[1]?.whyOpportunity).toBe("Strong demand")
+    // Nothing on the entry carries the old cell.
+    expect(rows[0]).not.toHaveProperty("country")
+
+    // Reading alone does not rewrite the file: a deployment that only reads
+    // keeps its V1 file untouched.
+    expect((await Bun.file(path).text()).trim()).toBe(v1File)
+  })
+})
+
+test("the first write upgrades a V1 file to V2 and drops the country cells", async () => {
+  await withTemp(async (path) => {
+    await writeFile(path, `${v1File}\n`)
+    await run(
+      path,
+      Registry.use.updateRegistryRows("/chrome-extension", undefined, {
+        status: "Measuring",
+      }),
+    )
+
+    const lines = (await Bun.file(path).text()).trim().split("\n")
+    expect(lines[0]).toBe(registryHeaderV2)
+    // Nine cells per row now, and neither "Worldwide" nor "USA" survives.
+    expect(lines).toHaveLength(3)
+    for (const line of lines.slice(1)) expect(line.split(",")).toHaveLength(9)
+    expect(await Bun.file(path).text()).not.toContain("Worldwide")
+    expect(await Bun.file(path).text()).not.toContain("USA")
+
+    // The patch landed, and the untouched row kept every one of its own cells:
+    // this is what a column drop must not get wrong.
+    const rows = await run(path, Registry.use.loadRegistry())
+    expect(rows[1]?.status).toBe("Measuring")
+    expect(rows[0]).toEqual(
+      entry({
+        cluster: "Alternatives",
+        keyword: "pocket alternative",
+        targetUrl: "/pocket-alternative",
+        intent: "comparison",
+        whyOpportunity: "High-intent switchers",
+        priority: "P1",
+        publishedAt: "2026-05-20",
+        baselineDate: "2026-05-18",
+        status: "Measuring",
+      }),
+    )
+  })
+})
+
+test("appending to a V1 file upgrades it rather than mixing the two layouts", async () => {
+  await withTemp(async (path) => {
+    await writeFile(path, `${v1File}\n`)
+    await run(path, Registry.use.appendRegistryEntry(entry()))
+
+    const lines = (await Bun.file(path).text()).trim().split("\n")
+    expect(lines[0]).toBe(registryHeaderV2)
+    // A ten-column line appended under a nine-column header would make every
+    // later read fail, so the whole file is rewritten instead.
+    for (const line of lines.slice(1)) expect(line.split(",")).toHaveLength(9)
+    expect(await run(path, Registry.use.loadRegistry())).toHaveLength(3)
+  })
+})
+
+test("a header that names neither version is refused, not guessed at", async () => {
+  await withTemp(async (path) => {
+    // Nine columns and nine cells, so the row shape alone cannot catch this —
+    // only the header can. The columns are V2's, reordered. Reading them in V2
+    // order would file this row's keyword under its cluster and its target
+    // under its intent, which is worse than refusing to read the file: a later
+    // write would then save the mangling.
+    await writeFile(
+      path,
+      [
+        "keyword,cluster,intent,target_url,priority,published_at,baseline_date,status,why_opportunity",
+        "best widgets,cluster-a,informational,/widgets,1,,,planned,high volume",
+      ].join("\n") + "\n",
+    )
+    const exit = await runExit(path, Registry.use.loadRegistry())
+    expect(Exit.isFailure(exit)).toBe(true)
+  })
+})
+
+test("a V1 row with the wrong cell count fails rather than shifting columns", async () => {
+  await withTemp(async (path) => {
+    await writeFile(path, `${registryHeaderV1}\nonly,three,cells\n`)
+    const exit = await runExit(path, Registry.use.loadRegistry())
+    expect(Exit.isFailure(exit)).toBe(true)
   })
 })
 

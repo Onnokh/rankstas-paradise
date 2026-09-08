@@ -6,13 +6,16 @@ import { Schema } from "effect"
 
 // One registry row. Every field is a string (the CSV is the source of truth);
 // empty strings mean "unset". `targetUrl` is a site-relative path ("/foo").
+//
+// There is no `country`. The market a row's numbers describe is a property of
+// the Site, not of a row — two rows of one site cannot be in different markets
+// — and it lives on the Site as its Market. See schema.v2.ts.
 export const RegistryEntry = Schema.Struct({
   cluster: Schema.String,
   keyword: Schema.String,
   targetUrl: Schema.String,
   intent: Schema.String,
   whyOpportunity: Schema.String,
-  country: Schema.String,
   priority: Schema.String,
   publishedAt: Schema.String,
   baselineDate: Schema.String,
@@ -26,7 +29,6 @@ export interface RegistryEntry
 export const RegistryPatch = Schema.Struct({
   cluster: Schema.optional(Schema.String),
   intent: Schema.optional(Schema.String),
-  country: Schema.optional(Schema.String),
   priority: Schema.optional(Schema.String),
   publishedAt: Schema.optional(Schema.String),
   baselineDate: Schema.optional(Schema.String),
