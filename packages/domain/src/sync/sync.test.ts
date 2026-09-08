@@ -26,6 +26,7 @@ import { SearchConsole } from "../search-console/search-console.ts"
 import { Registry } from "../registry/registry.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { DomainRating } from "../domain-rating/domain-rating.ts"
+import { KeywordMetrics } from "../keyword-metrics/keyword-metrics.ts"
 import { type Site } from "../sites/schema.ts"
 import { Sitemap } from "../sitemap/sitemap.ts"
 import { Storage } from "../storage/storage.ts"
@@ -73,6 +74,7 @@ interface Recorder {
   inspectFetches: Array<ReadonlyArray<string>>
   visitFetches: Array<ReadonlyArray<string>>
   revenueFetches: Array<ReadonlyArray<string>>
+  keywordCandidates: Array<ReadonlyArray<string>>
 }
 
 const searchConsoleMock = (recorder: Recorder) =>
@@ -246,6 +248,18 @@ const domainRatingMock = Layer.mock(DomainRating.Service)({
   refresh: () => Effect.succeed(null),
 })
 
+// A site with no DataForSEO key behaves exactly like this: `refresh` reports
+// that it did nothing. The recorder captures the candidates so the composition
+// (Registry keywords plus non-brand Queries) can be asserted without a network.
+const keywordMetricsMock = (recorder: Recorder) =>
+  Layer.mock(KeywordMetrics.Service)({
+    refresh: (candidates) =>
+      Effect.sync(() => {
+        recorder.keywordCandidates.push(candidates)
+        return null
+      }),
+  })
+
 const configMock = Layer.mock(Config.Service)({
   debugMode: () => Effect.succeed(false),
 })
@@ -278,6 +292,7 @@ const makeRuntime = (
     registryMock,
     sitemapMock,
     domainRatingMock,
+    keywordMetricsMock(recorder),
     configMock,
     currentSite,
   )
@@ -298,6 +313,7 @@ beforeEach(() => {
     inspectFetches: [],
     visitFetches: [],
     revenueFetches: [],
+    keywordCandidates: [],
   }
   runtime = makeRuntime(dir, dbPath, recorder)
 })

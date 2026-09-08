@@ -2,6 +2,7 @@
 import { Schema } from "effect"
 
 import { AnalyticsSource } from "../analytics/schema.ts"
+import { Market } from "../keyword-metrics/schema.ts"
 import { RevenueSource } from "../revenue/schema.ts"
 
 // Stable per-site identifier used in URLs (?site=<id>) and on-disk paths
@@ -28,6 +29,11 @@ export const Site = Schema.Struct({
   // The resolved revenue source, when the site sells through one. Optional for
   // the same reason.
   revenue: Schema.optional(RevenueSource),
+  // The resolved Market its Keyword metrics describe. Always present — every
+  // site has one, because an absent setting resolves to the default rather than
+  // to nothing. Optional on the schema only so an api-client decoding an older
+  // server's `GET /api/sites` still succeeds.
+  market: Schema.optional(Market),
 }).annotate({ identifier: "Site" })
 export interface Site extends Schema.Schema.Type<typeof Site> {}
 

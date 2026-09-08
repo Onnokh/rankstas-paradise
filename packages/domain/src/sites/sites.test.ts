@@ -70,6 +70,12 @@ describe("Sites.loadSites", () => {
         origin: "https://example.com",
         sitemapUrl: "https://example.com/sitemap.xml",
         brandTerms: ["example"],
+        market: {
+          locationCode: 2840,
+          languageCode: "en",
+          label: "United States",
+          provider: "labs",
+        },
       },
     ])
   })
@@ -97,6 +103,12 @@ describe("Sites.loadSites", () => {
       origin: "https://bar.test",
       sitemapUrl: "https://bar.test/custom-sitemap.xml",
       brandTerms: ["bar", "barco"],
+      market: {
+        locationCode: 2840,
+        languageCode: "en",
+        label: "United States",
+        provider: "labs",
+      },
     })
   })
 
@@ -112,6 +124,12 @@ describe("Sites.loadSites", () => {
         origin: "https://acme.co.uk",
         sitemapUrl: "https://acme.co.uk/sitemap.xml",
         brandTerms: ["acme"],
+        market: {
+          locationCode: 2840,
+          languageCode: "en",
+          label: "United States",
+          provider: "labs",
+        },
       },
     ])
   })

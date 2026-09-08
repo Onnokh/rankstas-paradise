@@ -34,6 +34,7 @@ import { Config } from "@rp/domain/config/config"
 import { type ConfigSite } from "@rp/domain/config/schema"
 import { CurrentSite } from "@rp/domain/sites/current-site"
 import { DomainRating } from "@rp/domain/domain-rating/domain-rating"
+import { KeywordMetrics } from "@rp/domain/keyword-metrics/keyword-metrics"
 import { Registry } from "@rp/domain/registry/registry"
 import { Reports } from "@rp/domain/reports/reports"
 import { Revenue } from "@rp/domain/revenue/revenue"
@@ -62,9 +63,11 @@ const siteLayer = (site: Site, provider: ConfigProvider.ConfigProvider) =>
     Layer.provideMerge(SearchConsole.layer),
     Layer.provideMerge(Analytics.layer),
     Layer.provideMerge(Revenue.layer),
-    // Above Storage: DomainRating reads the ledger, and in a provideMerge chain
-    // a layer's own requirements are satisfied by the entries below it.
+    // Above Storage: DomainRating and KeywordMetrics both read the ledger, and
+    // in a provideMerge chain a layer's own requirements are satisfied by the
+    // entries below it.
     Layer.provideMerge(DomainRating.layer),
+    Layer.provideMerge(KeywordMetrics.layer),
     Layer.provideMerge(Storage.layer),
     Layer.provideMerge(Registry.layer),
     Layer.provideMerge(Sitemap.layer),

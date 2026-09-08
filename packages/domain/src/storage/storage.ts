@@ -17,6 +17,7 @@ import {
   type SiteVisitsHour,
   type VisitsDays,
 } from "../analytics/schema.ts"
+import { type KeywordMetric, type MonthlySearch } from "../keyword-metrics/schema.ts"
 import { type RevenueDay } from "../revenue/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import {
@@ -79,6 +80,14 @@ export interface Interface {
   // including one that fetched nothing — that run is exactly the one no other
   // table records, because `synced_day` only gains a row when a day is fetched.
   readonly recordSyncCheck: () => Effect.Effect<void, StorageError>
+  // Store what DataForSEO said about a batch of Keywords, replacing any answer
+  // already held for the same keyword in the same Market. Unlike the Domain
+  // Rating this is a cache and not a ledger: DataForSEO will answer the same
+  // question again, and the number it reports is a rolling twelve-month
+  // average, so an old row is not a historical reading — it is a stale one.
+  readonly saveKeywordMetrics: (
+    metrics: ReadonlyArray<KeywordMetric>,
+  ) => Effect.Effect<void, StorageError>
   // Record today's Domain Rating, replacing any reading already stored for the
   // same day.
   readonly saveDomainRating: (
@@ -172,6 +181,15 @@ export interface Interface {
     { readonly rating: number; readonly fetchedAt: string; readonly license: string } | null,
     StorageError
   >
+  // Every stored Keyword metric for one Market, keyword order. Reads only what
+  // is on disk and never reaches DataForSEO, so a report can join volume onto
+  // its rows without a caller waiting on a third party. A Market change leaves
+  // the old Market's rows in place and simply stops reading them, so switching
+  // back does not have to be paid for twice.
+  readonly keywordMetrics: (
+    locationCode: number,
+    languageCode: string,
+  ) => Effect.Effect<ReadonlyArray<KeywordMetric>, StorageError>
   // The stored Domain Rating series, oldest first.
   readonly domainRatingHistory: (
     limit?: number,
@@ -344,6 +362,28 @@ const operatorQueryPattern = new RegExp(
 export const isOperatorQuery = (query: string): boolean =>
   operatorQueryPattern.test(query)
 
+// A stored `monthly_searches` value read back into rows. Anything this cannot
+// read yields an empty series: the column is written by this domain and always
+// holds a JSON array, so a value that fails here is a hand-edited or truncated
+// row, and the honest answer for it is "no history" rather than a failed read
+// of the volume beside it.
+const parseMonthlySearches = (stored: string): ReadonlyArray<MonthlySearch> => {
+  try {
+    const parsed: unknown = JSON.parse(stored)
+    if (!Array.isArray(parsed)) return []
+    return parsed.flatMap((entry: unknown) => {
+      const month = entry as Partial<MonthlySearch>
+      return typeof month?.year === "number" &&
+        typeof month?.month === "number" &&
+        typeof month?.searchVolume === "number"
+        ? [{ year: month.year, month: month.month, searchVolume: month.searchVolume }]
+        : []
+    })
+  } catch {
+    return []
+  }
+}
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -470,6 +510,34 @@ export const layer = Layer.effect(
         rating real not null,
         fetched_at text not null,
         license text not null default ''
+      )`,
+      // What DataForSEO says about a Keyword in one Market. Keyed by the three
+      // things that identify the question — keyword, country, language — so a
+      // site that changes Market keeps both answers and a shared keyword is
+      // still asked once per Market.
+      //
+      // A cache, not a ledger: every number here can be asked for again, and
+      // `search_volume` is a rolling twelve-month average, so yesterday's row
+      // is not a reading of yesterday. `monthly_searches` is the one part with
+      // history in it, stored as the JSON array DataForSEO sends rather than as
+      // rows, because nothing queries inside it — it is read whole, for one
+      // keyword, to answer whether demand is seasonal.
+      //
+      // Every metric column is nullable, and null means "not told" rather than
+      // zero. `difficulty` and `intent` are null for a whole Market when its
+      // country is served by Google Ads (see ../keyword-metrics/market.ts).
+      `create table if not exists keyword_metric (
+        keyword text not null,
+        location_code integer not null,
+        language_code text not null,
+        search_volume integer,
+        difficulty integer,
+        cost_per_click real,
+        competition real,
+        intent text,
+        monthly_searches text not null default '[]',
+        fetched_at text not null,
+        primary key (keyword, location_code, language_code)
       )`,
       // The analytics provider's series in canonical form (see
       // ../analytics/schema.ts). Vendor-neutral on purpose: no table or column
@@ -1222,6 +1290,69 @@ export const layer = Layer.effect(
         return rows.slice(-limit) as ReadonlyArray<DomainRatingDay>
       })
 
+    // One statement per keyword inside one transaction, matching how the other
+    // batch writes here work. `monthly_searches` is serialized rather than
+    // spread across rows because it is read whole or not at all.
+    const saveKeywordMetricsI = (metrics: ReadonlyArray<KeywordMetric>) =>
+      sql.withTransaction(
+        Effect.gen(function* () {
+          for (const metric of metrics)
+            yield* sql`
+              insert into keyword_metric (
+                keyword, location_code, language_code, search_volume, difficulty,
+                cost_per_click, competition, intent, monthly_searches, fetched_at
+              ) values (
+                ${metric.keyword}, ${metric.locationCode}, ${metric.languageCode},
+                ${metric.searchVolume}, ${metric.difficulty}, ${metric.costPerClick},
+                ${metric.competition}, ${metric.intent},
+                ${JSON.stringify(metric.monthlySearches)}, ${metric.fetchedAt}
+              )
+              on conflict(keyword, location_code, language_code) do update set
+                search_volume = excluded.search_volume,
+                difficulty = excluded.difficulty,
+                cost_per_click = excluded.cost_per_click,
+                competition = excluded.competition,
+                intent = excluded.intent,
+                monthly_searches = excluded.monthly_searches,
+                fetched_at = excluded.fetched_at`
+        }),
+      )
+
+    const keywordMetricsI = (locationCode: number, languageCode: string) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{
+          keyword: string
+          searchVolume: number | null
+          difficulty: number | null
+          costPerClick: number | null
+          competition: number | null
+          intent: string | null
+          monthlySearches: string
+          fetchedAt: string
+        }>`
+          select keyword,
+                 search_volume as "searchVolume",
+                 difficulty,
+                 cost_per_click as "costPerClick",
+                 competition,
+                 intent,
+                 monthly_searches as "monthlySearches",
+                 fetched_at as "fetchedAt"
+          from keyword_metric
+          where location_code = ${locationCode} and language_code = ${languageCode}
+          order by keyword`
+        return rows.map((row) => ({
+          ...row,
+          locationCode,
+          languageCode,
+          // A row this domain wrote always holds a JSON array. A row it cannot
+          // parse reads as no history rather than failing the whole read: the
+          // series is supplementary, and losing it must not cost a caller the
+          // volume it came for.
+          monthlySearches: parseMonthlySearches(row.monthlySearches),
+        })) as ReadonlyArray<KeywordMetric>
+      })
+
     const savePageIndexStatusesI = (statuses: ReadonlyArray<PageIndexStatus>) =>
       sql.withTransaction(
         Effect.gen(function* () {
@@ -1713,6 +1844,13 @@ export const layer = Layer.effect(
         ),
       recordSyncCheck: () =>
         recordSyncCheckI.pipe(Effect.asVoid, mapErr("recordSyncCheck")),
+      saveKeywordMetrics: (metrics) =>
+        saveKeywordMetricsI(metrics).pipe(
+          Effect.asVoid,
+          mapErr("saveKeywordMetrics"),
+        ),
+      keywordMetrics: (locationCode, languageCode) =>
+        keywordMetricsI(locationCode, languageCode).pipe(mapErr("keywordMetrics")),
       saveDomainRating: (rating, fetchedAt, license) =>
         saveDomainRatingI(rating, fetchedAt, license).pipe(
           Effect.asVoid,
