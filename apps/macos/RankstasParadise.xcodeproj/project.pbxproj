@@ -27,6 +27,7 @@
 		558BA52213440023D16C0D9F /* LiveStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B526F19FE23F5E62A81B79B2 /* LiveStore.swift */; };
 		5D5175994B1AD981AA0DDFC2 /* OverviewRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61874C20B6B2BCAFB1667A61 /* OverviewRepository.swift */; };
 		600131182EB7D5FD428F140B /* MinuteBars.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A8D921447231A8740629F4 /* MinuteBars.swift */; };
+		68693A7FA4C972E5F5B88414 /* PageParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CC4E7D2903AC4572529357B /* PageParts.swift */; };
 		6C4D82C06AFA2FA77BFB2C4C /* ClientConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B6D80C6335A6E427340BA33 /* ClientConfigurationTests.swift */; };
 		6F1B4B6AE4AF188CE868FAD5 /* LiveFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = C866EACE6DF0FE67ADBCEA73 /* LiveFeed.swift */; };
 		7139D5EEE9442741B134BE30 /* SettingsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A62C64B20653DBC3179A840 /* SettingsModelTests.swift */; };
@@ -95,6 +96,7 @@
 		808292EC68DF3F3F1372857D /* ThreeFingerDragRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreeFingerDragRecognizer.swift; sourceTree = "<group>"; };
 		820003955844F9BAB8BE154E /* ViewCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewCommands.swift; sourceTree = "<group>"; };
 		873FA0566A88AA3A04250DF4 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		8CC4E7D2903AC4572529357B /* PageParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageParts.swift; sourceTree = "<group>"; };
 		8DFE9D4C0CC1386C304172AE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		99C05C79BE3B70FF6B960794 /* FaviconFetcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaviconFetcherTests.swift; sourceTree = "<group>"; };
 		99CF10FA929DAD1D5987DD20 /* RankstasParadiseApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RankstasParadiseApp.swift; sourceTree = "<group>"; };
@@ -222,6 +224,7 @@
 				6DC0C05A557F466F42DC086B /* Headband.swift */,
 				54A8D921447231A8740629F4 /* MinuteBars.swift */,
 				D072C44E6ADEAC4BAEF98994 /* OverviewSummaryCard.swift */,
+				8CC4E7D2903AC4572529357B /* PageParts.swift */,
 				BE562BC678FA721589263640 /* Palette.swift */,
 				C34C86ED39F2F1CBD090FCBD /* PeekLayout.swift */,
 				321E61A9553942809C755B5E /* PeekOverlay.swift */,
@@ -386,6 +389,7 @@
 				5D5175994B1AD981AA0DDFC2 /* OverviewRepository.swift in Sources */,
 				03B5AB4CBEA4DE2907E88D3E /* OverviewScreen.swift in Sources */,
 				89D1C405DD817D3BCBCBB1C2 /* OverviewSummaryCard.swift in Sources */,
+				68693A7FA4C972E5F5B88414 /* PageParts.swift in Sources */,
 				8C38EC6EFA47B9C9736BF449 /* Palette.swift in Sources */,
 				307A850E88309D9EC5DDB2D4 /* PeekLayout.swift in Sources */,
 				02687AB5F8D41B2177FA01A4 /* PeekOverlay.swift in Sources */,
