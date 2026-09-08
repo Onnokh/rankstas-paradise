@@ -53,7 +53,7 @@ struct RootView: View {
     }
 
     private var actions: TabActions {
-        TabActions(activate: select)
+        TabActions(activate: select, refresh: refresh)
     }
 
     var body: some View {
@@ -122,6 +122,8 @@ struct RootView: View {
         }
         // Extend under the title bar so the tab bar can take its place.
         .ignoresSafeArea(.container, edges: .top)
+        // View > Refresh (⌘R) acts on this window's active tab. See `ViewCommands`.
+        .focusedSceneValue(\.refresh) { refresh(workspace.activeTabID) }
         .task {
             await model.start()
         }
@@ -199,6 +201,22 @@ struct RootView: View {
     private func closePeek() {
         withAnimation(settle) {
             workspace.peekProgress = PeekProgress.closed
+        }
+    }
+
+    /// Fetches everything a tab shows again. The overview feeds every tab, so it is always
+    /// part of it; a site tab adds its own series, live count and ranked lists for the period
+    /// it is on. Each store keeps what it shows until its answer lands, so nothing blanks.
+    /// Reached from the screens' refresh buttons and from View > Refresh (⌘R).
+    private func refresh(_ tab: TabID) {
+        Task { await model.refresh() }
+        guard case .site(let siteID) = tab else { return }
+        let period = workspace.state(for: siteID).period
+        Task { await history.refresh(siteID) }
+        Task { await live.refresh(siteID) }
+        // Today has no Search Console window to rank by; its lists come with the live poll.
+        if period != .today {
+            Task { await rankings.refresh(siteID, period: period) }
         }
     }
 

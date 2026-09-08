@@ -4,8 +4,14 @@ struct OverviewScreen: View {
     let model: OverviewModel
     @Bindable var state: OverviewTabState
     let onOpenSite: (Site.ID) -> Void
+    let onRefresh: () -> Void
 
     @Environment(\.isTabPreview) private var isPreview
+
+    /// Nothing loaded yet and nothing to report: the body itself shows a spinner.
+    private var isFirstLoad: Bool {
+        model.sites.isEmpty && model.errorMessage == nil
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -19,27 +25,24 @@ struct OverviewScreen: View {
 
                 Spacer()
 
-                if model.isRefreshing, !model.sites.isEmpty {
+                if model.isRefreshing, !isFirstLoad {
                     ProgressView()
                         .controlSize(.small)
                 }
 
-                Button("Refresh", systemImage: "arrow.clockwise") {
-                    Task { await model.refresh() }
-                }
-                .disabled(model.isRefreshing)
+                Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
+                    .disabled(model.isRefreshing)
+                    .help("Refresh (⌘R)")
             }
 
-            if model.sites.isEmpty, model.errorMessage == nil {
+            if isFirstLoad {
                 Spacer()
                 ProgressView("Loading sites…")
                     .frame(maxWidth: .infinity)
                 Spacer()
             } else if let errorMessage = model.errorMessage, model.sites.isEmpty {
                 Spacer()
-                ErrorView(message: errorMessage) {
-                    Task { await model.refresh() }
-                }
+                ErrorView(message: errorMessage, retry: onRefresh)
                 Spacer()
             } else if isPreview {
                 // A real Table is an AppKit view that re-lays out on every animation tick.

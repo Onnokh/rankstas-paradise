@@ -56,12 +56,12 @@ final class OverviewModel {
         await refresh()
     }
 
+    /// Fetches the overview again over what is shown. Sites, figures and errors all stay in
+    /// place until the result arrives and replaces them, so a refresh never blanks the screen.
     func refresh() async {
         guard !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
-        errorMessage = nil
-        siteErrors = [:]
 
         do {
             let update = try await repository.refresh()
