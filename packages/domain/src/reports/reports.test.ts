@@ -570,8 +570,9 @@ test("queriesReport carries the Market and the demand behind each Query", async 
     intent: "commercial",
     fetchedAt: "2026-09-08T00:00:00.000Z",
   })
-  // The twelve-month series is deliberately left out: a report with forty
-  // rows would carry five hundred numbers for a question nobody asked.
+  // The monthly series is deliberately left out. The vendor sends about 94
+  // months a keyword, so a report with forty rows would otherwise carry nearly
+  // four thousand numbers for a question nobody asked.
   expect(known?.demand).not.toHaveProperty("monthlySearches")
 
   // A Query with no stored answer simply has no demand block, rather than one

@@ -14,7 +14,10 @@ import { type RevenueDay } from "../revenue/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { DomainRating } from "../domain-rating/domain-rating.ts"
 import { KeywordMetrics } from "../keyword-metrics/keyword-metrics.ts"
-import { foldKeyword, type KeywordMetric } from "../keyword-metrics/schema.ts"
+import {
+  foldKeyword,
+  type KeywordMetricSummary,
+} from "../keyword-metrics/schema.ts"
 import { type RegistryEntry, type RegistryPatch } from "../registry/schema.ts"
 import { type RegistryError } from "../registry/schema.ts"
 import { Registry } from "../registry/registry.ts"
@@ -1253,7 +1256,7 @@ export const entrySummary = (entry: RegistryEntry): EntrySummary => ({
 // kept apart: both mean "expect no traffic here", but only one of them is the
 // vendor saying so.
 export const keywordVerdict = (
-  metric: KeywordMetric | undefined,
+  metric: KeywordMetricSummary | undefined,
 ): KeywordHealthVerdict => {
   if (!metric) return "unmeasured"
   if (metric.searchVolume === null) return "unreported"
@@ -1271,11 +1274,14 @@ const healthRank: Record<KeywordHealthVerdict, number> = {
   unmeasured: 3,
 }
 
-// A stored Keyword metric as a report reports it. `monthlySearches` is left
-// out: it is twelve numbers per keyword, and a Registry with forty keywords
-// would carry five hundred of them into every read for a seasonality question
-// nobody asked. It gets its own surface when something needs it.
-export const demandReport = (metric: KeywordMetric): DemandReport => ({
+// A stored Keyword metric as a report reports it.
+//
+// The monthly series was already left out of the wire shape, and this now takes
+// the summary type that does not carry it at all — Storage does not read it on
+// this path. The original comment here guessed "twelve numbers per keyword";
+// the vendor actually sends about 94, so a Registry with forty keywords would
+// have carried nearly four thousand of them into every read.
+export const demandReport = (metric: KeywordMetricSummary): DemandReport => ({
   searchVolume: metric.searchVolume,
   difficulty: metric.difficulty,
   costPerClick: metric.costPerClick,

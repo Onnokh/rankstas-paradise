@@ -108,7 +108,14 @@ for (const row of rows) {
   console.log(`  cost/click   ${row.costPerClick ?? "null"}`)
   console.log(`  competition  ${row.competition ?? "null"}`)
   console.log(`  intent       ${row.intent ?? "null"}`)
-  console.log(`  months       ${row.monthlySearches.length}`)
+  const newest = row.monthlySearches[0]
+  const oldest = row.monthlySearches.at(-1)
+  console.log(
+    `  months       ${row.monthlySearches.length}` +
+      (newest && oldest
+        ? ` (${oldest.year}-${String(oldest.month).padStart(2, "0")} to ${newest.year}-${String(newest.month).padStart(2, "0")})`
+        : ""),
+  )
 }
 
 // What the fakes could not check. Each line below is a claim the hand-written
@@ -131,7 +138,34 @@ check(
 check(
   "monthly series arrived",
   rows.some((row) => row.monthlySearches.length > 0),
-  "twelve months expected for a term with demand",
+)
+// The series is NOT twelve months. Every comment in this domain said it was
+// until this probe was first run, because the fakes the tests use return two
+// months — they return what they were written to return. Reported rather than
+// asserted: its length is the vendor's to decide, and the point is that a
+// change shows up here instead of silently invalidating a stored series.
+const longest = Math.max(0, ...rows.map((row) => row.monthlySearches.length))
+console.log(
+  `  note  longest series is ${longest} months. It was 94 on 2026-09-08. This is not twelve, and nothing should assume it is.`,
+)
+check(
+  "the headline volume averages the NEWEST twelve months, not the whole series",
+  rows.every((row) => {
+    if (row.searchVolume === null || row.monthlySearches.length < 12) return true
+    const mean = (months: ReadonlyArray<{ readonly searchVolume: number }>) =>
+      months.reduce((total, month) => total + month.searchVolume, 0) / months.length
+    const newestTwelve = mean(row.monthlySearches.slice(0, 12))
+    const whole = mean(row.monthlySearches)
+    // Within a quarter of the newest-twelve mean, and closer to it than to the
+    // whole-series mean. A term whose demand has been flat for eight years
+    // makes the two means equal, which passes either way.
+    return (
+      Math.abs(row.searchVolume - newestTwelve) <= newestTwelve * 0.25 ||
+      Math.abs(row.searchVolume - newestTwelve) <
+        Math.abs(row.searchVolume - whole)
+    )
+  }),
+  "if this fails, searchVolume is not the twelve-month average the glossary claims",
 )
 if (provider === "labs") {
   check(

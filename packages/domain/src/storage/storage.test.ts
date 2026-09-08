@@ -923,12 +923,73 @@ test("Keyword metrics round-trip through the store, monthly searches included", 
   expect(rows[0]!.costPerClick).toBe(1.25)
   expect(rows[0]!.competition).toBe(0.42)
   expect(rows[0]!.intent).toBe("informational")
-  // Stored as JSON and read back as rows: nothing queries inside the series,
-  // so it travels whole.
-  expect(rows[0]!.monthlySearches).toEqual([
+  // The scalar read does NOT carry the series. DataForSEO sends about 94 months
+  // a keyword and the Opportunity digest reads every row on every dashboard
+  // load, so decoding it here would parse megabytes nothing asked for.
+  expect(rows[0]).not.toHaveProperty("monthlySearches")
+
+  // It is stored, and read by the call that wants it.
+  const series = await runtime.runPromise(
+    Storage.use.keywordMonthlySearches(2840, "en"),
+  )
+  expect(series.get("wow mount tracker")).toEqual([
     { year: 2026, month: 8, searchVolume: 480 },
     { year: 2026, month: 7, searchVolume: 390 },
   ])
+})
+
+test("a long monthly series survives the round trip whole", async () => {
+  // The live vendor returns about 94 months, not the twelve the comments here
+  // used to claim — every other test runs against fakes that returned two,
+  // because that is what they were written to return. This one holds the real
+  // shape, so a future truncation on the way in cannot pass unnoticed.
+  // The exact span the live call returned: 94 months, newest first, from
+  // 2026-07 back to 2018-10. It does not start on a year boundary, which is why
+  // it touches nine calendar years.
+  const months = Array.from({ length: 94 }, (_, index) => {
+    const monthsBack = 7 - 1 - index
+    return {
+      year: 2026 + Math.floor(monthsBack / 12),
+      month: ((((monthsBack % 12) + 12) % 12) + 1),
+      searchVolume: 1_000 + index,
+    }
+  })
+  await runtime.runPromise(
+    Storage.use.saveKeywordMetrics([
+      {
+        keyword: "seo tools",
+        locationCode: 2840,
+        languageCode: "en",
+        searchVolume: 110_000,
+        difficulty: 66,
+        costPerClick: 18.4,
+        competition: 0.02,
+        intent: "commercial",
+        monthlySearches: months,
+        fetchedAt: "2026-09-08T00:00:00.000Z",
+      },
+    ]),
+  )
+
+  const series = await runtime.runPromise(
+    Storage.use.keywordMonthlySearches(2840, "en"),
+  )
+  expect(series.get("seo tools")).toHaveLength(94)
+  expect(series.get("seo tools")?.[0]).toEqual({
+    year: 2026,
+    month: 7,
+    searchVolume: 1_000,
+  })
+  expect(series.get("seo tools")?.at(-1)).toEqual({
+    year: 2018,
+    month: 10,
+    searchVolume: 1_093,
+  })
+  // Eight years is the point: trend is unanswerable without it, and the
+  // headline volume is only the newest twelve months averaged.
+  expect(
+    new Set(series.get("seo tools")?.map((month) => month.year)).size,
+  ).toBe(9)
 })
 
 test("a Keyword metric is keyed by Market, so a second Market is a second row", async () => {
@@ -983,9 +1044,9 @@ test("a second answer for the same Keyword replaces the first", async () => {
     ]),
   )
 
-  // This is a cache, not a ledger: search volume is a rolling twelve-month
-  // average, so the older row is stale rather than historical and must not
-  // survive beside the new one.
+  // This is a cache, not a ledger: search volume is an average of the newest
+  // twelve months, so the older row is stale rather than historical and must
+  // not survive beside the new one.
   const rows = await runtime.runPromise(Storage.use.keywordMetrics(2840, "en"))
   expect(rows).toHaveLength(1)
   expect(rows[0]!.searchVolume).toBe(480)
@@ -1019,7 +1080,10 @@ test("an absent vendor number stays null rather than becoming a zero", async () 
   expect(rows[0]!.difficulty).toBeNull()
   expect(rows[0]!.competition).toBeNull()
   expect(rows[0]!.intent).toBeNull()
-  expect(rows[0]!.monthlySearches).toEqual([])
+  const series = await runtime.runPromise(
+    Storage.use.keywordMonthlySearches(2020, "ca"),
+  )
+  expect(series.get("obscure long tail thing")).toEqual([])
 })
 
 test("an unreadable monthly-searches value costs the series, not the volume", async () => {
@@ -1048,7 +1112,10 @@ test("an unreadable monthly-searches value costs the series, not the volume", as
 
   const rows = await runtime.runPromise(Storage.use.keywordMetrics(2840, "en"))
   expect(rows[0]!.searchVolume).toBe(480)
-  expect(rows[0]!.monthlySearches).toEqual([])
+  const series = await runtime.runPromise(
+    Storage.use.keywordMonthlySearches(2840, "en"),
+  )
+  expect(series.get("wow mount tracker")).toEqual([])
 })
 
 // --- Opportunity ranking by demand ------------------------------------------

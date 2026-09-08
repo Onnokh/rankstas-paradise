@@ -95,7 +95,7 @@ What DataForSEO says about one term in one Market: its search volume, difficulty
 _Avoid_: "keyword data"; "SEO metrics"; treating an absent number as a zero — a null means "not told", which leads to the opposite decision from "nobody searches this".
 
 **Search volume**:
-A term's average monthly searches over the last twelve months, in its Market. The number that tells you whether demand exists behind a Keyword the Registry aims at, or behind a Query the site already draws impressions on.
+A term's average monthly searches over the newest twelve months, in its Market. The number that tells you whether demand exists behind a Keyword the Registry aims at, or behind a Query the site already draws impressions on.
 _Avoid_: "volume" for anything else; "traffic" (that is clicks and visits).
 
 **Difficulty**:
@@ -109,7 +109,8 @@ What an advertiser pays for one click on the term, in its Market's currency. A p
 How contested the term is among *advertisers*, 0–1. A paid-auction measure, and not a substitute for difficulty.
 
 **Monthly searches**:
-A term's volume month by month for the last twelve complete months. The seasonality behind the twelve-month average: a term with a December peak and a term with flat demand can report the same search volume.
+A term's volume month by month, as far back as the vendor holds it — about eight years, and its length is the vendor's to decide. The history behind the twelve-month average, and the only thing that answers two questions the average hides: when in the year demand peaks, and whether the term is growing or dying. A term with a December peak and a term with flat demand report the same search volume, and so do a term that has halved and one that has doubled.
+_Avoid_: "the last twelve months" — that is the search volume, not this.
 
 ### Analysis & status
 

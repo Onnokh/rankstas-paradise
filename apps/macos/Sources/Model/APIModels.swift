@@ -530,7 +530,7 @@ struct RegistryKeyword: Codable, Sendable, Equatable, Identifiable, Hashable {
 /// optional twice over: the key is absent when no answer is stored, and a value inside is
 /// null when the vendor was asked and had nothing. Neither is a zero.
 struct KeywordDemand: Codable, Sendable, Equatable, Hashable {
-    /// Average monthly searches over the last twelve months. Nil means the term is too rare
+    /// Average monthly searches over the newest twelve months. Nil means the term is too rare
     /// for the vendor to report, which is not the same as nobody searching it.
     let searchVolume: Double?
     /// 0-100. Nil for a Google-Ads market, which does not measure it.

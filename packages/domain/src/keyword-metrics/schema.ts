@@ -21,10 +21,24 @@ import { Schema } from "effect"
 export const foldKeyword = (keyword: string): string =>
   keyword.trim().toLowerCase().replace(/\s+/g, " ")
 
-// One month of a keyword's volume history, as DataForSEO reports it: the last
-// twelve complete months. Kept because seasonality is invisible in the twelve-
-// month average that `searchVolume` is — a term with a December peak and a term
-// with flat demand can report the same average.
+// One month of a keyword's volume history, as DataForSEO reports it.
+//
+// The series is long: a live call on 2026-09-08 returned 94 months per keyword,
+// running back to 2018-10, and its length is theirs to decide rather than a
+// number this domain can rely on. It is not twelve months, which is what the
+// comments here claimed until a live call was made — the fakes every other test
+// runs against returned two months because that is what they were written to
+// return, so nothing caught it. See scripts/dataforseo-probe.ts.
+//
+// Kept whole because seasonality and trend are both invisible in the
+// twelve-month average that `searchVolume` is: a term with a December peak and
+// a term with flat demand can report the same average, and a term that has
+// halved over three years can report the same average as one that has doubled.
+// Eight years is what makes the second question answerable, so it is not
+// truncated on the way in.
+//
+// It is deliberately NOT read on the paths that only want a scalar. See
+// Storage.keywordMetrics.
 export const MonthlySearch = Schema.Struct({
   year: Schema.Number,
   month: Schema.Number,
@@ -63,7 +77,12 @@ export const KeywordMetric = Schema.Struct({
   keyword: Schema.String,
   locationCode: Schema.Number,
   languageCode: Schema.String,
-  // Average monthly searches over the last twelve months.
+  // Average monthly searches over the newest twelve months — this one really is
+  // twelve, unlike `monthlySearches` above. The same live call returned a
+  // headline of 110,000 against a mean of 106,908 over the newest twelve
+  // entries, where the mean over all 94 was 25,806. The headline and the series
+  // answer different questions, and conflating them would read an eight-year
+  // decline as current demand.
   searchVolume: Schema.NullOr(Schema.Number),
   // 0-100. How hard the first page is to reach. Labs only.
   difficulty: Schema.NullOr(Schema.Number),
@@ -81,6 +100,17 @@ export const KeywordMetric = Schema.Struct({
   fetchedAt: Schema.String,
 }).annotate({ identifier: "KeywordMetric" })
 export interface KeywordMetric extends Schema.Schema.Type<typeof KeywordMetric> {}
+
+// A stored metric without its monthly series: every scalar, none of the ~94
+// months. This is what reads return, because nothing that reads today wants the
+// series and parsing it is not free — the Opportunity digest reads every row on
+// every dashboard load, and at ~4.3 kB of JSON a keyword a 700-keyword site
+// would mean parsing about 3 MB into some 70,000 objects to use three numbers.
+//
+// The series is still stored. It gets its own read when the surface that needs
+// it lands; it does not get parsed on the way to a search volume.
+export interface KeywordMetricSummary
+  extends Omit<KeywordMetric, "monthlySearches"> {}
 
 // What one refresh did. Reported rather than returned as rows because the
 // caller is Sync, which wants to log a line, not read metrics.
