@@ -26,6 +26,45 @@ const LABS_PATH = "/v3/dataforseo_labs/google/keyword_overview/live"
 // geotarget. https://docs.dataforseo.com/v3/keywords_data/google_ads/search_volume/live/
 const ADS_PATH = "/v3/keywords_data/google_ads/search_volume/live"
 
+// --- expansion: asking what ELSE people search -------------------------------
+//
+// The three above answer "what about these keywords". These answer "what other
+// keywords are there", which is a different kind of request in one way that
+// matters: the caller does not know how many rows will come back. A metric
+// lookup is priced by the keywords you name; an expansion is priced by the rows
+// it decides to return, so the `limit` is the only thing standing between one
+// call and a four-figure row count.
+//
+// Long-tail phrases built around the seed. The safest expansion, because every
+// answer contains the term you asked about.
+// https://docs.dataforseo.com/v3/dataforseo_labs/google/keyword_suggestions/live/
+const LABS_SUGGESTIONS_PATH =
+  "/v3/dataforseo_labs/google/keyword_suggestions/live"
+
+// Terms Google itself relates to the seed, from its "searches related to" data.
+// Broader than suggestions, and the one that finds an adjacent topic rather than
+// a variant of the one you have.
+// https://docs.dataforseo.com/v3/dataforseo_labs/google/related_keywords/live/
+const LABS_RELATED_PATH = "/v3/dataforseo_labs/google/related_keywords/live"
+
+// The Google Ads equivalent, for the 49 countries Labs does not cover. Reports
+// no difficulty and no intent, like every Google Ads answer.
+// https://docs.dataforseo.com/v3/keywords_data/google_ads/keywords_for_keywords/live/
+const ADS_IDEAS_PATH =
+  "/v3/keywords_data/google_ads/keywords_for_keywords/live"
+
+// How many rows an expansion may return. Not an optimization: this endpoint
+// bills per row, so an unbounded call is an unbounded bill. 200 is enough that
+// the terms worth having are in the set after filtering, and small enough that
+// one mistaken call costs about two cents.
+export const expansionLimit = 200
+
+// How deep `related_keywords` follows Google's related-searches graph. One is
+// the seed's own related searches; three is their related searches' related
+// searches, which is where the results stop resembling the seed. DataForSEO
+// defaults to zero (the seed alone), which would answer nothing.
+const RELATED_DEPTH = 1
+
 // Both endpoints cap a batch at 700 keywords. Exceeding it is a rejected task,
 // which is charged, so the batching is not an optimization.
 export const batchSize = 700
@@ -222,6 +261,13 @@ const postTask = <T>(
 
     return task.result ?? []
   })
+
+// `related_keywords` wraps the same keyword payload one level deeper than every
+// other Labs endpoint. Reading it at the wrong level yields an empty answer from
+// a charged request, which is why it does not share an unwrapper.
+interface RelatedItem {
+  readonly keyword_data?: LabsItem | null
+}
 
 export interface Batch {
   readonly keywords: ReadonlyArray<string>
