@@ -511,6 +511,19 @@ export const KeywordHealth = Schema.Struct({
   costPerClick: Schema.NullOr(Schema.Number),
   // The intent DataForSEO observed, which may disagree with the plan's.
   reportedIntent: Schema.NullOr(Schema.String),
+  // The calendar month, 1-12, the keyword's demand peaks in — the one number
+  // in this report that is a publishing date rather than a metric. Null when
+  // the stored series holds fewer than two complete calendar years, because
+  // one observation of a month is not an average.
+  peakMonth: Schema.NullOr(Schema.Number),
+  // How pronounced that peak is: the peak month's seasonal index, where 1.0 is
+  // a month that carries exactly its even share of the year. 1.4 means the
+  // peak month runs 40% above an average month.
+  //
+  // Reported beside `peakMonth` rather than folded into it, so a caller can
+  // decide what counts as seasonal. Every term has a highest month; only some
+  // of them have a season, and the difference is this number.
+  seasonality: Schema.NullOr(Schema.Number),
 }).annotate({ identifier: "KeywordHealth" })
 export interface KeywordHealth extends Schema.Schema.Type<typeof KeywordHealth> {}
 

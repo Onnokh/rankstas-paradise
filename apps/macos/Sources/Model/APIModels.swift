@@ -463,6 +463,86 @@ struct QueryRow: Codable, Sendable, Equatable, Identifiable {
     var id: String { query + "|" + page }
 }
 
+/// `/api/registry/health`: the plan judged on demand. Answers "was this worth planning",
+/// which is the only question a site with no visibility yet can answer at all.
+struct RegistryHealthReport: Codable, Sendable {
+    let generatedAt: String
+    /// The market every number here describes. Nil for a site with none, or an older server.
+    var market: ResolvedMarket? = nil
+    /// The site's Ahrefs domain rating, for reading `difficultyGap` against.
+    let domainRating: Double?
+    let totals: KeywordTotals
+    /// Keywords with demand first, strongest first, then the rows to decide about.
+    let keywords: [KeywordHealth]
+}
+
+struct KeywordTotals: Codable, Sendable, Equatable {
+    let keywords: Int
+    let unmeasured: Int
+    let unreported: Int
+    let noDemand: Int
+    let hasDemand: Int
+    /// Searches a month behind the whole plan. The size of the addressable market, NOT a
+    /// traffic forecast: it counts every search, not the share a first-page ranking wins.
+    let monthlyVolume: Double
+}
+
+/// One planned keyword, judged on whether anybody searches for it.
+struct KeywordHealth: Codable, Sendable, Equatable, Identifiable {
+    let keyword: String
+    let targetUrl: String
+    let cluster: String
+    let priority: String
+    /// The intent the plan claims.
+    let intent: String
+    /// "has-demand", "no-demand", "unreported" or "unmeasured" — see `KeywordVerdict`.
+    let verdict: String
+    let searchVolume: Double?
+    let difficulty: Double?
+    /// Difficulty minus the site's domain rating. Positive means the keyword scores harder
+    /// than the site rates. A guide across two vendors' unrelated scales, never a verdict.
+    let difficultyGap: Double?
+    let costPerClick: Double?
+    /// The intent the vendor observed, which may disagree with the plan's.
+    let reportedIntent: String?
+    /// The calendar month, 1-12, demand peaks in. Nil under two complete years of history.
+    var peakMonth: Int? = nil
+    /// How pronounced that peak is: 1.0 is a month carrying its even share of the year.
+    var seasonality: Double? = nil
+
+    var id: String { keyword }
+
+    var verdictKind: KeywordVerdict { KeywordVerdict(rawValue: verdict) ?? .unmeasured }
+
+    /// The month name the plan should aim at, when there is a season worth aiming at.
+    /// `threshold` is the reader's: every term has a highest month, only some have a season.
+    func peakLabel(seasonalAbove threshold: Double) -> String? {
+        guard let peakMonth, let seasonality, seasonality >= threshold else { return nil }
+        guard (1...12).contains(peakMonth) else { return nil }
+        return DateFormatter().shortMonthSymbols?[peakMonth - 1]
+            ?? Calendar.current.shortMonthSymbols[peakMonth - 1]
+    }
+}
+
+/// What the vendor said about a planned keyword, as four distinct facts. A word this build
+/// does not know reads as `unmeasured`: claiming the vendor said something it did not is
+/// worse than admitting we have not asked.
+enum KeywordVerdict: String, Sendable, CaseIterable {
+    case hasDemand = "has-demand"
+    case noDemand = "no-demand"
+    case unreported = "unreported"
+    case unmeasured = "unmeasured"
+
+    var label: String {
+        switch self {
+        case .hasDemand: "Worth writing"
+        case .noDemand: "Aimed at nothing"
+        case .unreported: "Too rare to measure"
+        case .unmeasured: "Not measured"
+        }
+    }
+}
+
 /// `/api/registry`: every target page the site tracks, with its metrics for the server's
 /// own reporting window.
 struct RegistryListReport: Codable, Sendable {

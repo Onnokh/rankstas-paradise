@@ -31,6 +31,14 @@ struct SiteTabScreen: View {
                             onBack: pop,
                             onRefresh: onRefresh
                         )
+                    case .planning:
+                        PlanningScreen(
+                            overview: overview,
+                            state: state,
+                            rankings: rankings,
+                            onBack: pop,
+                            onRefresh: onRefresh
+                        )
                     case .log:
                         PlaceholderScreen(
                             title: "Log",
@@ -312,6 +320,7 @@ struct SiteTabScreen: View {
 
                 HStack(spacing: 14) {
                     Button("Registry") { state.path.append(.registry) }
+                    Button("Planning") { state.path.append(.planning) }
                     Button("Log") { state.path.append(.log) }
                     Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
                         .labelStyle(.iconOnly)

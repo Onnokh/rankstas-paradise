@@ -21,6 +21,9 @@ final class RankingStore {
     private(set) var events: [KeywordsKey: [EventRow]] = [:]
     private(set) var revenue: [KeywordsKey: RevenueReport] = [:]
     private(set) var registry: [Site.ID: [RegistryTarget]] = [:]
+    /// The plan judged on demand. Fetched with the registry, on the same terms: it is the
+    /// same plan read the other way round, so one is never shown against a stale other.
+    private(set) var health: [Site.ID: RegistryHealthReport] = [:]
     private(set) var errors: [Site.ID: String] = [:]
     private(set) var loading: Set<Site.ID> = []
 
@@ -82,6 +85,12 @@ final class RankingStore {
             if wantRegistry {
                 let report = try await client.registry(siteID: siteID)
                 registry[siteID] = report.targets
+                // The plan judged on demand rides along, and its failure is swallowed:
+                // this endpoint is newer than the registry, so a server that predates it
+                // answers a 404 — and losing the registry list over a screen the reader
+                // may not even be on would be the wrong trade. The planning screen shows
+                // its own empty state instead.
+                health[siteID] = try? await client.registryHealth(siteID: siteID)
                 freshRegistries.insert(siteID)
             }
             errors[siteID] = nil
@@ -101,6 +110,7 @@ final class RankingStore {
         var events: [Period.RawValue: [EventRow]] = [:]
         var revenue: [Period.RawValue: RevenueReport] = [:]
         var registry: [RegistryTarget]?
+        var health: RegistryHealthReport?
     }
 
     /// Fills whatever the store does not hold yet for the site from disk. Runs once per site;
@@ -118,6 +128,9 @@ final class RankingStore {
         if registry[siteID] == nil, let targets = cached.registry {
             registry[siteID] = targets
         }
+        if health[siteID] == nil, let cachedHealth = cached.health {
+            health[siteID] = cachedHealth
+        }
     }
 
     private func cacheURL(_ siteID: Site.ID) -> URL {
@@ -130,7 +143,7 @@ final class RankingStore {
     }
 
     private func writeCache(_ siteID: Site.ID) {
-        var cache = SiteCache(registry: registry[siteID])
+        var cache = SiteCache(registry: registry[siteID], health: health[siteID])
         for period in Period.allCases {
             let key = KeywordsKey(siteID: siteID, period: period)
             cache.keywords[period.rawValue] = keywords[key]

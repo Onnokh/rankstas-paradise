@@ -79,6 +79,13 @@ struct APIClient: Sendable {
         try await get(path: "/api/registry", query: [URLQueryItem(name: "site", value: siteID)])
     }
 
+    func registryHealth(siteID: String) async throws -> RegistryHealthReport {
+        try await get(
+            path: "/api/registry/health",
+            query: [URLQueryItem(name: "site", value: siteID)]
+        )
+    }
+
     func get<Response: Decodable & Sendable>(
         path: String,
         query: [URLQueryItem] = []

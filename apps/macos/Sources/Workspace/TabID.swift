@@ -11,6 +11,7 @@ enum TabID: Hashable, Sendable {
 enum SiteScreen: Hashable, Sendable {
     case opportunities
     case registry
+    case planning
     case log
 }
 
@@ -31,6 +32,12 @@ final class SiteTabState {
     var registryUnindexedOnly = false
     var registrySearch = ""
     var registryOpenPath: String?
+    /// The Planning sub-screen: what its list is narrowed to, and the difficulty the reader
+    /// counts as within reach. Nil means the site's own domain rating — a default the report
+    /// supplies, not one stored here, so it follows the rating as that moves.
+    var planningSearch = ""
+    var planningVerdicts: Set<KeywordVerdict> = []
+    var planningReach: Double?
 
     init(siteID: Site.ID) {
         self.siteID = siteID

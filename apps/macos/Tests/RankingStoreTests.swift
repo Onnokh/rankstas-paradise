@@ -61,11 +61,38 @@ final class RankingStoreTests: XCTestCase {
         XCTAssertEqual(store.keywords[RankingStore.KeywordsKey(siteID: "site", period: .d28)]?.first?.query, "new")
         XCTAssertEqual(store.keywords[RankingStore.KeywordsKey(siteID: "site", period: .d7)]?.first?.query, "old",
                        "The other period keeps its rows: they are not shown, and a fetch of their own replaces them.")
-        XCTAssertEqual(StubServer.requests.count - requestsBefore, 4, "Keywords, events, revenue and the registry.")
+        XCTAssertEqual(StubServer.requests.count - requestsBefore, 5,
+                       "Keywords, events, revenue, the registry, and the plan's health.")
 
         await store.load("site", period: .d7)
         XCTAssertEqual(store.keywords[RankingStore.KeywordsKey(siteID: "site", period: .d7)]?.first?.query, "new",
                        "Showing the other period after a refresh fetches it again.")
+    }
+
+    func testAServerWithoutTheHealthEndpointStillGivesUpTheRegistry() async {
+        // The endpoint is newer than the registry, so an older server 404s it. Losing the
+        // registry list over a screen the reader may not even be on would be the wrong
+        // trade, so the failure is swallowed and the planning screen shows its own empty
+        // state.
+        StubServer.healthOK = false
+        let store = makeStore()
+        await store.load("site", period: .d28)
+
+        XCTAssertEqual(store.registry["site"]?.count, 1)
+        XCTAssertNil(store.health["site"])
+        XCTAssertNil(store.errors["site"], "A missing health endpoint is not an error to show.")
+    }
+
+    func testTheHealthReportArrivesWithTheRegistry() async {
+        // One fetch, so the two readings of the same plan can never be shown against each
+        // other stale.
+        let store = makeStore()
+        await store.load("site", period: .d28)
+
+        XCTAssertEqual(store.health["site"]?.totals.hasDemand, 1)
+        XCTAssertEqual(store.health["site"]?.domainRating, 12)
+        XCTAssertEqual(store.health["site"]?.keywords.first?.peakMonth, 10)
+        XCTAssertEqual(store.health["site"]?.market?.label, "United States")
     }
 
     func testAWarmStoreShowsTheCachedListsBeforeTheServerAnswers() async {
@@ -94,16 +121,19 @@ final class RankingStoreTests: XCTestCase {
 
 // MARK: - Stub server
 
-/// Answers the client's four list requests from memory, after an optional delay.
+/// Answers the client's list requests from memory, after an optional delay.
 private enum StubServer {
     nonisolated(unsafe) static var queryLabel = "query"
     nonisolated(unsafe) static var delay: Duration = .zero
     nonisolated(unsafe) static var requests: [URL] = []
+    /// Set false to stand in for a server that does not serve /api/registry/health yet.
+    nonisolated(unsafe) static var healthOK = true
 
     static func reset() {
         queryLabel = "query"
         delay = .zero
         requests = []
+        healthOK = true
     }
 
     static func client() -> APIClient {
@@ -139,6 +169,11 @@ private enum StubServer {
              "previous":{"orders":1,"revenue":1999,"net":1999},
              "delta":{"orders":1,"revenue":1999,"net":1999}}
             """
+        case "/api/registry/health":
+            // A server that predates this endpoint answers a 404, which decodes to
+            // nothing. `healthOK = false` stands in for that, and the point of the case is
+            // that the registry survives it.
+            json = healthOK ? healthBody(queryLabel) : "{}"
         case "/api/registry":
             json = """
             {"generatedAt":"2026-09-08T07:00:00Z",
@@ -173,4 +208,17 @@ private final class StubURLProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
+}
+
+/// The health report for one keyword, matching the shape the server sends.
+private func healthBody(_ keyword: String) -> String {
+    """
+    {"generatedAt":"2026-09-08T07:00:00Z","domainRating":12,
+     "market":{"locationCode":2840,"languageCode":"en","label":"United States","provider":"labs"},
+     "totals":{"keywords":1,"unmeasured":0,"unreported":0,"noDemand":0,"hasDemand":1,"monthlyVolume":720},
+     "keywords":[{"keyword":"\(keyword)","targetUrl":"/","cluster":"c","priority":"P1",
+                  "intent":"informational","verdict":"has-demand","searchVolume":720,
+                  "difficulty":20,"difficultyGap":8,"costPerClick":null,"reportedIntent":null,
+                  "peakMonth":10,"seasonality":1.8}]}
+    """
 }
