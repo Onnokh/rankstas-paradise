@@ -9,6 +9,18 @@ final class WorkspaceTests: XCTestCase {
         XCTAssertEqual(workspace.tabs, [.overview, .site("a"), .site("b")])
     }
 
+    func testNeighbourTabStepsAlongTheBarAndWraps() {
+        let workspace = Workspace()
+        workspace.reconcile(siteIDs: ["a", "b"])
+
+        XCTAssertEqual(workspace.neighbourTab(1), .site("a"))
+        XCTAssertEqual(workspace.neighbourTab(-1), .site("b"), "Left from the first tab wraps to the last.")
+
+        workspace.activate(.site("b"))
+        XCTAssertEqual(workspace.neighbourTab(1), .overview, "Right from the last tab wraps to the first.")
+        XCTAssertEqual(workspace.neighbourTab(-1), .site("a"))
+    }
+
     func testActiveTabIsMountedFirstAndMountedSetIsBounded() {
         let workspace = Workspace(mountedLimit: 2)
         workspace.reconcile(siteIDs: ["a", "b", "c"])

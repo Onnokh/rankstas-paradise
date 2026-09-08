@@ -52,6 +52,14 @@ final class Workspace {
         activate(tabs[index])
     }
 
+    /// The tab `step` places along from the active one, wrapping at both ends: ⌘→ is +1,
+    /// ⌘← is −1. Nil when there is no tab to move to.
+    func neighbourTab(_ step: Int) -> TabID? {
+        guard !tabs.isEmpty, let index = tabs.firstIndex(of: activeTabID) else { return tabs.first }
+        let count = tabs.count
+        return tabs[((index + step) % count + count) % count]
+    }
+
     /// Rebuilds the tab list from the server's sites, keeping state for sites that remain.
     func reconcile(siteIDs: [Site.ID]) {
         tabs = [.overview] + siteIDs.map(TabID.site)

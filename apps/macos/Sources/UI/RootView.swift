@@ -259,6 +259,15 @@ struct RootView: View {
                 }
                 .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
             }
+            // ⌘← and ⌘→ step along the tab bar, wrapping at the ends.
+            Button("Previous tab") {
+                if let tab = workspace.neighbourTab(-1) { select(tab) }
+            }
+            .keyboardShortcut(.leftArrow, modifiers: .command)
+            Button("Next tab") {
+                if let tab = workspace.neighbourTab(1) { select(tab) }
+            }
+            .keyboardShortcut(.rightArrow, modifiers: .command)
         }
         .opacity(0)
         .frame(width: 0, height: 0)
