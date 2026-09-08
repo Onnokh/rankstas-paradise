@@ -17,7 +17,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { type HttpServerResponse } from "effect/unstable/http"
 
 import { Jobs } from "../jobs/jobs.ts"
-import { JobAlreadyRunningError } from "../jobs/schema.ts"
+import { JobAlreadyRunningError, type JobName } from "../jobs/schema.ts"
 import { Reports } from "@rp/domain/reports/reports"
 import { Storage } from "@rp/domain/storage/storage"
 import { Sync } from "@rp/domain/sync/sync"
@@ -97,6 +97,7 @@ const secretSlots = (
 // Site-scoped Sync effects, run on the site runtime by the job handlers.
 const SyncEffect = Sync.use.syncSearchConsole()
 const BackfillEffect = (months: number) => Sync.use.backfillSearchConsole(months)
+const BackfillVisitsEffect = (months: number) => Sync.use.backfillVisits(months)
 
 export const makeApiGroup = (ctx: ServerContext) => {
   // Resolve ?site= to a Site, or a short-circuit 400 response.
@@ -185,12 +186,13 @@ export const makeApiGroup = (ctx: ServerContext) => {
   const tuiFeed = (siteParam: string | undefined, view: FeedView) =>
     siteText(siteParam, feedFor(view))
 
-  // Start a job (sync/backfill). In --debug mode the sync work seeds the debug
-  // fixture and returns the legacy summary; live mode runs the real Sync. The
-  // work is fully provided by the site runtime before it reaches Jobs.
+  // Start a job (sync/backfill/backfill-visits). In --debug mode the sync work
+  // seeds the debug fixture and returns the legacy summary; live mode runs the
+  // real Sync. The work is fully provided by the site runtime before it
+  // reaches Jobs.
   const startJob = async (
     siteParam: string | undefined,
-    name: "sync" | "backfill",
+    name: JobName,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     work: (rt: SiteRuntime) => Promise<string>,
   ): Promise<HttpServerResponse.HttpServerResponse> => {
@@ -525,6 +527,13 @@ export const makeApiGroup = (ctx: ServerContext) => {
         Effect.promise(() =>
           startJob(query.site, "backfill", (rt) =>
             rt.runPromise(BackfillEffect(payload.months ?? 16)),
+          ),
+        ),
+      )
+      .handle("backfillVisitsJob", ({ query, payload }) =>
+        Effect.promise(() =>
+          startJob(query.site, "backfill-visits", (rt) =>
+            rt.runPromise(BackfillVisitsEffect(payload.months ?? 6)),
           ),
         ),
       )

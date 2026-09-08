@@ -177,7 +177,12 @@ A free-form annotation recorded in the same log as actions, but *not* a change t
 The daily refresh — fetch missing finalized days and reconcile the newest few.
 
 **Backfill**:
-A one-time historical fetch (Google retains roughly 16 months).
+A one-time historical fetch, asked for rather than scheduled. Search Console
+reaches back as far as Google retains, roughly 16 months; visits reach back as
+far as the analytics provider keeps them. Unlike a Sync, a backfill re-fetches
+the days it covers whether or not the ledger already holds them — a day stored
+as zeros is indistinguishable from a day that was truly quiet, and only the
+caller knows which one it is repairing.
 
 **Reconcile**:
 Re-fetch the newest finalized days as a complete unit, to absorb Google's late processing.

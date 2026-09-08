@@ -314,6 +314,13 @@ export const apiGroup = HttpApiGroup.make("api")
       success: JobResponse,
     }),
   )
+  .add(
+    HttpApiEndpoint.post("backfillVisitsJob", "/api/jobs/backfill-visits", {
+      query: { site: S },
+      payload: Schema.Struct({ months: Schema.optional(Schema.Number) }),
+      success: JobResponse,
+    }),
+  )
   // --- plain-text feeds (Native SDK / TUI) ---
   .add(HttpApiEndpoint.get("sitesTxt", "/sites.txt"))
   .add(HttpApiEndpoint.get("pagesTxt", "/pages.txt", { query: { site: S, window: S } }))
