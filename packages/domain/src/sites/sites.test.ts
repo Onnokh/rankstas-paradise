@@ -262,6 +262,50 @@ describe("Sites.loadSites analytics", () => {
     })
   })
 
+  test("fills the revenue defaults, borrowing the analytics zone", async () => {
+    const layer = Sites.layer.pipe(
+      Layer.provide(
+        fakeConfig({
+          sites: [
+            {
+              id: "shop",
+              siteUrl: "sc-domain:shop.example",
+              analytics: { provider: "rybbit", siteId: "1", timeZone: "Europe/Amsterdam" },
+              revenue: { provider: "polar" },
+            },
+            {
+              id: "other",
+              siteUrl: "sc-domain:other.example",
+              revenue: {
+                provider: "polar",
+                accountId: "org_1",
+                keyVariable: "POLAR_API_KEY_OTHER",
+                baseUrl: "https://sandbox-api.polar.sh/",
+                timeZone: "America/New_York",
+              },
+            },
+          ],
+        }),
+      ),
+    )
+    const exit = await run(Sites.use.loadSites().pipe(Effect.provide(layer)))
+    const sites = Exit.isSuccess(exit) ? exit.value : undefined
+    expect(sites?.[0]?.revenue).toEqual({
+      provider: "polar",
+      accountId: null,
+      keyVariable: "POLAR_API_KEY",
+      baseUrl: null,
+      timeZone: "Europe/Amsterdam",
+    })
+    expect(sites?.[1]?.revenue).toEqual({
+      provider: "polar",
+      accountId: "org_1",
+      keyVariable: "POLAR_API_KEY_OTHER",
+      baseUrl: "https://sandbox-api.polar.sh",
+      timeZone: "America/New_York",
+    })
+  })
+
   test("a site without an analytics block has none", async () => {
     const layer = Sites.layer.pipe(
       Layer.provide(
@@ -273,5 +317,6 @@ describe("Sites.loadSites analytics", () => {
     const exit = await run(Sites.use.loadSites().pipe(Effect.provide(layer)))
     const sites = Exit.isSuccess(exit) ? exit.value : undefined
     expect(sites?.[0]?.analytics).toBeUndefined()
+    expect(sites?.[0]?.revenue).toBeUndefined()
   })
 })

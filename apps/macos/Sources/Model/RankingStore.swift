@@ -1,11 +1,12 @@
 import Foundation
 import Observation
 
-/// The ranked lists under a site's chart: its keywords and events for the chosen period, and
-/// its registry targets. The lists are held in the server's order; the cards rank them.
+/// The ranked lists under a site's chart: its keywords and events for the chosen period, its
+/// revenue over that period, and its registry targets. The lists are held in the server's
+/// order; the cards rank them.
 ///
-/// In-memory only. Keywords and events are keyed by site and period, so switching the period
-/// back shows the lists at once; a refresh drops what is held for the site and fetches again.
+/// In-memory only. Keywords, events and revenue are keyed by site and period, so switching the
+/// period back shows them at once; a refresh drops what is held for the site and fetches again.
 @MainActor
 @Observable
 final class RankingStore {
@@ -16,6 +17,7 @@ final class RankingStore {
 
     private(set) var keywords: [KeywordsKey: [QueryRow]] = [:]
     private(set) var events: [KeywordsKey: [EventRow]] = [:]
+    private(set) var revenue: [KeywordsKey: RevenueReport] = [:]
     private(set) var registry: [Site.ID: [RegistryTarget]] = [:]
     private(set) var errors: [Site.ID: String] = [:]
     private(set) var loading: Set<Site.ID> = []
@@ -36,17 +38,26 @@ final class RankingStore {
         let key = KeywordsKey(siteID: siteID, period: period)
         let needsKeywords = keywords[key] == nil
         let needsEvents = events[key] == nil
+        let needsRevenue = revenue[key] == nil
         let needsRegistry = registry[siteID] == nil
-        guard needsKeywords || needsEvents || needsRegistry else { return }
-        await fetch(siteID, period: period, keywords: needsKeywords, events: needsEvents, registry: needsRegistry)
+        guard needsKeywords || needsEvents || needsRevenue || needsRegistry else { return }
+        await fetch(
+            siteID,
+            period: period,
+            keywords: needsKeywords,
+            events: needsEvents,
+            revenue: needsRevenue,
+            registry: needsRegistry
+        )
     }
 
     /// Drops what is held for the site and fetches every list again.
     func refresh(_ siteID: Site.ID, period: Period) async {
         keywords = keywords.filter { $0.key.siteID != siteID }
         events = events.filter { $0.key.siteID != siteID }
+        revenue = revenue.filter { $0.key.siteID != siteID }
         registry[siteID] = nil
-        await fetch(siteID, period: period, keywords: true, events: true, registry: true)
+        await fetch(siteID, period: period, keywords: true, events: true, revenue: true, registry: true)
     }
 
     private func fetch(
@@ -54,6 +65,7 @@ final class RankingStore {
         period: Period,
         keywords wantKeywords: Bool,
         events wantEvents: Bool,
+        revenue wantRevenue: Bool,
         registry wantRegistry: Bool
     ) async {
         guard !loading.contains(siteID) else { return }
@@ -68,6 +80,9 @@ final class RankingStore {
             if wantEvents {
                 let report = try await client.events(siteID: siteID, windowDays: period.days)
                 events[KeywordsKey(siteID: siteID, period: period)] = report.events
+            }
+            if wantRevenue {
+                revenue[KeywordsKey(siteID: siteID, period: period)] = try await client.revenue(siteID: siteID, windowDays: period.days)
             }
             if wantRegistry {
                 let report = try await client.registry(siteID: siteID)

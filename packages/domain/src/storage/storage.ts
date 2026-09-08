@@ -17,6 +17,7 @@ import {
   type SiteVisitsHour,
   type VisitsDays,
 } from "../analytics/schema.ts"
+import { type RevenueDay } from "../revenue/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import {
   type DailySnapshot,
@@ -42,6 +43,7 @@ import {
   type RegistryPerformance,
   type RegistryProgress,
   type RegistryTargetProgress,
+  type RevenueSummary,
   StorageError,
   type SnapshotDateRange,
   type SnapshotSummary,
@@ -101,6 +103,15 @@ export interface Interface {
     hours: ReadonlyArray<SiteVisitsHour>,
     source: string,
   ) => Effect.Effect<void, StorageError>
+  // Record one fetch of canonical revenue rows from the site's commerce
+  // provider: every fetched date's row is replaced (a fetched day the
+  // provider returned nothing for is a day with no sales, stored as zeros)
+  // and the dates stamped in `revenue_synced_day`. `source` as for saveVisits.
+  readonly saveRevenue: (
+    days: ReadonlyArray<RevenueDay>,
+    fetchedDates: ReadonlyArray<string>,
+    source: string,
+  ) => Effect.Effect<void, StorageError>
 
   // --- freshness / coverage queries ---
   readonly missingDailyTotalDates: (
@@ -130,6 +141,15 @@ export interface Interface {
     maxAgeHours: number,
   ) => Effect.Effect<ReadonlyArray<string>, StorageError>
   readonly latestVisitsSyncedAt: () => Effect.Effect<string | null, StorageError>
+  // The revenue twins, over `revenue_synced_day`.
+  readonly missingRevenueDates: (
+    dates: ReadonlyArray<string>,
+  ) => Effect.Effect<ReadonlyArray<string>, StorageError>
+  readonly recentlySyncedRevenueDates: (
+    dates: ReadonlyArray<string>,
+    maxAgeHours: number,
+  ) => Effect.Effect<ReadonlyArray<string>, StorageError>
+  readonly latestRevenueSyncedAt: () => Effect.Effect<string | null, StorageError>
   readonly snapshotDateRange: () => Effect.Effect<
     SnapshotDateRange,
     StorageError
@@ -217,6 +237,16 @@ export interface Interface {
     windowDays?: number,
     endDate?: string,
   ) => Effect.Effect<ReadonlyArray<EventWindowRow>, StorageError>
+  // --- revenue reads (empty, never failing on absence, for a site without a
+  // commerce provider) ---
+  readonly revenueSummary: () => Effect.Effect<RevenueSummary, StorageError>
+  // The synced days from `start` to `end` inclusive, date ascending. Days
+  // never fetched are absent, not zero, so a client can tell "no sales" from
+  // "not synced".
+  readonly revenueDays: (
+    start: string,
+    end: string,
+  ) => Effect.Effect<ReadonlyArray<RevenueDay>, StorageError>
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -427,6 +457,23 @@ export const layer = Layer.effect(
       // The visits twin of synced_day: which dates have been fetched from the
       // provider, and when, so a sync fetches only what is missing or stale.
       `create table if not exists analytics_synced_day (
+        date text primary key,
+        source text not null,
+        fetched_at text not null default current_timestamp
+      )`,
+      // The commerce provider's series in canonical form (see
+      // ../revenue/schema.ts), vendor-neutral on the same terms as the
+      // analytics tables. Amounts are in the currency's minor unit.
+      `create table if not exists revenue_site_daily (
+        date text primary key,
+        orders integer not null,
+        revenue integer not null,
+        net integer not null,
+        currency text not null,
+        source text not null,
+        collected_at text not null default current_timestamp
+      )`,
+      `create table if not exists revenue_synced_day (
         date text primary key,
         source text not null,
         fetched_at text not null default current_timestamp
@@ -1406,6 +1453,86 @@ export const layer = Layer.effect(
       return rows[0]?.date ?? null
     })
 
+    // --- revenue (canonical commerce rows; see ../revenue/schema.ts) ---
+
+    const saveRevenueI = (
+      days: ReadonlyArray<RevenueDay>,
+      fetchedDates: ReadonlyArray<string>,
+      source: string,
+    ) =>
+      sql.withTransaction(
+        Effect.gen(function* () {
+          // A fetched day the provider returned no row for is a day with no
+          // sales, recorded as such so it does not read as missing forever.
+          // Its currency is whatever the fetch's other rows carry.
+          const currency = days[0]?.currency ?? ""
+          const returned = new Set(days.map((row) => row.date))
+          for (const date of fetchedDates)
+            if (!returned.has(date))
+              yield* sql`
+                insert into revenue_site_daily (date, orders, revenue, net, currency, source)
+                values (${date}, 0, 0, 0, ${currency}, ${source})
+                on conflict(date) do update set
+                  orders = 0, revenue = 0, net = 0, source = excluded.source,
+                  collected_at = current_timestamp`
+          for (const row of days)
+            yield* sql`
+              insert into revenue_site_daily (date, orders, revenue, net, currency, source)
+              values (${row.date}, ${row.orders}, ${row.revenue}, ${row.net}, ${row.currency}, ${source})
+              on conflict(date) do update set
+                orders = excluded.orders, revenue = excluded.revenue, net = excluded.net,
+                currency = excluded.currency, source = excluded.source,
+                collected_at = current_timestamp`
+          for (const date of fetchedDates)
+            yield* sql`
+              insert into revenue_synced_day (date, source) values (${date}, ${source})
+              on conflict(date) do update set
+                source = excluded.source, fetched_at = current_timestamp`
+        }),
+      )
+
+    const missingRevenueDatesI = (dates: ReadonlyArray<string>) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{ date: string }>`select date from revenue_synced_day`
+        const fetched = new Set(rows.map((row) => row.date))
+        return [...new Set(dates)].filter((date) => !fetched.has(date))
+      })
+
+    const recentlySyncedRevenueDatesI = (
+      dates: ReadonlyArray<string>,
+      maxAgeHours: number,
+    ) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{ date: string }>`
+          select date from revenue_synced_day
+          where fetched_at > datetime('now', ${`-${maxAgeHours} hours`})`
+        const fresh = new Set(rows.map((row) => row.date))
+        return [...new Set(dates)].filter((date) => fresh.has(date))
+      })
+
+    const latestRevenueSyncedAtI = Effect.gen(function* () {
+      const rows = yield* sql<{ fetched_at: string | null }>`
+        select strftime('%Y-%m-%dT%H:%M:%SZ', max(fetched_at)) as fetched_at
+        from revenue_synced_day`
+      return rows[0]?.fetched_at ?? null
+    })
+
+    const revenueSummaryI = Effect.gen(function* () {
+      const rows = yield* sql<RevenueSummary>`
+        select count(*) as days, min(date) as firstDate, max(date) as lastDate,
+               (select source from revenue_synced_day
+                order by fetched_at desc, date desc limit 1) as source
+        from revenue_synced_day`
+      return rows[0] ?? { days: 0, firstDate: null, lastDate: null, source: null }
+    })
+
+    const revenueDaysI = (start: string, end: string) =>
+      sql<RevenueDay>`
+        select date, orders, revenue, net, currency from revenue_site_daily
+        where date >= ${start} and date <= ${end} order by date`.pipe(
+        Effect.map((rows) => rows as ReadonlyArray<RevenueDay>),
+      )
+
     // The two window bounds every visits window read shares: anchored on the
     // caller's end date when given, else on the newest visits day.
     const visitsWindowBounds = (windowDays: number, endDate?: string) =>
@@ -1590,6 +1717,19 @@ export const layer = Layer.effect(
         ),
       eventWindow: (windowDays, endDate) =>
         eventWindowI(windowDays, endDate).pipe(mapErr("eventWindow")),
+      saveRevenue: (days, fetchedDates, source) =>
+        saveRevenueI(days, fetchedDates, source).pipe(mapErr("saveRevenue")),
+      missingRevenueDates: (dates) =>
+        missingRevenueDatesI(dates).pipe(mapErr("missingRevenueDates")),
+      recentlySyncedRevenueDates: (dates, maxAgeHours) =>
+        recentlySyncedRevenueDatesI(dates, maxAgeHours).pipe(
+          mapErr("recentlySyncedRevenueDates"),
+        ),
+      latestRevenueSyncedAt: () =>
+        latestRevenueSyncedAtI.pipe(mapErr("latestRevenueSyncedAt")),
+      revenueSummary: () => revenueSummaryI.pipe(mapErr("revenueSummary")),
+      revenueDays: (start, end) =>
+        revenueDaysI(start, end).pipe(mapErr("revenueDays")),
     } satisfies Interface
   }),
 )

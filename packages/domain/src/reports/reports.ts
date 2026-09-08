@@ -9,6 +9,8 @@ import { Context, Effect, Layer } from "effect"
 
 import { Analytics, normaliseHours } from "../analytics/analytics.ts"
 import { type AnalyticsError, type AnalyticsStatus } from "../analytics/schema.ts"
+import { Revenue } from "../revenue/revenue.ts"
+import { type RevenueDay } from "../revenue/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { DomainRating } from "../domain-rating/domain-rating.ts"
 import { type RegistryEntry, type RegistryPatch } from "../registry/schema.ts"
@@ -35,6 +37,8 @@ import {
   type EntrySummary,
   type HistoryReport,
   type EventsReport,
+  type RevenueReport,
+  type RevenueTotals,
   type LiveReport,
   type TodayReport,
   type LogAddInput,
@@ -110,6 +114,10 @@ export interface Interface {
     windowDays?: number,
   ) => Effect.Effect<EventsReport, ReportsError>
   readonly todayReport: () => Effect.Effect<TodayReport, ReportsError>
+  // The site's sales over a window against the one before, from the ledger.
+  readonly revenueReport: (
+    windowDays?: number,
+  ) => Effect.Effect<RevenueReport, ReportsError>
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -126,6 +134,7 @@ export const layer = Layer.effect(
     const sitemap = yield* Sitemap.Service
     const domainRatingService = yield* DomainRating.Service
     const analytics = yield* Analytics.Service
+    const revenue = yield* Revenue.Service
     const site = yield* CurrentSite.Service
     const resolved = yield* site.current()
     const origin = resolved.origin
@@ -251,6 +260,13 @@ export const layer = Layer.effect(
             const visitsSyncedAt = analyticsStatus
               ? yield* storage.latestVisitsSyncedAt()
               : null
+            const revenueStatus = yield* revenue.status()
+            const revenueSummary = revenueStatus
+              ? yield* storage.revenueSummary()
+              : null
+            const revenueSyncedAt = revenueStatus
+              ? yield* storage.latestRevenueSyncedAt()
+              : null
             return {
               data: {
                 firstDate: range.first,
@@ -280,6 +296,16 @@ export const layer = Layer.effect(
                       firstDate: visitsSummary.firstDate,
                       lastDate: visitsSummary.lastDate,
                       lastSyncedAt: visitsSyncedAt,
+                    }
+                  : null,
+              revenue:
+                revenueStatus && revenueSummary
+                  ? {
+                      ...revenueStatus,
+                      days: revenueSummary.days,
+                      firstDate: revenueSummary.firstDate,
+                      lastDate: revenueSummary.lastDate,
+                      lastSyncedAt: revenueSyncedAt,
                     }
                   : null,
             }
@@ -873,6 +899,65 @@ export const layer = Layer.effect(
           }),
         ),
 
+      revenueReport: (windowDays = 28) =>
+        wrap(
+          Effect.gen(function* () {
+            const revenueStatus = yield* revenue.status()
+            const empty = {
+              currentStart: null,
+              currentEnd: null,
+              previousStart: null,
+              previousEnd: null,
+            }
+            const zero: RevenueTotals = { orders: 0, revenue: 0, net: 0 }
+            const nothing = (status: typeof revenueStatus): RevenueReport => ({
+              revenue: status,
+              windowDays,
+              window: empty,
+              currency: null,
+              days: [],
+              current: zero,
+              previous: zero,
+              delta: zero,
+            })
+            if (!revenueStatus) return nothing(null)
+            // Anchored as the events report is: on the newest finished day,
+            // which is yesterday once the today sync has written today's row,
+            // else the newest synced day. Today's partial day stays out so the
+            // window is whole days only.
+            const summary = yield* storage.revenueSummary()
+            const local = yield* revenue.localDay()
+            const anchor =
+              summary.lastDate && local && summary.lastDate >= local.date
+                ? dateDaysBefore(local.date, 1)
+                : summary.lastDate
+            if (!anchor) return nothing(revenueStatus)
+            const currentStart = dateDaysBefore(anchor, windowDays - 1)
+            const previousEnd = dateDaysBefore(currentStart, 1)
+            const previousStart = dateDaysBefore(previousEnd, windowDays - 1)
+            const [days, previousDays] = yield* Effect.all([
+              storage.revenueDays(currentStart, anchor),
+              storage.revenueDays(previousStart, previousEnd),
+            ])
+            const current = sumRevenue(days)
+            const previous = sumRevenue(previousDays)
+            return {
+              revenue: revenueStatus,
+              windowDays,
+              window: { currentStart, currentEnd: anchor, previousStart, previousEnd },
+              currency: days[0]?.currency ?? previousDays[0]?.currency ?? null,
+              days,
+              current,
+              previous,
+              delta: {
+                orders: current.orders - previous.orders,
+                revenue: current.revenue - previous.revenue,
+                net: current.net - previous.net,
+              },
+            }
+          }),
+        ),
+
       liveReport: () =>
         wrap(
           Effect.gen(function* () {
@@ -957,6 +1042,7 @@ export const layer = Layer.effect(
 export const defaultLayer = layer.pipe(
   Layer.provide(DomainRating.defaultLayer),
   Layer.provide(Analytics.defaultLayer),
+  Layer.provide(Revenue.defaultLayer),
   Layer.provide(Storage.defaultLayer),
   Layer.provide(Registry.defaultLayer),
   Layer.provide(Sitemap.defaultLayer),
@@ -968,6 +1054,17 @@ export const defaultLayer = layer.pipe(
 const zeroMetrics: Metrics = { impressions: 0, clicks: 0, ctr: 0, position: 0 }
 
 const zeroVisits: Visits = { pageviews: 0, visits: 0 }
+
+// Orders and amounts summed over a run of days; amounts stay in minor units.
+const sumRevenue = (days: ReadonlyArray<RevenueDay>): RevenueTotals =>
+  days.reduce(
+    (total, day) => ({
+      orders: total.orders + day.orders,
+      revenue: total.revenue + day.revenue,
+      net: total.net + day.net,
+    }),
+    { orders: 0, revenue: 0, net: 0 },
+  )
 
 // The visits twin of tidyWindow(): a current/previous pair with its deltas. A
 // page the provider has no row for, in a site that does have visits, is zero.

@@ -2,6 +2,7 @@
 import { Schema } from "effect"
 
 import { AnalyticsSource } from "../analytics/schema.ts"
+import { RevenueSource } from "../revenue/schema.ts"
 
 // Stable per-site identifier used in URLs (?site=<id>) and on-disk paths
 // (data/sites/<id>/). Branded so a bare string can't be passed where a resolved
@@ -24,6 +25,9 @@ export const Site = Schema.Struct({
   // nullable so every existing Site value (fixtures, the api-client's decode of
   // GET /api/sites against an older server) stays valid as it is.
   analytics: Schema.optional(AnalyticsSource),
+  // The resolved revenue source, when the site sells through one. Optional for
+  // the same reason.
+  revenue: Schema.optional(RevenueSource),
 }).annotate({ identifier: "Site" })
 export interface Site extends Schema.Schema.Type<typeof Site> {}
 

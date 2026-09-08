@@ -57,6 +57,14 @@ struct APIClient: Sendable {
         )
     }
 
+    /// The site's sales over `windowDays` whole days against the window before, from the ledger.
+    func revenue(siteID: String, windowDays: Int) async throws -> RevenueReport {
+        try await get(
+            path: "/api/revenue",
+            query: [URLQueryItem(name: "site", value: siteID), URLQueryItem(name: "window", value: String(windowDays))]
+        )
+    }
+
     func registry(siteID: String) async throws -> RegistryListReport {
         try await get(path: "/api/registry", query: [URLQueryItem(name: "site", value: siteID)])
     }

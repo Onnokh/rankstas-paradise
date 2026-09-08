@@ -12,6 +12,7 @@ import { join } from "node:path"
 import { Effect, Layer, ManagedRuntime } from "effect"
 
 import { Analytics } from "../analytics/analytics.ts"
+import { Revenue } from "../revenue/revenue.ts"
 import { type VisitsDays } from "../analytics/schema.ts"
 import { Registry } from "../registry/registry.ts"
 import { type RegistryEntry } from "../registry/schema.ts"
@@ -360,12 +361,26 @@ beforeAll(async () => {
     localDay: () =>
       Effect.succeed({ date: "2026-07-13", hour: 12, timeZone: "UTC" }),
   })
+  // A ready "fake" commerce provider on the same terms; its rows are seeded
+  // into the ledger by the revenue tests below.
+  const revenueLayer = Layer.mock(Revenue.Service)({
+    status: () =>
+      Effect.succeed({
+        provider: "fake",
+        accountId: null,
+        ready: true,
+        reason: null,
+      }),
+    localDay: () =>
+      Effect.succeed({ date: "2026-07-13", hour: 12, timeZone: "UTC" }),
+  })
   const base = Layer.mergeAll(
     storageLayer,
     registryLayer,
     sitemapLayer,
     domainRatingLayer,
     analyticsLayer,
+    revenueLayer,
     currentSiteLayer,
   )
   runtime = ManagedRuntime.make(Reports.layer.pipe(Layer.provideMerge(base)))
@@ -736,6 +751,60 @@ test("todayReport reads the day in progress from the ledger", async () => {
   const events = await run(Reports.use.eventsReport())
   expect(events.window.currentEnd).toBe("2026-07-12")
   expect(events.events).toEqual([{ name: "purchase", current: 56, previous: 56, delta: 0 }])
+})
+
+test("revenueReport sums the window and the one before from the ledger, ending on the last whole day", async () => {
+  // Nothing synced yet: the status is there, everything else is empty.
+  const before = await run(Reports.use.revenueReport())
+  expect(before.revenue?.provider).toBe("fake")
+  expect(before.days).toEqual([])
+  expect(before.currency).toBeNull()
+  expect(before.window.currentEnd).toBeNull()
+
+  // Two orders of $19.99 every day up to and including "today" (2026-07-13),
+  // as the daily sync and the today sync between them would write it.
+  const dates: Array<string> = []
+  const cursor = new Date("2026-05-18T00:00:00Z")
+  while (cursor <= new Date("2026-07-13T00:00:00Z")) {
+    dates.push(cursor.toISOString().slice(0, 10))
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+  }
+  await runtime.runPromise(
+    Effect.gen(function* () {
+      const storage = yield* Storage.Service
+      yield* storage.saveRevenue(
+        dates.map((date) => ({ date, orders: 2, revenue: 3998, net: 3998, currency: "USD" })),
+        dates,
+        "fake",
+      )
+    }),
+  )
+
+  const report = await run(Reports.use.revenueReport())
+  // Anchored on yesterday: today's row is in the ledger but not in the window.
+  expect(report.window).toEqual({
+    currentStart: "2026-06-15",
+    currentEnd: "2026-07-12",
+    previousStart: "2026-05-18",
+    previousEnd: "2026-06-14",
+  })
+  expect(report.currency).toBe("USD")
+  expect(report.days).toHaveLength(28)
+  expect(report.days[0]?.date).toBe("2026-06-15")
+  expect(report.days.at(-1)?.date).toBe("2026-07-12")
+  expect(report.current).toEqual({ orders: 56, revenue: 111944, net: 111944 })
+  expect(report.previous).toEqual({ orders: 56, revenue: 111944, net: 111944 })
+  expect(report.delta).toEqual({ orders: 0, revenue: 0, net: 0 })
+
+  const week = await run(Reports.use.revenueReport(7))
+  expect(week.days).toHaveLength(7)
+  expect(week.current.orders).toBe(14)
+
+  // The status report counts the synced days too.
+  const status = await run(Reports.use.statusReport())
+  expect(status.revenue?.provider).toBe("fake")
+  expect(status.revenue?.days).toBe(dates.length)
+  expect(status.revenue?.lastDate).toBe("2026-07-13")
 })
 
 test("liveReport carries the provider status and the live count", async () => {

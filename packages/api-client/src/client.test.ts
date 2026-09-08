@@ -234,6 +234,32 @@ test("events: window maps to the wire query param", async () => {
   expect(http.calls[0]!.url.searchParams.get("site")).toBe("sleevy")
 })
 
+test("revenue: window maps to the wire query param", async () => {
+  const zero = { orders: 0, revenue: 0, net: 0 }
+  const http = fakeHttp(() => ({
+    status: 200,
+    body: {
+      revenue: null,
+      windowDays: 7,
+      window: { currentStart: null, currentEnd: null, previousStart: null, previousEnd: null },
+      currency: null,
+      days: [],
+      current: zero,
+      previous: zero,
+      delta: zero,
+    },
+  }))
+
+  const result = await ApiClient.use
+    .revenue(7, siteId)
+    .pipe(Effect.provide(buildLayer(http.layer)), Effect.runPromise)
+
+  expect(result.windowDays).toBe(7)
+  expect(result.revenue).toBeNull()
+  expect(http.calls[0]!.url.pathname).toBe("/api/revenue")
+  expect(http.calls[0]!.url.searchParams.get("window")).toBe("7")
+})
+
 test("write: registryAdd POSTs and decodes the result", async () => {
   const http = fakeHttp(() => ({ status: 200, body: registryAddBody }))
   const result = await ApiClient.use

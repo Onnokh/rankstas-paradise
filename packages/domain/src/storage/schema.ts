@@ -311,6 +311,16 @@ export const VisitsSummary = Schema.Struct({
 export interface VisitsSummary
   extends Schema.Schema.Type<typeof VisitsSummary> {}
 
+// The same for the revenue series, over `revenue_synced_day`.
+export const RevenueSummary = Schema.Struct({
+  days: Schema.Number,
+  firstDate: Schema.NullOr(Schema.String),
+  lastDate: Schema.NullOr(Schema.String),
+  source: Schema.NullOr(Schema.String),
+}).annotate({ identifier: "RevenueSummary" })
+export interface RevenueSummary
+  extends Schema.Schema.Type<typeof RevenueSummary> {}
+
 // Raised for any failure reading from or writing to the per-site database.
 export class StorageError extends Schema.TaggedErrorClass<StorageError>()(
   "StorageError",

@@ -10,6 +10,11 @@ import {
 } from "../analytics/schema.ts"
 import { Config } from "../config/config.ts"
 import { type ConfigSite } from "../config/schema.ts"
+import {
+  type ConfigRevenue,
+  defaultKeyVariable,
+  type RevenueSource,
+} from "../revenue/schema.ts"
 import { serviceUse } from "../service-use.ts"
 import { Site, SiteId, UnknownSiteError } from "./schema.ts"
 
@@ -41,12 +46,29 @@ const analyticsFor = (analytics: ConfigAnalytics): AnalyticsSource => ({
   timeZone: analytics.timeZone ?? defaultTimeZone,
 })
 
+// The revenue block with its defaults filled: no account id means the token
+// is scoped to one already, no key variable means `<PROVIDER>_API_KEY`, no
+// base URL means the vendor's production API, and no time zone means the
+// site's analytics zone (so an order and its visit fall on the same day), else
+// UTC.
+const revenueFor = (
+  revenue: ConfigRevenue,
+  analytics: AnalyticsSource | undefined,
+): RevenueSource => ({
+  provider: revenue.provider,
+  accountId: revenue.accountId ?? null,
+  keyVariable: revenue.keyVariable ?? defaultKeyVariable(revenue.provider),
+  baseUrl: revenue.baseUrl?.replace(/\/$/, "") ?? null,
+  timeZone: revenue.timeZone ?? analytics?.timeZone ?? defaultTimeZone,
+})
+
 // Fill in every derived field: origin (no trailing slash), sitemapUrl
 // (defaults to https://<hostname>/sitemap.xml), brandTerms (defaults to [id]),
-// and the analytics source when the entry has one.
+// and the analytics and revenue sources when the entry has them.
 const normalize = (site: ConfigSite): Site => {
   const origin = originFor(site.siteUrl, site.origin)
   const hostname = new URL(origin).hostname
+  const analytics = site.analytics ? analyticsFor(site.analytics) : undefined
   return {
     id: SiteId.make(site.id),
     name: site.name ?? site.id,
@@ -54,7 +76,8 @@ const normalize = (site: ConfigSite): Site => {
     origin: origin.replace(/\/$/, ""),
     sitemapUrl: site.sitemapUrl ?? `https://${hostname}/sitemap.xml`,
     brandTerms: site.brandTerms ?? [site.id],
-    ...(site.analytics ? { analytics: analyticsFor(site.analytics) } : {}),
+    ...(analytics ? { analytics } : {}),
+    ...(site.revenue ? { revenue: revenueFor(site.revenue, analytics) } : {}),
   }
 }
 

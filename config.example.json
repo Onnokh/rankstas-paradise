@@ -12,6 +12,10 @@
         "siteId": "1",
         "baseUrl": "https://rybbit.example.com",
         "timeZone": "UTC"
+      },
+      "revenue": {
+        "provider": "polar",
+        "keyVariable": "POLAR_API_KEY_EXAMPLE"
       }
     }
   ]
