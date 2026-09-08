@@ -202,3 +202,56 @@ final class PlanningListTests: XCTestCase {
         XCTAssertEqual(report.keywords[0].verdictKind, .unmeasured)
     }
 }
+
+// MARK: - What the screen is looking at
+
+extension PlanningListTests {
+    func testAReportMeansTheScreenShowsThePlan() {
+        XCTAssertEqual(
+            PlanningList.state(report: emptyReport, reason: nil, loading: false),
+            .plan,
+            "A report with no keywords is still a report: an empty plan is a fact about the plan."
+        )
+    }
+
+    func testNoReportAndNoReasonIsWaiting() {
+        XCTAssertEqual(PlanningList.state(report: nil, reason: nil, loading: true), .waiting)
+        XCTAssertEqual(PlanningList.state(report: nil, reason: nil, loading: false), .waiting)
+    }
+
+    func testNoReportWithAReasonNamesTheReason() {
+        // The bug this type exists for: the screen used to reach this state and say "the
+        // registry maps no keywords yet", which is a claim about the plan — and it was
+        // wrong about a registry holding forty-five rows.
+        XCTAssertEqual(
+            PlanningList.state(report: nil, reason: "404 not found", loading: false),
+            .unavailable("404 not found")
+        )
+    }
+
+    func testAHeldReportOutranksAnOlderFailure() {
+        // A refresh that failed leaves both a report and a reason. The report is what the
+        // reader can act on, so it wins.
+        XCTAssertEqual(
+            PlanningList.state(report: emptyReport, reason: "404 not found", loading: false),
+            .plan
+        )
+    }
+
+    private var emptyReport: RegistryHealthReport {
+        RegistryHealthReport(
+            generatedAt: "2026-09-08T00:00:00Z",
+            market: nil,
+            domainRating: nil,
+            totals: KeywordTotals(
+                keywords: 0,
+                unmeasured: 0,
+                unreported: 0,
+                noDemand: 0,
+                hasDemand: 0,
+                monthlyVolume: 0
+            ),
+            keywords: []
+        )
+    }
+}

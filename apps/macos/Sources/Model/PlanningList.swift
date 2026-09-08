@@ -6,7 +6,40 @@ import Foundation
 ///
 /// The order the server sends is already the useful one — demand first, strongest first —
 /// so this narrows and re-ranks rather than deciding from scratch.
+/// What the planning screen is looking at. Its own type because the screen got this wrong
+/// once: with no report it described the plan anyway, and "the registry maps no keywords
+/// yet" reads as a fact — one that was false about a registry holding forty-five rows.
+///
+/// The distinction that matters is between an EMPTY answer and NO answer. Only the first is
+/// a statement about the plan.
+enum PlanningState: Equatable {
+    /// A report arrived. The list, the tiles and the counts all speak for themselves.
+    case plan
+    /// Nothing has arrived and nothing has failed: the first look at a cold site.
+    case waiting
+    /// Nothing arrived, and this is why. The screen must say so rather than count zeros —
+    /// a 404 here means the server predates the report, which is a deploy and not
+    /// something the reader can fix on this screen.
+    case unavailable(String)
+}
+
 enum PlanningList {
+    /// Which of the three the screen is in. `reason` is why the report is missing, when the
+    /// store knows; a present report wins over it, because a held report is still worth
+    /// reading after a refresh that failed.
+    static func state(
+        report: RegistryHealthReport?,
+        reason: String?,
+        loading: Bool
+    ) -> PlanningState {
+        if report != nil { return .plan }
+        if let reason { return .unavailable(reason) }
+        // Loading and cold read the same: both mean "not yet", and neither is entitled to
+        // say anything about the plan.
+        _ = loading
+        return .waiting
+    }
+
     /// - Parameters:
     ///   - verdicts: keeps only keywords the vendor said this about. Empty keeps every one.
     ///   - search: matched against the keyword, its cluster and its target, case-insensitively.

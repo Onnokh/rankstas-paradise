@@ -22,6 +22,21 @@ struct PlanningScreen: View {
     private var report: RegistryHealthReport? { rankings.health[overview.id] }
     private var keywords: [KeywordHealth] { report?.keywords ?? [] }
 
+    /// What the screen is looking at: a plan, nothing yet, or nothing and a reason. Every
+    /// empty state below turns on it — see PlanningState for what went wrong without it.
+    private var planningState: PlanningState {
+        PlanningList.state(
+            report: report,
+            reason: rankings.healthErrors[overview.id],
+            loading: loading
+        )
+    }
+
+    private var unavailable: String? {
+        if case let .unavailable(reason) = planningState { return reason }
+        return nil
+    }
+
     /// The difficulty a keyword has to be at or under to count as within reach. Defaults to
     /// the site's own domain rating, and the reader moves it — this is a rough guide across
     /// two vendors' unrelated scales, not a rule, so it belongs on the screen where it can
@@ -47,8 +62,12 @@ struct PlanningScreen: View {
                     .padding(.top, SiteTabScreen.columnInset)
                     .padding(.bottom, 24)
 
-                tiles
-                    .padding(.bottom, 20)
+                // No tiles without a report. Three zeros are a statement about the plan,
+                // and an unanswered request is not entitled to make one.
+                if planningState == .plan {
+                    tiles
+                        .padding(.bottom, 20)
+                }
 
                 if !upcoming.isEmpty {
                     season
@@ -103,7 +122,11 @@ struct PlanningScreen: View {
     /// is ambiguous — the same keyword has a different number in every country.
     private var summary: String {
         guard let report else {
-            return loading ? "Loading…" : "No plan to judge yet."
+            if loading { return "Loading…" }
+            // Nothing is claimed about the plan here, because nothing is known about it.
+            return unavailable == nil
+                ? "No plan to judge yet."
+                : "This report did not arrive, so the plan below is not shown — not empty."
         }
         var parts = ["\(report.totals.keywords) \(report.totals.keywords == 1 ? "keyword" : "keywords")"]
         if report.totals.unmeasured < report.totals.keywords {
@@ -315,7 +338,22 @@ struct PlanningScreen: View {
 
     @ViewBuilder
     private var list: some View {
-        if rows.isEmpty {
+        if let unavailable {
+            ContentUnavailableView(
+                "Plan report unavailable",
+                systemImage: "exclamationmark.triangle",
+                // The reason, verbatim from the server. A 404 here means the server is
+                // running a build from before this report existed, which is a deploy and
+                // not something the reader can fix on this screen — so it is named rather
+                // than dressed up as an empty plan.
+                description: Text(
+                    "The server did not answer this report for \(overview.site.name). "
+                        + "The registry itself loaded, so this says nothing about the plan.\n\n"
+                        + unavailable
+                )
+            )
+            .frame(minHeight: 240)
+        } else if rows.isEmpty {
             ContentUnavailableView(
                 keywords.isEmpty ? "No keywords planned" : "No keywords match",
                 systemImage: "text.magnifyingglass",

@@ -72,8 +72,7 @@ final class RankingStoreTests: XCTestCase {
     func testAServerWithoutTheHealthEndpointStillGivesUpTheRegistry() async {
         // The endpoint is newer than the registry, so an older server 404s it. Losing the
         // registry list over a screen the reader may not even be on would be the wrong
-        // trade, so the failure is swallowed and the planning screen shows its own empty
-        // state.
+        // trade, so the failure does not fail the registry.
         StubServer.healthOK = false
         let store = makeStore()
         await store.load("site", period: .d28)
@@ -81,6 +80,41 @@ final class RankingStoreTests: XCTestCase {
         XCTAssertEqual(store.registry["site"]?.count, 1)
         XCTAssertNil(store.health["site"])
         XCTAssertNil(store.errors["site"], "A missing health endpoint is not an error to show.")
+        // But the reason is kept. Without it the planning screen has to guess why it has
+        // no report, and it guessed "this registry maps no keywords" — which reads as a
+        // fact about the plan and was wrong about a registry holding forty-five rows.
+        XCTAssertNotNil(store.healthErrors["site"],
+                        "A screen with no report must be able to say why, not describe a plan it cannot see.")
+    }
+
+    func testAFailedHealthRefreshKeepsTheReportItAlreadyHad() async {
+        // A server that regresses — redeployed older, or briefly broken — must not blank a
+        // screen that was reading correctly a second earlier, and must not take the disk
+        // cache down with it.
+        let store = makeStore()
+        await store.load("site", period: .d28)
+        XCTAssertEqual(store.health["site"]?.totals.hasDemand, 1)
+
+        StubServer.healthOK = false
+        await store.refresh("site", period: .d28)
+
+        XCTAssertEqual(store.health["site"]?.totals.hasDemand, 1,
+                       "The held report stays until a newer one replaces it.")
+        XCTAssertNotNil(store.healthErrors["site"])
+    }
+
+    func testASucceedingHealthFetchClearsAnEarlierReason() async {
+        // The other direction: once the report arrives, the screen must stop apologising.
+        StubServer.healthOK = false
+        let store = makeStore()
+        await store.load("site", period: .d28)
+        XCTAssertNotNil(store.healthErrors["site"])
+
+        StubServer.healthOK = true
+        await store.refresh("site", period: .d28)
+
+        XCTAssertNil(store.healthErrors["site"])
+        XCTAssertEqual(store.health["site"]?.totals.hasDemand, 1)
     }
 
     func testTheHealthReportArrivesWithTheRegistry() async {

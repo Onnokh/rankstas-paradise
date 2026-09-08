@@ -24,6 +24,10 @@ final class RankingStore {
     /// The plan judged on demand. Fetched with the registry, on the same terms: it is the
     /// same plan read the other way round, so one is never shown against a stale other.
     private(set) var health: [Site.ID: RegistryHealthReport] = [:]
+    /// Why a site has no plan-health report, when it has none. Kept rather than discarded:
+    /// without it the planning screen cannot tell "this plan has no keywords" from "the
+    /// report never arrived", and it stated the first while meaning the second.
+    private(set) var healthErrors: [Site.ID: String] = [:]
     private(set) var errors: [Site.ID: String] = [:]
     private(set) var loading: Set<Site.ID> = []
 
@@ -85,12 +89,24 @@ final class RankingStore {
             if wantRegistry {
                 let report = try await client.registry(siteID: siteID)
                 registry[siteID] = report.targets
-                // The plan judged on demand rides along, and its failure is swallowed:
-                // this endpoint is newer than the registry, so a server that predates it
-                // answers a 404 — and losing the registry list over a screen the reader
-                // may not even be on would be the wrong trade. The planning screen shows
-                // its own empty state instead.
-                health[siteID] = try? await client.registryHealth(siteID: siteID)
+                // The plan judged on demand rides along, and its failure does not fail
+                // the registry: this endpoint is newer than the registry, so a server
+                // that predates it answers a 404 — and losing the registry list over a
+                // screen the reader may not even be on would be the wrong trade.
+                //
+                // Two things the earlier `try?` got wrong. The reason is kept, because a
+                // screen with no report has to say so rather than describe the plan it
+                // cannot see. And a held report survives a failed refresh, because
+                // otherwise a server that regresses to a 404 blanks a screen that was
+                // reading correctly a second earlier — and takes the disk cache with it.
+                do {
+                    health[siteID] = try await client.registryHealth(siteID: siteID)
+                    healthErrors[siteID] = nil
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    healthErrors[siteID] = error.localizedDescription
+                }
                 freshRegistries.insert(siteID)
             }
             errors[siteID] = nil
