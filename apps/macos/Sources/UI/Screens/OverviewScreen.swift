@@ -422,14 +422,20 @@ private struct FeedCard: View {
 
     @Environment(\.isTabPreview) private var isPreview
     @State private var hovering = false
-    /// The rows as they were when the feed was held; nil while it moves.
-    @State private var frozen: [LiveFeedRow]?
+    /// The newest instant on screen when the feed was held; nil while it moves. A hold keeps
+    /// newer rows from arriving, and nothing else: the switches above still apply at once,
+    /// since the pointer is over the card whenever they are clicked.
+    @State private var heldAt: Date?
     /// The visitor under the pointer, as site and visitor token, so every row of that
     /// person's visit lights up together: their path through the site.
     @State private var hoveredVisitor: String?
 
     private var held: Bool { paused || hovering }
-    private var shown: [LiveFeedRow] { frozen ?? rows }
+
+    private var shown: [LiveFeedRow] {
+        guard let heldAt else { return rows }
+        return rows.filter { ($0.event.date ?? .distantPast) <= heldAt }
+    }
 
     /// The site choices as the word switch takes them: all first, then each site.
     private var siteChoices: [SiteChoice] {
@@ -509,7 +515,7 @@ private struct FeedCard: View {
             hovering = inside
         }
         .onChange(of: held) { _, isHeld in
-            frozen = isHeld ? rows : nil
+            heldAt = isHeld ? (rows.first?.event.date ?? .now) : nil
         }
     }
 
