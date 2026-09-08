@@ -12,6 +12,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import {
   FIXTURE_SITE_ID,
   FIXTURE_TOKEN,
+  KEYED_SITE_ID,
+  keyedSite,
+  makeFixtureHome,
   repoRoot,
   requestJson,
   requestText,
@@ -523,5 +526,36 @@ describe("clients routes", () => {
     expect(blank.status).toBe(400)
     const unknown = await requestJson(server, "/api/clients/nope", { method: "DELETE" })
     expect(unknown.status).toBe(404)
+  })
+})
+
+// --- one-time import of vendor keys from the environment ---
+
+describe("environment key import", () => {
+  test("a server started with a vendor key in its environment stores it once and reads through it", async () => {
+    const home = makeFixtureHome([keyedSite])
+    const first = await startServer({
+      entry: NEW_SERVER_ENTRY,
+      configHome: home,
+      env: { RYBBIT_API_KEY: "rybbit-env-key-7777" },
+    })
+    try {
+      const slots = await requestJson(first, `/api/sites/${KEYED_SITE_ID}/secrets`)
+      const rybbit = (slots.body as { slots: ReadonlyArray<{ purpose: string; stored: { last4: string } | null }> }).slots
+        .find((slot) => slot.purpose === "rybbit")
+      expect(rybbit?.stored?.last4).toBe("7777")
+      expect(JSON.stringify(slots.body)).not.toContain("rybbit-env-key-7777")
+    } finally {
+      first.stop()
+    }
+
+    // Same home, no variable any more: the stored key carries the site.
+    const second = await startServer({ entry: NEW_SERVER_ENTRY, configHome: home })
+    try {
+      const { body } = await requestJson(second, `/api/status?site=${KEYED_SITE_ID}`)
+      expect((body as { analytics: { ready: boolean } }).analytics.ready).toBe(true)
+    } finally {
+      second.stop()
+    }
   })
 })

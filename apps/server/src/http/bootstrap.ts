@@ -39,6 +39,15 @@ export const bootstrap = async (): Promise<Boot> => {
 
   const ctx = await makeServerContext()
 
+  // Keys the deployment still carries as environment variables move into the
+  // vault on the first start with a master key; after that the variables are
+  // fallbacks only and can be removed.
+  const imported = await ctx.importEnvironmentKeys()
+  if (imported.stored !== null)
+    console.log(
+      `Imported ${imported.stored} vendor key(s) from the environment into the vault; the variables are now fallbacks only.`,
+    )
+
   // The API routes + their handlers, the raw `/mcp` mount, the unauthenticated
   // `/health` liveness route, and a global bearer middleware that wraps every
   // route so nothing (bar `/health`) is served unauthenticated.

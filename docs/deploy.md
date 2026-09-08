@@ -48,13 +48,14 @@ Vendor keys (Polar, Rybbit, Ahrefs) can be stored through the API instead of the
 - `PUT /api/sites/<id>/secrets/<purpose>` with `{ "value": "…" }` stores a site's key; `PUT /api/secrets/ahrefs` stores the app-wide one. `GET` on the same paths lists statuses (last four characters, when written), never values. See [http-api.md](http-api.md).
 - The server hands a stored key to the provider's adapter under the environment variable it already reads (`RYBBIT_API_KEY`, the site's `revenue.keyVariable`, `AHREFS_API_KEY`), through a per-site ConfigProvider. **A stored key wins over the environment variable; the environment stays the fallback.** So you can move keys over one at a time and remove the env vars in Coolify afterwards.
 - What this protects: copies of the volume and backups. It does not protect against an operator who can read the container's environment — they hold the master key too.
+- **One-time import from the environment.** On the first start with `RP_MASTER_KEY` set, every slot the vault has nothing for is filled from the matching environment variable (each site's analytics and revenue providers, and Ahrefs app-wide), and the server logs `Imported N vendor key(s) from the environment into the vault`. From then on the variables are fallbacks only and can be removed from Coolify.
 - **Rotation:** there is no re-encrypt yet. To change `RP_MASTER_KEY`, delete the stored keys, set the new master key, restart, and store them again.
 
 ## 3d. Clients: per-client tokens
 
 Instead of copying `RP_TOKEN` into every client, issue each one its own token: `POST /api/clients` with `{ "label": "Onno's MacBook" }` answers `201` with the client and its token, once. The server stores only the token's SHA-256 hash (the Clients service, [packages/domain/src/clients/clients.ts](../packages/domain/src/clients/clients.ts)). `GET /api/clients` lists clients with their last use; `DELETE /api/clients/<id>` revokes one, and its token stops working at the next request. The bearer middleware accepts `RP_TOKEN` and any active client token; it answers `503` only when neither exists.
 
-The Mac app keeps its token in the login Keychain. On first launch after this change it copies the target from `~/.config/rankstas-paradise/client.json` into the Keychain and leaves the file for the TUI and Electron client, which still read it.
+Every client reads its token from `RP_API_URL`/`RP_TOKEN` or `~/.config/rankstas-paradise/client.json`; put a client token there instead of the shared one.
 
 ## 4. Google authentication — a service-account key
 
