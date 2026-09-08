@@ -22,6 +22,21 @@ struct PlanningScreen: View {
     private var report: RegistryHealthReport? { rankings.health[overview.id] }
     private var keywords: [KeywordHealth] { report?.keywords ?? [] }
 
+    /// What the screen is looking at: a plan, nothing yet, or nothing and a reason. Every
+    /// empty state below turns on it — see PlanningState for what went wrong without it.
+    private var planningState: PlanningState {
+        PlanningList.state(
+            report: report,
+            reason: rankings.healthErrors[overview.id],
+            loading: loading
+        )
+    }
+
+    private var unavailable: String? {
+        if case let .unavailable(reason) = planningState { return reason }
+        return nil
+    }
+
     /// The difficulty a keyword has to be at or under to count as within reach. Defaults to
     /// the site's own domain rating, and the reader moves it — this is a rough guide across
     /// two vendors' unrelated scales, not a rule, so it belongs on the screen where it can
@@ -47,8 +62,12 @@ struct PlanningScreen: View {
                     .padding(.top, SiteTabScreen.columnInset)
                     .padding(.bottom, 24)
 
-                tiles
-                    .padding(.bottom, 20)
+                // No tiles without a report. Three zeros are a statement about the plan,
+                // and an unanswered request is not entitled to make one.
+                if planningState == .plan {
+                    tiles
+                        .padding(.bottom, 20)
+                }
 
                 if !upcoming.isEmpty {
                     season
@@ -59,6 +78,11 @@ struct PlanningScreen: View {
                     .padding(.bottom, 20)
 
                 list
+
+                if planningState == .plan {
+                    proposed
+                        .padding(.top, 20)
+                }
 
                 if let error = rankings.errors[overview.id] {
                     Text(error)
@@ -103,7 +127,11 @@ struct PlanningScreen: View {
     /// is ambiguous — the same keyword has a different number in every country.
     private var summary: String {
         guard let report else {
-            return loading ? "Loading…" : "No plan to judge yet."
+            if loading { return "Loading…" }
+            // Nothing is claimed about the plan here, because nothing is known about it.
+            return unavailable == nil
+                ? "No plan to judge yet."
+                : "This report did not arrive, so the plan below is not shown — not empty."
         }
         var parts = ["\(report.totals.keywords) \(report.totals.keywords == 1 ? "keyword" : "keywords")"]
         if report.totals.unmeasured < report.totals.keywords {
@@ -315,7 +343,22 @@ struct PlanningScreen: View {
 
     @ViewBuilder
     private var list: some View {
-        if rows.isEmpty {
+        if let unavailable {
+            ContentUnavailableView(
+                "Plan report unavailable",
+                systemImage: "exclamationmark.triangle",
+                // The reason, verbatim from the server. A 404 here means the server is
+                // running a build from before this report existed, which is a deploy and
+                // not something the reader can fix on this screen — so it is named rather
+                // than dressed up as an empty plan.
+                description: Text(
+                    "The server did not answer this report for \(overview.site.name). "
+                        + "The registry itself loaded, so this says nothing about the plan.\n\n"
+                        + unavailable
+                )
+            )
+            .frame(minHeight: 240)
+        } else if rows.isEmpty {
             ContentUnavailableView(
                 keywords.isEmpty ? "No keywords planned" : "No keywords match",
                 systemImage: "text.magnifyingglass",
@@ -336,6 +379,70 @@ struct PlanningScreen: View {
             }
             .padding(.vertical, 4)
             .cardSurface(cornerRadius: 12)
+        }
+    }
+
+    // MARK: Proposed
+
+    private var proposals: [KeywordProposal] {
+        PlanningList.proposals(
+            rankings.proposals[overview.id]?.proposals ?? [],
+            search: state.planningSearch
+        )
+    }
+
+    /// Keywords the site does NOT have, offered for a decision. Below the plan rather than
+    /// mixed into it: a proposal is a suggestion and a planned keyword is a commitment, and
+    /// one list holding both would let a reader act on the wrong one.
+    @ViewBuilder
+    private var proposed: some View {
+        if proposals.isEmpty {
+            // One dim line rather than an empty card. A reader with no proposals has
+            // nothing to act on here, and a card saying so on every site is noise — but
+            // the feature is invisible otherwise, so it says where they come from.
+            Text("No keywords proposed. Ask an agent to run a discovery on a seed keyword.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Text("Proposed")
+                        .font(.headline)
+                    Text("\(proposals.count)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                    Spacer()
+                    // The demand on offer, the counterpart of the Addressable tile. Only
+                    // shown when nothing is filtered out, because a sum over a filtered
+                    // list reads as a total and is not one.
+                    if state.planningSearch.trimmingCharacters(in: .whitespaces).isEmpty,
+                       let totals = rankings.proposals[overview.id]?.totals,
+                       totals.monthlyVolume > 0 {
+                        Text("\(totals.monthlyVolume.formatted(.number.precision(.fractionLength(0)))) searches / month on offer")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Text("Not in the registry. Accepting one is a registry row with a target page and a cluster — decisions to make on the Registry screen, not in one click here.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(proposals) { proposal in
+                        ProposalRow(
+                            proposal: proposal,
+                            reach: reach,
+                            onDismiss: {
+                                Task { await rankings.dismissProposals([proposal.keyword], siteID: overview.id) }
+                            }
+                        )
+                        Divider().opacity(0.4)
+                    }
+                }
+                .padding(.vertical, 4)
+                .cardSurface(cornerRadius: 12)
+            }
         }
     }
 
@@ -443,5 +550,84 @@ private struct PlanningRow: View {
         }
         let signed = gap >= 0 ? "+\(gap.formatted(.number.precision(.fractionLength(0))))" : gap.formatted(.number.precision(.fractionLength(0)))
         return "Difficulty \(value.formatted(.number.precision(.fractionLength(0)))), \(signed) against this site's domain rating."
+    }
+}
+
+/// One proposed keyword: what it is, which seed found it, and what the vendor said when it
+/// was proposed. The numbers are frozen at that moment, which is why they can disagree with
+/// the same keyword's current metric elsewhere.
+private struct ProposalRow: View {
+    let proposal: KeywordProposal
+    let reach: Double
+    let onDismiss: () -> Void
+
+    @State private var dismissing = false
+
+    var body: some View {
+        HStack(spacing: PlanningRow.columnSpacing) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(proposal.keyword)
+                    .font(.callout)
+                HStack(spacing: 6) {
+                    Text("from \(proposal.seed)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let source = ProposalSource(rawValue: proposal.source) {
+                        Text(source.label)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .help(source.help)
+                    }
+                    if let intent = proposal.intent, !intent.isEmpty {
+                        Text(intent)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(proposal.searchVolume.map { $0.formatted(.number.precision(.fractionLength(0))) } ?? "—")
+                .font(.callout)
+                .monospacedDigit()
+                .frame(width: PlanningRow.numberWidth, alignment: .trailing)
+
+            difficulty
+                .frame(width: PlanningRow.numberWidth, alignment: .trailing)
+
+            Button("Dismiss", systemImage: "xmark") {
+                dismissing = true
+                onDismiss()
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .disabled(dismissing)
+            .help("Set aside. A later discovery run will not offer this keyword again.")
+            .frame(width: PlanningRow.peakWidth, alignment: .trailing)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 9)
+        // Dimmed while the server has not confirmed. The row leaves when it has — not
+        // before, because a dismissal is permanent and a row that vanished from a failed
+        // call would read as decided.
+        .opacity(dismissing ? 0.4 : 1)
+    }
+
+    /// Coloured against the reader's own threshold, like the plan's rows. A Google-Ads
+    /// market reports none at all, and a dash is the honest answer.
+    @ViewBuilder
+    private var difficulty: some View {
+        if let value = proposal.difficulty {
+            Text(value.formatted(.number.precision(.fractionLength(0))))
+                .font(.callout)
+                .monospacedDigit()
+                .foregroundStyle(value <= reach ? Palette.mint : Palette.coral)
+        } else {
+            Text("—")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .help("No difficulty. Either the vendor scored none, or this market is served by Google Ads, which does not measure it.")
+        }
     }
 }

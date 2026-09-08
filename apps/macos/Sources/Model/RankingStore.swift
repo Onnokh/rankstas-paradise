@@ -24,6 +24,14 @@ final class RankingStore {
     /// The plan judged on demand. Fetched with the registry, on the same terms: it is the
     /// same plan read the other way round, so one is never shown against a stale other.
     private(set) var health: [Site.ID: RegistryHealthReport] = [:]
+    /// Keywords an expansion proposed and nobody has decided about. Fetched with the
+    /// registry like the health report, and on the same terms: it is the same plan read
+    /// from the other side, so one is never shown against a stale other.
+    private(set) var proposals: [Site.ID: KeywordProposalsReport] = [:]
+    /// Why a site has no plan-health report, when it has none. Kept rather than discarded:
+    /// without it the planning screen cannot tell "this plan has no keywords" from "the
+    /// report never arrived", and it stated the first while meaning the second.
+    private(set) var healthErrors: [Site.ID: String] = [:]
     private(set) var errors: [Site.ID: String] = [:]
     private(set) var loading: Set<Site.ID> = []
 
@@ -85,15 +93,60 @@ final class RankingStore {
             if wantRegistry {
                 let report = try await client.registry(siteID: siteID)
                 registry[siteID] = report.targets
-                // The plan judged on demand rides along, and its failure is swallowed:
-                // this endpoint is newer than the registry, so a server that predates it
-                // answers a 404 — and losing the registry list over a screen the reader
-                // may not even be on would be the wrong trade. The planning screen shows
-                // its own empty state instead.
-                health[siteID] = try? await client.registryHealth(siteID: siteID)
+                // The plan judged on demand rides along, and its failure does not fail
+                // the registry: this endpoint is newer than the registry, so a server
+                // that predates it answers a 404 — and losing the registry list over a
+                // screen the reader may not even be on would be the wrong trade.
+                //
+                // Two things the earlier `try?` got wrong. The reason is kept, because a
+                // screen with no report has to say so rather than describe the plan it
+                // cannot see. And a held report survives a failed refresh, because
+                // otherwise a server that regresses to a 404 blanks a screen that was
+                // reading correctly a second earlier — and takes the disk cache with it.
+                do {
+                    health[siteID] = try await client.registryHealth(siteID: siteID)
+                    healthErrors[siteID] = nil
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    healthErrors[siteID] = error.localizedDescription
+                }
+                // The proposals ride along on the same terms, and their failure is not
+                // reported: unlike the health report, an absent proposal list costs the
+                // reader nothing — there is nothing to say about keywords nobody has
+                // discovered yet, and "none" is what a working server sends too.
+                if let report = try? await client.keywordProposals(siteID: siteID) {
+                    proposals[siteID] = report
+                }
                 freshRegistries.insert(siteID)
             }
             errors[siteID] = nil
+            writeCache(siteID)
+        } catch is CancellationError {
+            return
+        } catch {
+            errors[siteID] = error.localizedDescription
+        }
+    }
+
+    /// Sets proposals aside on the server, then drops them from the held list.
+    ///
+    /// Not optimistic: the rows leave after the server has the decision, because a
+    /// dismissal is permanent — a later discovery run will not offer the keyword again —
+    /// and a row that vanished from a failed call would read as decided when it is not.
+    func dismissProposals(_ keywords: [String], siteID: Site.ID) async {
+        guard !keywords.isEmpty else { return }
+        do {
+            let client = try makeClient()
+            try await client.keywordsDismiss(keywords, siteID: siteID)
+            guard var report = proposals[siteID] else { return }
+            let gone = Set(keywords.map { $0.lowercased() })
+            report.proposals.removeAll { gone.contains($0.keyword.lowercased()) }
+            report.totals = ProposalTotals(
+                proposals: report.proposals.count,
+                monthlyVolume: report.proposals.reduce(0) { $0 + ($1.searchVolume ?? 0) }
+            )
+            proposals[siteID] = report
             writeCache(siteID)
         } catch is CancellationError {
             return
@@ -111,6 +164,7 @@ final class RankingStore {
         var revenue: [Period.RawValue: RevenueReport] = [:]
         var registry: [RegistryTarget]?
         var health: RegistryHealthReport?
+        var proposals: KeywordProposalsReport?
     }
 
     /// Fills whatever the store does not hold yet for the site from disk. Runs once per site;
@@ -131,6 +185,9 @@ final class RankingStore {
         if health[siteID] == nil, let cachedHealth = cached.health {
             health[siteID] = cachedHealth
         }
+        if proposals[siteID] == nil, let cachedProposals = cached.proposals {
+            proposals[siteID] = cachedProposals
+        }
     }
 
     private func cacheURL(_ siteID: Site.ID) -> URL {
@@ -143,7 +200,11 @@ final class RankingStore {
     }
 
     private func writeCache(_ siteID: Site.ID) {
-        var cache = SiteCache(registry: registry[siteID], health: health[siteID])
+        var cache = SiteCache(
+            registry: registry[siteID],
+            health: health[siteID],
+            proposals: proposals[siteID]
+        )
         for period in Period.allCases {
             let key = KeywordsKey(siteID: siteID, period: period)
             cache.keywords[period.rawValue] = keywords[key]

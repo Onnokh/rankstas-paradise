@@ -6,7 +6,40 @@ import Foundation
 ///
 /// The order the server sends is already the useful one — demand first, strongest first —
 /// so this narrows and re-ranks rather than deciding from scratch.
+/// What the planning screen is looking at. Its own type because the screen got this wrong
+/// once: with no report it described the plan anyway, and "the registry maps no keywords
+/// yet" reads as a fact — one that was false about a registry holding forty-five rows.
+///
+/// The distinction that matters is between an EMPTY answer and NO answer. Only the first is
+/// a statement about the plan.
+enum PlanningState: Equatable {
+    /// A report arrived. The list, the tiles and the counts all speak for themselves.
+    case plan
+    /// Nothing has arrived and nothing has failed: the first look at a cold site.
+    case waiting
+    /// Nothing arrived, and this is why. The screen must say so rather than count zeros —
+    /// a 404 here means the server predates the report, which is a deploy and not
+    /// something the reader can fix on this screen.
+    case unavailable(String)
+}
+
 enum PlanningList {
+    /// Which of the three the screen is in. `reason` is why the report is missing, when the
+    /// store knows; a present report wins over it, because a held report is still worth
+    /// reading after a refresh that failed.
+    static func state(
+        report: RegistryHealthReport?,
+        reason: String?,
+        loading: Bool
+    ) -> PlanningState {
+        if report != nil { return .plan }
+        if let reason { return .unavailable(reason) }
+        // Loading and cold read the same: both mean "not yet", and neither is entitled to
+        // say anything about the plan.
+        _ = loading
+        return .waiting
+    }
+
     /// - Parameters:
     ///   - verdicts: keeps only keywords the vendor said this about. Empty keeps every one.
     ///   - search: matched against the keyword, its cluster and its target, case-insensitively.
@@ -31,6 +64,28 @@ enum PlanningList {
             return keyword.keyword.lowercased().contains(needle)
                 || keyword.cluster.lowercased().contains(needle)
                 || keyword.targetUrl.lowercased().contains(needle)
+        }
+    }
+
+    /// Proposals as the screen shows them: narrowed by the same search box as the plan.
+    /// One box over both lists on purpose — the reader's question is about a subject, and
+    /// asking it twice in two fields would be two questions.
+    ///
+    /// The seed is matched as well as the keyword, because the seed is how a reader finds
+    /// the group a run just produced.
+    ///
+    /// Not narrowed by the reach slider, for the same reason the plan is not: a difficulty
+    /// above the threshold is shown and coloured, never hidden. Hiding it would answer
+    /// "what is within reach" with a list that cannot be checked against anything.
+    static func proposals(
+        _ proposals: [KeywordProposal],
+        search: String = ""
+    ) -> [KeywordProposal] {
+        let needle = search.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !needle.isEmpty else { return proposals }
+        return proposals.filter { proposal in
+            proposal.keyword.lowercased().contains(needle)
+                || proposal.seed.lowercased().contains(needle)
         }
     }
 

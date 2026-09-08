@@ -46,6 +46,8 @@ import {
   PagesReport,
   QueriesReport,
   RegistryAddResult,
+  KeywordDismissResult,
+  KeywordProposalsReport,
   RegistryHealthReport,
   RegistryListReport,
   RegistrySetResult,
@@ -86,6 +88,16 @@ export interface Interface {
   readonly registryHealth: (
     site?: SiteId,
   ) => Effect.Effect<RegistryHealthReport, ApiError>
+  // Keyword Proposals waiting on a decision (GET /api/keywords/proposed). A read
+  // of this site's own store — running a discovery costs money and is not on
+  // this client.
+  readonly keywordProposals: (
+    site?: SiteId,
+  ) => Effect.Effect<KeywordProposalsReport, ApiError>
+  readonly keywordsDismiss: (
+    keywords: ReadonlyArray<string>,
+    site?: SiteId,
+  ) => Effect.Effect<KeywordDismissResult, ApiError>
   readonly log: (
     path?: string,
     site?: SiteId,
@@ -315,6 +327,29 @@ export const layer = Layer.effect(
         return yield* send("GET", "/api/registry/health", RegistryHealthReport, {
           query: { site },
         })
+      }),
+
+      keywordProposals: Effect.fn("ApiClient.keywordProposals")(function* (
+        site?: SiteId,
+      ) {
+        return yield* send(
+          "GET",
+          "/api/keywords/proposed",
+          KeywordProposalsReport,
+          { query: { site } },
+        )
+      }),
+
+      keywordsDismiss: Effect.fn("ApiClient.keywordsDismiss")(function* (
+        keywords: ReadonlyArray<string>,
+        site?: SiteId,
+      ) {
+        return yield* send(
+          "POST",
+          "/api/keywords/dismiss",
+          KeywordDismissResult,
+          { query: { site }, body: { keywords } },
+        )
       }),
 
       log: Effect.fn("ApiClient.log")(function* (

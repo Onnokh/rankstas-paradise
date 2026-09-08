@@ -634,6 +634,86 @@ struct KeywordDemand: Codable, Sendable, Equatable, Hashable {
     }
 }
 
+/// `/api/keywords/proposed`: keywords an expansion found that the registry does not hold.
+/// The counterpart of `RegistryHealthReport` — that judges the plan the site HAS, this
+/// offers keywords it does not.
+struct KeywordProposalsReport: Codable, Sendable {
+    let generatedAt: String
+    /// The market these were found in. Nil for a site with none, or an older server.
+    var market: ResolvedMarket? = nil
+    /// `var` because a dismissal drops its rows from the held report rather than
+    /// re-fetching: the server has the decision, and re-reading the list would replace
+    /// rows the reader is still looking at.
+    var totals: ProposalTotals
+    /// Strongest demand first, so a reader who stops after ten rows read the ten worth it.
+    var proposals: [KeywordProposal]
+}
+
+struct ProposalTotals: Codable, Sendable, Equatable {
+    let proposals: Int
+    /// Searches a month behind every proposal: the demand on offer.
+    let monthlyVolume: Double
+}
+
+/// One proposed keyword, with the vendor's numbers AS THEY READ WHEN IT WAS PROPOSED.
+/// Frozen on purpose, so a row may disagree with the same keyword's current metric — a
+/// proposal is the record of why it looked worth the work then.
+struct KeywordProposal: Codable, Sendable, Equatable, Identifiable {
+    let keyword: String
+    /// The keyword this was expanded from. Rows group by it, so a reader can see which of
+    /// their terms opened which door.
+    let seed: String
+    /// "suggestions", "related" or "google-ads" — see `ProposalSource`.
+    let source: String
+    let searchVolume: Double?
+    let difficulty: Double?
+    let costPerClick: Double?
+    let competition: Double?
+    let intent: String?
+    let status: String
+    let discoveredAt: String
+
+    var id: String { keyword }
+
+    var volumeLabel: String? {
+        guard let searchVolume else { return nil }
+        return "\(searchVolume.formatted(.number.precision(.fractionLength(0))))/mo"
+    }
+
+    var difficultyLabel: String? {
+        guard let difficulty else { return nil }
+        return "KD \(difficulty.formatted(.number.precision(.fractionLength(0))))"
+    }
+}
+
+/// Which expansion found a proposal. Worth showing, because it tells the reader how far
+/// from their own subject the row is — and, for `googleAds`, why it has no difficulty.
+enum ProposalSource: String, Sendable {
+    /// A long-tail phrase containing the seed.
+    case suggestions
+    /// A term Google relates to the seed, which need not contain it.
+    case related
+    /// The Google Ads expansion, for markets DataForSEO Labs does not serve. Reports no
+    /// difficulty and no intent at all.
+    case googleAds = "google-ads"
+
+    var label: String {
+        switch self {
+        case .suggestions: "Long tail"
+        case .related: "Related"
+        case .googleAds: "Google Ads"
+        }
+    }
+
+    var help: String {
+        switch self {
+        case .suggestions: "A longer phrase built around your seed. The closest to what you already have."
+        case .related: "A term Google relates to your seed. It need not contain it, so this is where a new subject comes from."
+        case .googleAds: "From the Google Ads expansion, which serves this market. It reports no difficulty and no intent."
+        }
+    }
+}
+
 /// The server's word for where a page stands. A word this build does not know is shown as
 /// the server sent it, with no colour and no explanation.
 enum RegistryPhase: String, Sendable {

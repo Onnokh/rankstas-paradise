@@ -26,6 +26,7 @@ import {
   RegistryTargetProgress,
   Visits,
 } from "../storage/schema.ts"
+import { KeywordProposal } from "../keyword-discovery/schema.ts"
 import { RegistryEntry, RegistryPatch } from "../registry/schema.ts"
 import { SitemapPage } from "../sitemap/schema.ts"
 
@@ -553,6 +554,33 @@ export const RegistryHealthReport = Schema.Struct({
 }).annotate({ identifier: "RegistryHealthReport" })
 export interface RegistryHealthReport
   extends Schema.Schema.Type<typeof RegistryHealthReport> {}
+
+// Keyword Proposals waiting on a decision. Its own report rather than a field on
+// RegistryHealthReport, because the two answer opposite questions: that one
+// judges the plan the Site has, and this one offers keywords it does not.
+export const KeywordProposalsReport = Schema.Struct({
+  // The Market these were found in. Absent for a Site with none, which is also
+  // a Site that can hold no proposals.
+  market: Schema.optional(MarketReport),
+  totals: Schema.Struct({
+    proposals: Schema.Number,
+    // Monthly searches summed over every proposal, which is the demand on offer
+    // — the counterpart of RegistryHealthReport's `monthlyVolume` for the plan
+    // the Site does not have yet.
+    monthlyVolume: Schema.Number,
+  }),
+  proposals: Schema.Array(KeywordProposal),
+}).annotate({ identifier: "KeywordProposalsReport" })
+export interface KeywordProposalsReport
+  extends Schema.Schema.Type<typeof KeywordProposalsReport> {}
+
+export const KeywordDismissResult = Schema.Struct({
+  // Rows that changed, not keywords named: a keyword already dismissed, or never
+  // proposed, changes nothing.
+  dismissed: Schema.Number,
+}).annotate({ identifier: "KeywordDismissResult" })
+export interface KeywordDismissResult
+  extends Schema.Schema.Type<typeof KeywordDismissResult> {}
 
 export const RegistryListReport = Schema.Struct({
   targets: Schema.Array(

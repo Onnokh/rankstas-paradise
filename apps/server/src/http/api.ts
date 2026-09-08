@@ -33,6 +33,8 @@ import {
   QueriesReport,
   RegistryAddInput,
   RegistryAddResult,
+  KeywordDismissResult,
+  KeywordProposalsReport,
   RegistryHealthReport,
   RegistryListReport,
   RegistrySetResult,
@@ -152,6 +154,12 @@ export const apiGroup = HttpApiGroup.make("api")
     HttpApiEndpoint.get("registryHealth", "/api/registry/health", {
       query: { site: S },
       success: enveloped(RegistryHealthReport.fields),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("keywordProposals", "/api/keywords/proposed", {
+      query: { site: S },
+      success: enveloped(KeywordProposalsReport.fields),
     }),
   )
   .add(
@@ -309,6 +317,17 @@ export const apiGroup = HttpApiGroup.make("api")
         patch: Schema.optional(RegistryPatch),
       }),
       success: enveloped(RegistrySetResult.fields),
+    }),
+  )
+  .add(
+    // A dismissal, not a discovery. Discovery spends money on every call and is
+    // driven from MCP, where the caller can read the drop counts and decide
+    // whether to spend again; a button that bills the account is not a thing to
+    // put behind an HTTP route the app polls.
+    HttpApiEndpoint.post("keywordsDismiss", "/api/keywords/dismiss", {
+      query: { site: S },
+      payload: Schema.Struct({ keywords: Schema.Array(Schema.String) }),
+      success: enveloped(KeywordDismissResult.fields),
     }),
   )
   .add(

@@ -61,8 +61,8 @@ final class RankingStoreTests: XCTestCase {
         XCTAssertEqual(store.keywords[RankingStore.KeywordsKey(siteID: "site", period: .d28)]?.first?.query, "new")
         XCTAssertEqual(store.keywords[RankingStore.KeywordsKey(siteID: "site", period: .d7)]?.first?.query, "old",
                        "The other period keeps its rows: they are not shown, and a fetch of their own replaces them.")
-        XCTAssertEqual(StubServer.requests.count - requestsBefore, 5,
-                       "Keywords, events, revenue, the registry, and the plan's health.")
+        XCTAssertEqual(StubServer.requests.count - requestsBefore, 6,
+                       "Keywords, events, revenue, the registry, the plan's health, and its proposals.")
 
         await store.load("site", period: .d7)
         XCTAssertEqual(store.keywords[RankingStore.KeywordsKey(siteID: "site", period: .d7)]?.first?.query, "new",
@@ -72,8 +72,7 @@ final class RankingStoreTests: XCTestCase {
     func testAServerWithoutTheHealthEndpointStillGivesUpTheRegistry() async {
         // The endpoint is newer than the registry, so an older server 404s it. Losing the
         // registry list over a screen the reader may not even be on would be the wrong
-        // trade, so the failure is swallowed and the planning screen shows its own empty
-        // state.
+        // trade, so the failure does not fail the registry.
         StubServer.healthOK = false
         let store = makeStore()
         await store.load("site", period: .d28)
@@ -81,6 +80,87 @@ final class RankingStoreTests: XCTestCase {
         XCTAssertEqual(store.registry["site"]?.count, 1)
         XCTAssertNil(store.health["site"])
         XCTAssertNil(store.errors["site"], "A missing health endpoint is not an error to show.")
+        // But the reason is kept. Without it the planning screen has to guess why it has
+        // no report, and it guessed "this registry maps no keywords" — which reads as a
+        // fact about the plan and was wrong about a registry holding forty-five rows.
+        XCTAssertNotNil(store.healthErrors["site"],
+                        "A screen with no report must be able to say why, not describe a plan it cannot see.")
+    }
+
+    func testProposalsArriveWithTheRegistry() async {
+        let store = makeStore()
+        await store.load("site", period: .d28)
+
+        XCTAssertEqual(store.proposals["site"]?.proposals.count, 2)
+        XCTAssertEqual(store.proposals["site"]?.proposals.first?.keyword, "mount tracker addon")
+        XCTAssertEqual(store.proposals["site"]?.totals.monthlyVolume, 570)
+    }
+
+    func testAServerWithoutTheProposalsEndpointIsNotAnError() async {
+        // Unlike the health report, an absent proposal list costs the reader nothing:
+        // "none" is what a working server sends for a site nobody has run a discovery on.
+        StubServer.proposalsOK = false
+        let store = makeStore()
+        await store.load("site", period: .d28)
+
+        XCTAssertEqual(store.registry["site"]?.count, 1)
+        XCTAssertNil(store.proposals["site"])
+        XCTAssertNil(store.errors["site"])
+    }
+
+    func testDismissingDropsTheRowAndRecountsTheDemandOnOffer() async {
+        // The total has to follow the list. A sum left at 570 beside one row reading 480
+        // would be a claim about demand that no row supports.
+        let store = makeStore()
+        await store.load("site", period: .d28)
+
+        await store.dismissProposals(["Mount Tracker App"], siteID: "site")
+
+        XCTAssertEqual(store.proposals["site"]?.proposals.map(\.keyword), ["mount tracker addon"])
+        XCTAssertEqual(store.proposals["site"]?.totals.proposals, 1)
+        XCTAssertEqual(store.proposals["site"]?.totals.monthlyVolume, 480)
+        XCTAssertNil(store.errors["site"])
+    }
+
+    func testDismissingNothingAsksTheServerNothing() async {
+        let store = makeStore()
+        await store.load("site", period: .d28)
+        let before = StubServer.requests.count
+
+        await store.dismissProposals([], siteID: "site")
+
+        XCTAssertEqual(StubServer.requests.count, before,
+                       "An empty dismissal is a no-op, not a request.")
+    }
+
+    func testAFailedHealthRefreshKeepsTheReportItAlreadyHad() async {
+        // A server that regresses — redeployed older, or briefly broken — must not blank a
+        // screen that was reading correctly a second earlier, and must not take the disk
+        // cache down with it.
+        let store = makeStore()
+        await store.load("site", period: .d28)
+        XCTAssertEqual(store.health["site"]?.totals.hasDemand, 1)
+
+        StubServer.healthOK = false
+        await store.refresh("site", period: .d28)
+
+        XCTAssertEqual(store.health["site"]?.totals.hasDemand, 1,
+                       "The held report stays until a newer one replaces it.")
+        XCTAssertNotNil(store.healthErrors["site"])
+    }
+
+    func testASucceedingHealthFetchClearsAnEarlierReason() async {
+        // The other direction: once the report arrives, the screen must stop apologising.
+        StubServer.healthOK = false
+        let store = makeStore()
+        await store.load("site", period: .d28)
+        XCTAssertNotNil(store.healthErrors["site"])
+
+        StubServer.healthOK = true
+        await store.refresh("site", period: .d28)
+
+        XCTAssertNil(store.healthErrors["site"])
+        XCTAssertEqual(store.health["site"]?.totals.hasDemand, 1)
     }
 
     func testTheHealthReportArrivesWithTheRegistry() async {
@@ -128,12 +208,15 @@ private enum StubServer {
     nonisolated(unsafe) static var requests: [URL] = []
     /// Set false to stand in for a server that does not serve /api/registry/health yet.
     nonisolated(unsafe) static var healthOK = true
+    /// Set false to stand in for a server that does not serve /api/keywords/proposed yet.
+    nonisolated(unsafe) static var proposalsOK = true
 
     static func reset() {
         queryLabel = "query"
         delay = .zero
         requests = []
         healthOK = true
+        proposalsOK = true
     }
 
     static func client() -> APIClient {
@@ -174,6 +257,29 @@ private enum StubServer {
             // nothing. `healthOK = false` stands in for that, and the point of the case is
             // that the registry survives it.
             json = healthOK ? healthBody(queryLabel) : "{}"
+        case "/api/keywords/proposed":
+            // `proposalsOK = false` stands in for a server that predates this endpoint.
+            // Unlike the health report, its absence is not reported: there is nothing to
+            // say about keywords nobody has discovered.
+            json = proposalsOK
+                ? """
+                {"generatedAt":"2026-09-08T07:00:00Z",
+                 "totals":{"proposals":2,"monthlyVolume":570},
+                 "proposals":[
+                   {"keyword":"mount tracker addon","seed":"mount tracker",
+                    "source":"suggestions","searchVolume":480,"difficulty":18,
+                    "costPerClick":0.8,"competition":0.3,"intent":"informational",
+                    "status":"proposed","discoveredAt":"2026-09-08T00:00:00Z"},
+                   {"keyword":"mount tracker app","seed":"mount tracker",
+                    "source":"related","searchVolume":90,"difficulty":null,
+                    "costPerClick":null,"competition":null,"intent":null,
+                    "status":"proposed","discoveredAt":"2026-09-08T00:00:00Z"}]}
+                """
+                : "{}"
+        case "/api/keywords/dismiss":
+            json = """
+            {"dismissed":1}
+            """
         case "/api/registry":
             json = """
             {"generatedAt":"2026-09-08T07:00:00Z",

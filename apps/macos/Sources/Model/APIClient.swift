@@ -86,6 +86,29 @@ struct APIClient: Sendable {
         )
     }
 
+    func keywordProposals(siteID: String) async throws -> KeywordProposalsReport {
+        try await get(
+            path: "/api/keywords/proposed",
+            query: [URLQueryItem(name: "site", value: siteID)]
+        )
+    }
+
+    /// Sets proposals aside; answers how many rows changed. There is no `discover` here on
+    /// purpose: a discovery run costs money on every call, so it is asked for over MCP
+    /// where the caller can read the drop counts before spending again.
+    @discardableResult
+    func keywordsDismiss(_ keywords: [String], siteID: String) async throws -> Int {
+        struct Body: Encodable { let keywords: [String] }
+        struct Result: Decodable, Sendable { let dismissed: Int }
+        let result: Result = try await send(
+            method: "POST",
+            path: "/api/keywords/dismiss",
+            query: [URLQueryItem(name: "site", value: siteID)],
+            body: Body(keywords: keywords)
+        )
+        return result.dismissed
+    }
+
     func get<Response: Decodable & Sendable>(
         path: String,
         query: [URLQueryItem] = []
