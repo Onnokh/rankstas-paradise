@@ -69,9 +69,20 @@ struct APIClient: Sendable {
         try await get(path: "/api/registry", query: [URLQueryItem(name: "site", value: siteID)])
     }
 
-    private func get<Response: Decodable & Sendable>(
+    func get<Response: Decodable & Sendable>(
         path: String,
         query: [URLQueryItem] = []
+    ) async throws -> Response {
+        try await send(method: "GET", path: path, query: query, body: Optional<Int>.none)
+    }
+
+    /// One round trip with an optional JSON body. Every write the settings pages make goes
+    /// through here; the response envelope is decoded as `Response`.
+    func send<Body: Encodable & Sendable, Response: Decodable & Sendable>(
+        method: String,
+        path: String,
+        query: [URLQueryItem] = [],
+        body: Body?
     ) async throws -> Response {
         guard let baseURL = target.baseURL,
               var components = URLComponents(
@@ -87,8 +98,13 @@ struct APIClient: Sendable {
         }
 
         var request = URLRequest(url: url)
+        request.httpMethod = method
         request.setValue("Bearer \(target.token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(body)
+        }
         request.timeoutInterval = 20
 
         let (data, response) = try await session.data(for: request)
@@ -96,8 +112,7 @@ struct APIClient: Sendable {
             throw APIError.invalidResponse
         }
         guard (200..<300).contains(http.statusCode) else {
-            let body = String(data: data, encoding: .utf8)
-            throw APIError.http(status: http.statusCode, body: body)
+            throw APIError.http(status: http.statusCode, body: APIError.serverMessage(in: data))
         }
 
         do {
@@ -114,6 +129,15 @@ enum APIError: LocalizedError {
     case http(status: Int, body: String?)
     case decoding(String)
 
+    /// The server's `{ "error": "…" }` message when the body is one, else the raw body.
+    static func serverMessage(in data: Data) -> String? {
+        if let envelope = try? JSONDecoder().decode([String: String].self, from: data),
+           let message = envelope["error"] {
+            return message
+        }
+        return String(data: data, encoding: .utf8)
+    }
+
     var errorDescription: String? {
         switch self {
         case .invalidBaseURL(let value):
@@ -121,7 +145,7 @@ enum APIError: LocalizedError {
         case .invalidResponse:
             "The server returned an invalid response."
         case .http(let status, let body):
-            "The server returned HTTP \(status).\(body.map { " \($0)" } ?? "")"
+            body.map { "\($0) (HTTP \(status))" } ?? "The server returned HTTP \(status)."
         case .decoding(let message):
             "The dashboard response did not match the expected shape: \(message)"
         }

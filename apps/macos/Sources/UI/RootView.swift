@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// Hosts the tab bar, the mounted tab screens, and the peek.
@@ -126,6 +127,10 @@ struct RootView: View {
         .focusedSceneValue(\.refresh) { refresh(workspace.activeTabID) }
         .task {
             await model.start()
+        }
+        // A site added, changed, or removed in Settings shows up here without a manual refresh.
+        .onReceive(NotificationCenter.default.publisher(for: .settingsDidChangeSites)) { _ in
+            Task { await model.refresh() }
         }
         .onChange(of: model.sites.map(\.id), initial: true) { _, siteIDs in
             workspace.reconcile(siteIDs: siteIDs)

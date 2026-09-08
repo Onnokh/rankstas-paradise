@@ -25,6 +25,17 @@ Prefer a per-client token from `POST /api/clients` over the shared `RP_TOKEN` (s
 }
 ```
 
+## Settings (⌘,)
+
+The Settings window is where a server is set up without touching Coolify or the volume:
+
+- **Server** — the address and token this Mac uses (kept in the Keychain), and "Use a token of this Mac's own", which asks the server for a client token and switches to it.
+- **Sites** — one page per site: name, property, origin, sitemap URL, brand terms; the analytics and revenue providers with their fields; and a key row per provider that shows where the key comes from (stored on the server, the server's environment, or missing) and stores a new one. "Add Site…" creates a site from an id and a property. Removing a site takes it out of the catalog and leaves its data on disk.
+- **Keys** — the app-wide keys (Ahrefs).
+- **Clients** — every client with a token of its own, with last use; create one (the token is shown once) or revoke one.
+
+Saving a site posts a notification the main window listens for, so the overview refreshes on its own.
+
 ## Run
 
 Open `RankstasParadise.xcodeproj` in Xcode and run the
