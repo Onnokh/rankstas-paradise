@@ -306,17 +306,10 @@ struct SiteTabScreen: View {
                 HStack(spacing: 14) {
                     Button("Registry") { state.path.append(.registry) }
                     Button("Log") { state.path.append(.log) }
-                    Button("Refresh", systemImage: "arrow.clockwise") {
-                        onRefresh()
-                        Task { await history.refresh(overview.id) }
-                        Task { await live.refresh(overview.id) }
-                        if state.period != .today {
-                            Task { await rankings.refresh(overview.id, period: state.period) }
-                        }
-                    }
-                    .labelStyle(.iconOnly)
-                    .disabled(isRefreshing || history.refreshing.contains(overview.id))
-                    .help("Refresh")
+                    Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
+                        .labelStyle(.iconOnly)
+                        .disabled(isRefreshing || history.refreshing.contains(overview.id))
+                        .help("Refresh (⌘R)")
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)

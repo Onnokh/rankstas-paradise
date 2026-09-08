@@ -16,8 +16,11 @@ extension EnvironmentValues {
 /// What a screen can ask the workspace to do. Previews get no-ops.
 struct TabActions {
     var activate: (TabID) -> Void
+    /// Fetches everything the tab shows again. The screen's own button and View > Refresh
+    /// (⌘R) both land here.
+    var refresh: (TabID) -> Void
 
-    @MainActor static let none = TabActions(activate: { _ in })
+    @MainActor static let none = TabActions(activate: { _ in }, refresh: { _ in })
 }
 
 /// Renders one tab's current screen from its state.
@@ -40,7 +43,8 @@ struct TabScreen: View {
             OverviewScreen(
                 model: model,
                 state: workspace.overviewState,
-                onOpenSite: { actions.activate(.site($0)) }
+                onOpenSite: { actions.activate(.site($0)) },
+                onRefresh: { actions.refresh(.overview) }
             )
         case .site(let siteID):
             if let overview = model.overviews.first(where: { $0.id == siteID }) {
@@ -52,7 +56,7 @@ struct TabScreen: View {
                     live: live,
                     icon: favicons.image(for: siteID),
                     isRefreshing: model.isRefreshing,
-                    onRefresh: { Task { await model.refresh() } }
+                    onRefresh: { actions.refresh(tab) }
                 )
             } else {
                 ContentUnavailableView(
