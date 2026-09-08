@@ -20,6 +20,9 @@ Everything a catalog entry holds except its id: the Search Console property, nam
 The API key a provider (Polar, Rybbit, Ahrefs) is read with. Stored encrypted in the vault, addressed by scope (a site, or the app) and purpose (the provider name), and handed to the provider's adapter under the environment variable it reads. The environment variable is the fallback. Never part of Site settings.
 _Avoid_: "secret" for the concept in prose (the code's name for the vault entry); "credential".
 
+**Client**:
+One program that talks to the server with its own bearer token: a Mac, a TUI, an agent. A client's token is shown once when the client is created; the server keeps its hash, and revoking the client ends the token. The shared `RP_TOKEN` is the bootstrap and break-glass token beside them.
+
 **Page**:
 A URL on a site — the Search Console "Page" dimension, and the unit measured by true totals.
 _Avoid_: "target" as a synonym (a target URL is a narrower idea; see below).

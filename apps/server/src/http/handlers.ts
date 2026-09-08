@@ -12,7 +12,7 @@
 //   - number params validate to a positive number (bad -> 400);
 //   - POST /api/jobs/sync seeds the debug fixture in --debug mode (closing the
 //     seeding gap the new Sync dropped) and returns the legacy summary string.
-import { Effect } from "effect"
+import { Effect, Redacted } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { type HttpServerResponse } from "effect/unstable/http"
 
@@ -54,7 +54,12 @@ const SITE_REQUIRED = "site is required: add ?site=<id> (see GET /api/sites)"
 // an entry the server could not serve 400. Anything else is the legacy 400.
 const catalogStatus = (cause: unknown): number => {
   const tag = (cause as { _tag?: string } | null)?._tag
-  if (tag === "UnknownSiteError" || tag === "UnknownSecretError") return 404
+  if (
+    tag === "UnknownSiteError" ||
+    tag === "UnknownSecretError" ||
+    tag === "UnknownClientError"
+  )
+    return 404
   if (tag === "SiteExistsError") return 409
   if (tag === "EncryptionUnavailableError") return 503
   return 400
@@ -350,6 +355,24 @@ export const makeApiGroup = (ctx: ServerContext) => {
             await ctx.forget(site.id)
             return { removed: params.purpose }
           }),
+        ),
+      )
+      .handle("clients", () =>
+        Effect.promise(() =>
+          catalogJson(async () => ({ clients: await ctx.clients.list() })),
+        ),
+      )
+      .handle("clientCreate", ({ payload }) =>
+        Effect.promise(() =>
+          catalogJson(async () => {
+            const { client, token } = await ctx.clients.create(payload.label)
+            return { client, token: Redacted.value(token) }
+          }, 201),
+        ),
+      )
+      .handle("clientRevoke", ({ params }) =>
+        Effect.promise(() =>
+          catalogJson(async () => ({ client: await ctx.clients.revoke(params.id) })),
         ),
       )
       .handle("status", ({ query }) =>

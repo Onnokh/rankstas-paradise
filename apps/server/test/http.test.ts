@@ -467,3 +467,47 @@ describe("secrets routes", () => {
     }
   })
 })
+
+// --- per-client tokens ---
+
+describe("clients routes", () => {
+  test("POST /api/clients issues a token once; the token authenticates until revoked", async () => {
+    const created = await requestJson(server, "/api/clients", {
+      method: "POST",
+      body: { label: "Test Mac" },
+    })
+    expect(created.status).toBe(201)
+    const { client, token } = created.body as {
+      client: { id: string; label: string; revokedAt: null }
+      token: string
+    }
+    expect(client.label).toBe("Test Mac")
+    expect(token.startsWith("rp_")).toBe(true)
+
+    // The list shows the client but never the token.
+    const listed = await requestJson(server, "/api/clients")
+    expect(listed.status).toBe(200)
+    expect(JSON.stringify(listed.body)).toContain(client.id)
+    expect(JSON.stringify(listed.body)).not.toContain(token)
+
+    // The issued token is a valid bearer on any route.
+    const withClient = await requestJson(server, `/api/status${site}`, { token })
+    expect(withClient.status).toBe(200)
+
+    const revoked = await requestJson(server, `/api/clients/${client.id}`, { method: "DELETE" })
+    expect(revoked.status).toBe(200)
+    expect((revoked.body as { client: { revokedAt: string | null } }).client.revokedAt).not.toBeNull()
+
+    const afterRevoke = await requestJson(server, `/api/status${site}`, { token })
+    expect(afterRevoke.status).toBe(401)
+  })
+
+  test("a made-up rp_ token → 401; a blank label → 400; an unknown id → 404", async () => {
+    const forged = await requestJson(server, `/api/status${site}`, { token: "rp_forged" })
+    expect(forged.status).toBe(401)
+    const blank = await requestJson(server, "/api/clients", { method: "POST", body: { label: "  " } })
+    expect(blank.status).toBe(400)
+    const unknown = await requestJson(server, "/api/clients/nope", { method: "DELETE" })
+    expect(unknown.status).toBe(404)
+  })
+})
