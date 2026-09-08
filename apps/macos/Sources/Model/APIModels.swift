@@ -444,14 +444,80 @@ struct RegistryListReport: Codable, Sendable {
 struct RegistryTarget: Codable, Sendable, Equatable, Identifiable {
     /// A site-relative path, "/foo".
     let targetUrl: String
+    /// Where the page stands, in the server's own word: see `RegistryPhase`.
     let phase: String
     let status: String
     let window: TidyMetrics
     /// The provider's visits over the same 28 days. Nil when the site has no provider, has
     /// synced nothing yet, or the server predates the field.
     var visits: VisitsWindow? = nil
+    /// Google's last verdict on the page: "indexed", "not-indexed" or "unknown". Optional so
+    /// an older server and a snapshot written before the field still decode.
+    var indexed: String? = nil
+    /// Google's own words for that verdict, "Submitted and indexed"; nil when the page was
+    /// never inspected.
+    var coverageState: String? = nil
+    /// When Google last inspected the page, an ISO 8601 instant.
+    var inspectedAt: String? = nil
+    /// The registry's own fields for the page, from its first row. Every one is optional:
+    /// a snapshot written before the field, or an older server, must still decode.
+    var priority: String? = nil
+    var intent: String? = nil
+    var publishedAt: String? = nil
+    var baselineDate: String? = nil
+    var whyOpportunity: String? = nil
+    /// The first day the window measures from.
+    var measuredFrom: String? = nil
+    /// The same figures before the page was published, when there is a baseline to compare
+    /// the window against.
+    var baseline: TidyMetrics? = nil
+    /// The keywords mapped to the page. Absent for a page the sitemap contributed, and for a
+    /// snapshot written before the field.
+    var keywords: [RegistryKeyword]? = nil
 
     var id: String { targetUrl }
+
+    /// Google reports the page is not in its index. A page Google has not spoken about
+    /// ("unknown", or a server that sends nothing) is not called unindexed.
+    var isUnindexed: Bool { indexed == "not-indexed" }
+
+    var mappedKeywords: [RegistryKeyword] { keywords ?? [] }
+}
+
+/// One keyword mapped to a target page.
+struct RegistryKeyword: Codable, Sendable, Equatable, Identifiable, Hashable {
+    let keyword: String
+    let cluster: String
+    let intent: String
+    let country: String
+
+    var id: String { keyword + "|" + country }
+}
+
+/// The server's word for where a page stands. A word this build does not know is shown as
+/// the server sent it, with no colour and no explanation.
+enum RegistryPhase: String, Sendable {
+    /// Keywords mapped, and searches reached it in the window.
+    case live = "LIVE"
+    /// From the sitemap, with no keywords mapped: inventory.
+    case page = "PAGE"
+    /// Measuring, and no non-brand impression yet. Named for what it says rather than for
+    /// the server's word, which would read as `Optional.none` at every use.
+    case measuring = "NONE"
+    /// Published, waiting for Search Console to finalise the days after it.
+    case pre = "PRE"
+    /// In the registry, with no observation at all yet.
+    case new = "NEW"
+
+    var meaning: String {
+        switch self {
+        case .live: "Keywords are mapped and searches reached the page in this window."
+        case .page: "A page from the sitemap, with no keywords mapped to it."
+        case .measuring: "Measuring: no non-brand impression in the window yet."
+        case .pre: "Published: waiting for Search Console to finalise the days after it."
+        case .new: "In the registry, with no Search Console observation yet."
+        }
+    }
 }
 
 /// Pageviews and visits over a window and the one before it, as the server tidies them.

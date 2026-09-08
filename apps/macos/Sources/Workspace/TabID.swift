@@ -25,6 +25,12 @@ final class SiteTabState {
     var path: [SiteScreen] = []
     /// The span the metric cards and chart cover.
     var period: Period = .d28
+    /// The Registry sub-screen: how its list is ranked, what it is narrowed to, and which
+    /// page is open. Selections like the period above, so they survive a tab switch.
+    var registrySort: RegistrySort = .impressions
+    var registryUnindexedOnly = false
+    var registrySearch = ""
+    var registryOpenPath: String?
 
     init(siteID: Site.ID) {
         self.siteID = siteID

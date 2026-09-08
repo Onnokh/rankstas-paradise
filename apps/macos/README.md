@@ -75,6 +75,8 @@ xcodegen generate
 - `Sources/Gesture` — three-finger trackpad drag recogniser streaming travel and velocity.
 - `Sources/UI` — `RootView`, `TabBar`, `PeekOverlay`, `TabContentStack`, and `PeekLayout`, the pure struct that turns window size plus peek progress into every frame.
 - `Sources/UI/Screens` — one screen per tab kind, rendered from tab state so previews match the live screen.
+  A site tab also carries sub-screens: Opportunities, and Registry, which lists every target page with its
+  window, phase and keywords. Pages Google reports as not indexed are dimmed there and in the ranking card.
 
 Peek: swipe down with three fingers (or ⌘⇧P) to reveal live previews under the tabs; keep swiping for the grid. Esc or a click closes it. ⌘1…⌘9 select tabs; ⌘← and ⌘→ step between them. View > Refresh (⌘R) refreshes the active tab.
 
