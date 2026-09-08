@@ -296,6 +296,54 @@ const median = (values: ReadonlyArray<number>) => {
 const positionBand = (position: number) =>
   position <= 3 ? "1–3" : position <= 5 ? "4–5" : "6–10"
 
+// --- Operator queries ---
+//
+// Search Console reports a `site:` search as an ordinary Query row with
+// impressions: `(shadertown.com) (site:sleevy.app or site:www.shadertown.com)`
+// arrived twice on one site. Nobody searched for that phrase — it is the trace
+// of somebody auditing a domain in Google — so read as demand it invents an
+// Opportunity, most visibly a new-demand one, that no page could ever satisfy.
+// It also becomes a billed row the day a keyword-metrics vendor is wired in.
+//
+// Ruled out at read time, beside the brand filter, rather than dropped at
+// ingest: a kept row can be reconsidered when this rule turns out to be wrong,
+// and Brand query already works exactly this way — a view over the ledger,
+// never a deletion.
+//
+// The boundary is deliberate and narrow. An Operator query leaves Opportunity
+// detection and any surface that offers Queries as keyword candidates; it stays
+// in all-queries, in non-brand, and in true totals. All-queries is defined as a
+// mechanical sum over the stored per-query rows, and true totals come from
+// Google's query-less daily figures, which we could not change if we wanted to.
+// A headline number that no longer reconciles with Search Console is a worse
+// fault than a Query row nobody would ever plan against.
+//
+// The token list is short on purpose. A natural search term essentially never
+// holds an operator token followed by a colon, so the whole false-positive risk
+// sits in which tokens are listed: `define`, `before`, `after` and bare schemes
+// like `https` are left out because a person could plausibly type them. The
+// token must also begin a word, or `opposite:` would read as `site:`.
+const operatorTokens = [
+  "site",
+  "inurl",
+  "intitle",
+  "intext",
+  "allintitle",
+  "allinurl",
+  "allintext",
+  "cache",
+  "related",
+  "filetype",
+] as const
+
+const operatorQueryPattern = new RegExp(
+  `(^|[^a-z0-9])(${operatorTokens.join("|")}):`,
+  "i",
+)
+
+export const isOperatorQuery = (query: string): boolean =>
+  operatorQueryPattern.test(query)
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -547,14 +595,23 @@ export const layer = Layer.effect(
         const currentStart = dateDaysBefore(latestDate, 27)
         const previousEnd = dateDaysBefore(currentStart, 1)
         const previousStart = dateDaysBefore(previousEnd, 27)
+        // Every one of the four Opportunity kinds is derived from these rows,
+        // so dropping Operator queries here — and only here — keeps them out of
+        // all four, and out of the CTR benchmark the kinds are measured
+        // against, while leaving every metric read untouched. SQLite's `like`
+        // has no word boundary, so the token test is a regular expression in
+        // TypeScript rather than another SQL fragment beside `nonBrandFilter`.
         const windowRows = (start: string, end: string) =>
-          sql<Opportunity>`
-            select query, page, sum(impressions) as impressions, sum(clicks) as clicks,
-                   sum(clicks) * 1.0 / sum(impressions) as ctr,
-                   sum(position * impressions) * 1.0 / sum(impressions) as position
-            from search_snapshot
-            where date between ${start} and ${end} and ${nonBrandFilter}
-            group by query, page`
+          Effect.map(
+            sql<Opportunity>`
+              select query, page, sum(impressions) as impressions, sum(clicks) as clicks,
+                     sum(clicks) * 1.0 / sum(impressions) as ctr,
+                     sum(position * impressions) * 1.0 / sum(impressions) as position
+              from search_snapshot
+              where date between ${start} and ${end} and ${nonBrandFilter}
+              group by query, page`,
+            (rows) => rows.filter((row) => !isOperatorQuery(row.query)),
+          )
         const current = yield* windowRows(currentStart, latestDate)
         const previous = yield* windowRows(previousStart, previousEnd)
         const previousByKey = new Map(
