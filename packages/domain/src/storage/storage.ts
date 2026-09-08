@@ -303,7 +303,6 @@ export const layer = Layer.effect(
     const resolved = yield* site.current()
     const databasePath = yield* site.databasePath()
     const origin = resolved.origin
-    const brandPattern = `%${resolved.brandTerms[0]!.toLowerCase()}%`
 
     yield* Effect.sync(() =>
       mkdirSync(databasePath.slice(0, databasePath.lastIndexOf("/")), {
@@ -313,6 +312,21 @@ export const layer = Layer.effect(
 
     const sql = yield* SqliteClient.make({ filename: databasePath }).pipe(
       Effect.provide(Reactivity.layer),
+    )
+
+    // Non-brand is all-queries with every Brand query filtered out, so every
+    // configured brand term gets its own `not like` — a site lists its
+    // misspellings, product names and domain variants alongside its name, and
+    // a term left unfiltered inflates non-brand clicks and impressions and can
+    // read the site's own brand searches as new-demand Opportunities. Blank
+    // terms are dropped so they never compile to `like '%%'`, which would
+    // exclude every Query; `sql.and([])` compiles to `1=1`, so a site with no
+    // brand terms filters nothing rather than everything.
+    const nonBrandFilter = sql.and(
+      resolved.brandTerms
+        .map((term) => term.trim().toLowerCase())
+        .filter((term) => term.length > 0)
+        .map((term) => sql`lower(query) not like ${`%${term}%`}`),
     )
 
     const storageError =
@@ -539,7 +553,7 @@ export const layer = Layer.effect(
                    sum(clicks) * 1.0 / sum(impressions) as ctr,
                    sum(position * impressions) * 1.0 / sum(impressions) as position
             from search_snapshot
-            where date between ${start} and ${end} and lower(query) not like ${brandPattern}
+            where date between ${start} and ${end} and ${nonBrandFilter}
             group by query, page`
         const current = yield* windowRows(currentStart, latestDate)
         const previous = yield* windowRows(previousStart, previousEnd)
@@ -716,7 +730,7 @@ export const layer = Layer.effect(
                      sum(position * impressions) * 1.0 / sum(impressions) as position
               from search_snapshot
               where page = ${page} and date between ${start} and ${latestDate}
-                and lower(query) not like ${brandPattern}
+                and ${nonBrandFilter}
               group by date`
         const byDate = new Map(rows.map((row) => [row.date, row]))
         const days = Array.from({ length: 28 }, (_, index) => {
@@ -789,7 +803,7 @@ export const layer = Layer.effect(
                    case when sum(impressions) > 0 then sum(clicks) * 1.0 / sum(impressions) else 0 end as ctr,
                    case when sum(impressions) > 0 then sum(position * impressions) * 1.0 / sum(impressions) else 0 end as position
             from search_snapshot
-            where page = ${targetUrl} and date between ${windowStart} and ${latestDate} and lower(query) not like ${brandPattern}`
+            where page = ${targetUrl} and date between ${windowStart} and ${latestDate} and ${nonBrandFilter}`
           const keywordRows = yield* sql<Metrics>`
             select coalesce(sum(clicks), 0) as clicks,
                    coalesce(sum(impressions), 0) as impressions,
@@ -886,7 +900,7 @@ export const layer = Layer.effect(
                    sum(clicks) * 1.0 / sum(impressions) as ctr,
                    sum(position * impressions) * 1.0 / sum(impressions) as position
             from search_snapshot
-            where date between ${start} and ${end} and (${includeBrand ? 1 : 0} = 1 or lower(query) not like ${brandPattern})
+            where date between ${start} and ${end} and (${includeBrand ? 1 : 0} = 1 or ${nonBrandFilter})
             group by page`
         const totalsWindow = (start: string, end: string) =>
           sql<Grouped>`
@@ -976,7 +990,7 @@ export const layer = Layer.effect(
                    sum(position * impressions) * 1.0 / sum(impressions) as position
             from search_snapshot
             where date between ${start} and ${end}
-              and (${includeBrand ? 1 : 0} = 1 or lower(query) not like ${brandPattern})
+              and (${includeBrand ? 1 : 0} = 1 or ${nonBrandFilter})
               and (${page ?? ""} = '' or page = ${page ?? ""})
             group by query, page`
         const current = yield* windowRows(currentStart, latestDate)
@@ -1023,7 +1037,7 @@ export const layer = Layer.effect(
                  case when sum(impressions) > 0 then sum(position * impressions) * 1.0 / sum(impressions) else 0 end as position
           from search_snapshot
           where page = ${`${origin}${targetUrl}`} and date between ${start} and ${end}
-            and (${includeBrand ? 1 : 0} = 1 or lower(query) not like ${brandPattern})`
+            and (${includeBrand ? 1 : 0} = 1 or ${nonBrandFilter})`
         return rows[0]!
       })
 
@@ -1215,7 +1229,7 @@ export const layer = Layer.effect(
                      case when sum(impressions) > 0 then sum(clicks) * 1.0 / sum(impressions) else 0 end as ctr,
                      case when sum(impressions) > 0 then sum(position * impressions) * 1.0 / sum(impressions) else 0 end as position
               from search_snapshot
-              where page = ${target} and date between ${windowStart} and ${windowEnd} and lower(query) not like ${brandPattern}`
+              where page = ${target} and date between ${windowStart} and ${windowEnd} and ${nonBrandFilter}`
             const row = rows[0]!
             yield* sql`
               insert into page_baseline (target_url, baseline_date, window_start, window_end, clicks, impressions, ctr, position)

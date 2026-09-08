@@ -24,9 +24,9 @@ const site: Site = {
   brandTerms: ["brandy"],
 } satisfies Site
 
-const currentSiteLayer = (dir: string, dbPath: string) =>
+const currentSiteLayer = (dir: string, dbPath: string, forSite: Site = site) =>
   Layer.succeed(CurrentSite.Service, {
-    current: () => Effect.succeed(site),
+    current: () => Effect.succeed(forSite),
     dataDirectory: () => Effect.succeed(dir),
     databasePath: () => Effect.succeed(dbPath),
     registryPath: () => Effect.succeed(join(dir, "keyword-registry.csv")),
@@ -590,4 +590,114 @@ test("visits reads are empty, not failures, for a site with no visits", async ()
   expect((await run(Storage.use.pageVisitsOverview())).latestDate).toBeNull()
   expect(await run(Storage.use.eventWindow())).toEqual([])
   expect(await run(Storage.use.latestVisitsSyncedAt())).toBeNull()
+})
+
+// --- brand filtering: every configured brand term, not just the first ------
+
+test("Non-brand and the Opportunity digest rule out every configured brand term", async () => {
+  // A Site whose settings list three brand terms: the canonical name, a
+  // misspelling, and a product name. A Query matching the second or third term
+  // is a Brand query just as much as one matching the first, so it must stay
+  // out of Non-brand metrics and must not surface as a new-demand Opportunity.
+  const multiBrandSite = {
+    ...site,
+    brandTerms: ["brandy", "brandi", "zephyr"],
+  } satisfies Site
+  const brandDir = mkdtempSync(join(tmpdir(), "rp-storage-brand-"))
+  const brandRuntime = ManagedRuntime.make(
+    Storage.layer.pipe(
+      Layer.provide(
+        currentSiteLayer(
+          brandDir,
+          join(brandDir, "search-console.sqlite"),
+          multiBrandSite,
+        ),
+      ),
+    ),
+  )
+  const runBrand = <A, E>(effect: Effect.Effect<A, E, Storage.Service>) =>
+    brandRuntime.runPromise(effect)
+
+  try {
+    await runBrand(
+      Storage.use.saveSnapshots([
+        snapshot({ query: "widget", clicks: 5, impressions: 100, position: 8 }),
+        // Brand query on the first term.
+        snapshot({ query: "brandy", clicks: 30, impressions: 60, position: 1 }),
+        // Brand query on the second term — the misspelling.
+        snapshot({ query: "brandi shoes", clicks: 20, impressions: 50, position: 2 }),
+        // Brand query on the third term — the product name.
+        snapshot({ query: "zephyr case review", clicks: 10, impressions: 40, position: 3 }),
+      ]),
+    )
+
+    // topQueries defaults to Non-brand: only the one genuinely non-brand Query
+    // survives, while includeBrand still reports all four.
+    const nonBrand = await runBrand(Storage.use.topQueries())
+    expect(nonBrand.rows.map((row) => row.query)).toEqual(["widget"])
+    const allQueries = await runBrand(Storage.use.topQueries({ includeBrand: true }))
+    expect(allQueries.rows.map((row) => row.query).sort()).toEqual([
+      "brandi shoes",
+      "brandy",
+      "widget",
+      "zephyr case review",
+    ])
+
+    // Non-brand impressions count the non-brand Query alone; all-queries counts
+    // every stored row. Filtering on the first term only would have left the
+    // misspelling and the product name in the non-brand figure (100 + 90).
+    const overview = await runBrand(Storage.use.pagesWindowOverview())
+    const page = overview.rows.find(
+      (candidate) => candidate.page === "https://example.com/widgets",
+    )
+    expect(page?.nonBrand.current.impressions).toBe(100)
+    expect(page?.nonBrand.current.clicks).toBe(5)
+    expect(page?.allQueries.current.impressions).toBe(250)
+
+    // No Brand query reaches the digest, so none of them can be read as
+    // new-demand. The non-brand Query still does, which proves the filter
+    // narrows rather than blanks the window.
+    const digest = await runBrand(Storage.use.opportunityDigest([]))
+    const newDemand = digest.signals.filter((signal) => signal.kind === "new-demand")
+    expect(newDemand.map((signal) => signal.query)).toEqual(["widget"])
+    expect(digest.signals.map((signal) => signal.query)).not.toContain("brandi shoes")
+    expect(digest.signals.map((signal) => signal.query)).not.toContain(
+      "zephyr case review",
+    )
+  } finally {
+    await brandRuntime.dispose()
+    rmSync(brandDir, { recursive: true, force: true })
+  }
+})
+
+test("a Site with no brand terms filters no Query out of Non-brand", async () => {
+  // The empty-list case: with nothing configured as a brand term, every Query
+  // is Non-brand. The filter must pass everything rather than nothing.
+  const noBrandSite = { ...site, brandTerms: [] } satisfies Site
+  const noBrandDir = mkdtempSync(join(tmpdir(), "rp-storage-no-brand-"))
+  const noBrandRuntime = ManagedRuntime.make(
+    Storage.layer.pipe(
+      Layer.provide(
+        currentSiteLayer(
+          noBrandDir,
+          join(noBrandDir, "search-console.sqlite"),
+          noBrandSite,
+        ),
+      ),
+    ),
+  )
+
+  try {
+    await noBrandRuntime.runPromise(
+      Storage.use.saveSnapshots([
+        snapshot({ query: "widget", impressions: 100 }),
+        snapshot({ query: "brandy", impressions: 60 }),
+      ]),
+    )
+    const rows = await noBrandRuntime.runPromise(Storage.use.topQueries())
+    expect(rows.rows.map((row) => row.query).sort()).toEqual(["brandy", "widget"])
+  } finally {
+    await noBrandRuntime.dispose()
+    rmSync(noBrandDir, { recursive: true, force: true })
+  }
 })
