@@ -1,6 +1,6 @@
 # HTTP API
 
-`bun run apps/server/src/main.ts` (or `bun --cwd apps/server run serve`) starts the HttpApi server. It binds `0.0.0.0` on port `SEO_PORT` (default 8790) and is bearer-gated: every request needs `Authorization: Bearer <RP_TOKEN>`. It is built on the `packages/domain` Effect services; payloads match the CLI's JSON documents, and every response carries `generatedAt` and `mode` (`live`/`debug`). Add `--debug` to serve the isolated fake fixture.
+`bun run apps/server/src/main.ts` (or `bun --cwd apps/server run serve`) starts the HttpApi server. It binds `0.0.0.0` on port `SEO_PORT` (default 8790) and is bearer-gated: every request needs `Authorization: Bearer <token>`, where the token is the shared `RP_TOKEN` or a per-client token (see Clients below). It is built on the `packages/domain` Effect services; payloads match the CLI's JSON documents, and every response carries `generatedAt` and `mode` (`live`/`debug`). Add `--debug` to serve the isolated fake fixture.
 
 ## Read endpoints (local data only, never call Google)
 
@@ -158,6 +158,12 @@ Vendor keys are stored encrypted (see [deploy.md](deploy.md) §3c) and addressed
 - `GET /api/secrets` and `GET /api/sites/:id/secrets` — `{ encryption: { configured, reason }, slots: [...] }`. One slot per key the scope calls for (the site's analytics and revenue providers; `ahrefs` app-wide) plus anything else stored: `{ purpose, variable, stored: SecretStatus | null, inEnvironment }`, where `variable` is the environment variable the adapter reads and `inEnvironment` says whether the process environment would supply a fallback.
 - `PUT /api/secrets/:purpose` and `PUT /api/sites/:id/secrets/:purpose` — body `{ value }`. Stores or replaces the key and rebuilds the affected site runtime(s), so the next read uses it. `400` for a blank value or a purpose that is not lower-case letters, digits, and hyphens; `404` for an unknown site.
 - `DELETE /api/secrets/:purpose` and `DELETE /api/sites/:id/secrets/:purpose` — removes the key; the environment variable, if set, takes over again. `404` when nothing is stored.
+
+## Clients (per-client tokens)
+
+- `GET /api/clients` — `{ clients: [{ id, label, createdAt, lastUsedAt, revokedAt }] }`, revoked clients included. Never a token.
+- `POST /api/clients` — body `{ label }`. `201` with `{ client, token }`; the token (`rp_…`) is shown here and never again, the server keeps its hash. `400` for a blank label.
+- `DELETE /api/clients/:id` — revokes the client; its token answers `401` from then on. `404` for an unknown id.
 
 ## Write endpoints
 

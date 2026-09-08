@@ -43,7 +43,7 @@ export const bootstrap = async (): Promise<Boot> => {
   // `/health` liveness route, and a global bearer middleware that wraps every
   // route so nothing (bar `/health`) is served unauthenticated.
   const apiLayer = HttpApiBuilder.layer(Api).pipe(Layer.provide(makeApiGroup(ctx)))
-  const appLayer = Layer.mergeAll(apiLayer, mcpRoute, healthRoute, bearerLayer(ctx.debug))
+  const appLayer = Layer.mergeAll(apiLayer, mcpRoute, healthRoute, bearerLayer(ctx.debug, ctx.auth))
 
   // Bind 0.0.0.0 — the container sits behind Coolify's TLS proxy, so it must
   // listen on all interfaces rather than loopback (ported from the legacy serve).
