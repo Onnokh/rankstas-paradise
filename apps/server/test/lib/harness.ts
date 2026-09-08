@@ -16,6 +16,8 @@ export const repoRoot = resolve(import.meta.dir, "../../../..")
 // apps/server/src/debug.ts (pages under https://sleevy.app/...).
 export const FIXTURE_SITE_ID = "sleevy"
 export const FIXTURE_TOKEN = "test-token"
+// A valid master key for the secrets vault: 32 bytes, base64.
+export const FIXTURE_MASTER_KEY = Buffer.alloc(32, 7).toString("base64")
 
 export interface RunningServer {
   readonly baseUrl: string
@@ -61,6 +63,8 @@ export interface StartServerOptions {
   readonly port?: number
   readonly configHome?: string
   readonly token?: string | null
+  // The vault's master key; null starts the server without one.
+  readonly masterKey?: string | null
   readonly debug?: boolean
 }
 
@@ -81,6 +85,14 @@ export const startServer = async (
   }
   if (token === null) delete env.RP_TOKEN
   else env.RP_TOKEN = token
+  const masterKey = options.masterKey === undefined ? FIXTURE_MASTER_KEY : options.masterKey
+  if (masterKey === null) delete env.RP_MASTER_KEY
+  else env.RP_MASTER_KEY = masterKey
+  // The suite asserts on "key missing" states, so the developer's own vendor
+  // keys must not leak into the server under test.
+  for (const name of Object.keys(env)) {
+    if (/^(RYBBIT|AHREFS|POLAR)_API_KEY/.test(name)) delete env[name]
+  }
 
   const args = ["run", entry, ...(debug ? ["--debug"] : [])]
   const proc = Bun.spawn(["bun", ...args], {

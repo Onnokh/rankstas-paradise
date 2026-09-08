@@ -39,6 +39,7 @@ import {
 } from "@rp/domain/reports/schema"
 import { ConfigSite, SiteSettings } from "@rp/domain/config/schema"
 import { RegistryPatch } from "@rp/domain/registry/schema"
+import { EncryptionStatus, SecretInput, SecretStatus } from "@rp/domain/secrets/schema"
 import { Site } from "@rp/domain/sites/schema"
 import { Job } from "../jobs/schema.ts"
 
@@ -63,6 +64,23 @@ const JobResponse = enveloped({ job: Job })
 const SiteSettingsResponse = enveloped({ site: Site, settings: ConfigSite })
 const SiteRemovedResponse = enveloped({ removed: Schema.String })
 const siteParams = { id: Schema.String }
+// One vendor key a site (or the app) can hold: what it is for, the variable
+// its adapter reads, what is stored (status only, never the value), and whether
+// the environment would supply a fallback.
+const SecretSlot = Schema.Struct({
+  purpose: Schema.String,
+  variable: Schema.String,
+  stored: Schema.NullOr(SecretStatus),
+  inEnvironment: Schema.Boolean,
+})
+const SecretsResponse = enveloped({
+  encryption: EncryptionStatus,
+  slots: Schema.Array(SecretSlot),
+})
+const SecretResponse = enveloped({ secret: SecretStatus })
+const SecretRemovedResponse = enveloped({ removed: Schema.String })
+const purposeParams = { purpose: Schema.String }
+const sitePurposeParams = { id: Schema.String, purpose: Schema.String }
 
 // --- endpoint group -----------------------------------------------------------
 
@@ -192,6 +210,44 @@ export const apiGroup = HttpApiGroup.make("api")
     HttpApiEndpoint.delete("siteRemove", "/api/sites/:id", {
       params: siteParams,
       success: SiteRemovedResponse,
+    }),
+  )
+  // --- vendor keys (statuses only; values go in, never out) ---
+  .add(
+    HttpApiEndpoint.get("appSecrets", "/api/secrets", {
+      success: SecretsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.put("appSecretSet", "/api/secrets/:purpose", {
+      params: purposeParams,
+      payload: SecretInput,
+      success: SecretResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("appSecretRemove", "/api/secrets/:purpose", {
+      params: purposeParams,
+      success: SecretRemovedResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("siteSecrets", "/api/sites/:id/secrets", {
+      params: siteParams,
+      success: SecretsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.put("siteSecretSet", "/api/sites/:id/secrets/:purpose", {
+      params: sitePurposeParams,
+      payload: SecretInput,
+      success: SecretResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("siteSecretRemove", "/api/sites/:id/secrets/:purpose", {
+      params: sitePurposeParams,
+      success: SecretRemovedResponse,
     }),
   )
   // --- writes ---

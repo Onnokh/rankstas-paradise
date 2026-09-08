@@ -16,6 +16,10 @@ _Avoid_: "config" for the list of sites.
 **Site settings**:
 Everything a catalog entry holds except its id: the Search Console property, name, origin, sitemap URL, brand terms, and the analytics and revenue provider blocks. Never a vendor key.
 
+**Vendor key**:
+The API key a provider (Polar, Rybbit, Ahrefs) is read with. Stored encrypted in the vault, addressed by scope (a site, or the app) and purpose (the provider name), and handed to the provider's adapter under the environment variable it reads. The environment variable is the fallback. Never part of Site settings.
+_Avoid_: "secret" for the concept in prose (the code's name for the vault entry); "credential".
+
 **Page**:
 A URL on a site — the Search Console "Page" dimension, and the unit measured by true totals.
 _Avoid_: "target" as a synonym (a target URL is a narrower idea; see below).

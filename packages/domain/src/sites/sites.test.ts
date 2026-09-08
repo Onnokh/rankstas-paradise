@@ -5,6 +5,7 @@ import { join } from "node:path"
 
 import { Cause, Effect, Exit, Layer } from "effect"
 
+import { AppDatabase } from "../app-database/app-database.ts"
 import { Catalog } from "../catalog/catalog.ts"
 import { Config } from "../config/config.ts"
 import { ConfigLoadError, type SeoConfig } from "../config/schema.ts"
@@ -41,7 +42,11 @@ const fakeConfig = (
 // Sites over a fresh Catalog in the fake Config's data directory (a temp dir by
 // default), so each test starts from an empty catalog.
 const sitesLayer = (config: Layer.Layer<Config.Service>) =>
-  Sites.layer.pipe(Layer.provideMerge(Catalog.layer), Layer.provide(config))
+  Sites.layer.pipe(
+    Layer.provideMerge(Catalog.layer),
+    Layer.provideMerge(AppDatabase.layer),
+    Layer.provide(config),
+  )
 
 const run = <A, E>(
   effect: Effect.Effect<A, E, never>,
@@ -138,6 +143,7 @@ describe("Sites catalog import", () => {
   test("a deployment with no config and no SITE_URL has an empty catalog", async () => {
     const layer = Sites.layer.pipe(
       Layer.provideMerge(Catalog.layer),
+      Layer.provideMerge(AppDatabase.layer),
       Layer.provide(
         Layer.succeed(
           Config.Service,
