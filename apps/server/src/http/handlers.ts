@@ -23,6 +23,8 @@ import { Storage } from "@rp/domain/storage/storage"
 import { Sync } from "@rp/domain/sync/sync"
 import { type ConfigSite } from "@rp/domain/config/schema"
 import { type RegistryPatch } from "@rp/domain/registry/schema"
+import { type SecretStatus } from "@rp/domain/secrets/schema"
+import { Secrets } from "@rp/domain/secrets/secrets"
 import { SiteId } from "@rp/domain/sites/schema"
 import { type Site } from "@rp/domain/sites/schema"
 
@@ -52,9 +54,39 @@ const SITE_REQUIRED = "site is required: add ?site=<id> (see GET /api/sites)"
 // an entry the server could not serve 400. Anything else is the legacy 400.
 const catalogStatus = (cause: unknown): number => {
   const tag = (cause as { _tag?: string } | null)?._tag
-  if (tag === "UnknownSiteError") return 404
+  if (tag === "UnknownSiteError" || tag === "UnknownSecretError") return 404
   if (tag === "SiteExistsError") return 409
+  if (tag === "EncryptionUnavailableError") return 503
   return 400
+}
+
+// Whether the process environment would supply a non-blank value for a
+// variable — the fallback a stored key replaces.
+const inEnvironment = (variable: string): boolean =>
+  (Bun.env[variable] ?? "").trim() !== ""
+
+// The key slots of one scope: the purposes the site's providers call for (or
+// Ahrefs, app-wide), plus anything stored beyond those, each with its variable
+// and stored status.
+const secretSlots = (
+  site: Site | null,
+  stored: ReadonlyArray<SecretStatus>,
+) => {
+  const wanted = site
+    ? [site.analytics?.provider, site.revenue?.provider].filter(
+        (purpose): purpose is string => purpose !== undefined,
+      )
+    : ["ahrefs"]
+  const purposes = [...new Set([...wanted, ...stored.map((s) => s.purpose)])]
+  return purposes.map((purpose) => {
+    const variable = Secrets.variableFor(site, purpose)
+    return {
+      purpose,
+      variable,
+      stored: stored.find((s) => s.purpose === purpose) ?? null,
+      inEnvironment: inEnvironment(variable),
+    }
+  })
 }
 
 // Site-scoped Sync effects, run on the site runtime by the job handlers.
@@ -94,7 +126,7 @@ export const makeApiGroup = (ctx: ServerContext) => {
   ): Promise<HttpServerResponse.HttpServerResponse> => {
     const site = await resolveSite(siteParam)
     if (!("id" in site)) return site
-    const rt = ctx.runtimeFor(site)
+    const rt = await ctx.runtimeFor(site)
     warm(rt, site)
     try {
       const payload = await rt.runPromise(effect)
@@ -112,7 +144,7 @@ export const makeApiGroup = (ctx: ServerContext) => {
   ): Promise<HttpServerResponse.HttpServerResponse> => {
     const site = await resolveSite(siteParam)
     if (!("id" in site)) return site
-    const rt = ctx.runtimeFor(site)
+    const rt = await ctx.runtimeFor(site)
     warm(rt, site)
     try {
       const body = await rt.runPromise(effect)
@@ -159,7 +191,7 @@ export const makeApiGroup = (ctx: ServerContext) => {
   ): Promise<HttpServerResponse.HttpServerResponse> => {
     const site = await resolveSite(siteParam)
     if (!("id" in site)) return site
-    const rt = ctx.runtimeFor(site)
+    const rt = await ctx.runtimeFor(site)
     const workEffect: Effect.Effect<string, unknown> = Effect.promise(() =>
       work(rt),
     )
@@ -256,6 +288,67 @@ export const makeApiGroup = (ctx: ServerContext) => {
             await ctx.catalog.remove(id)
             await ctx.forget(id)
             return { removed: params.id }
+          }),
+        ),
+      )
+      .handle("appSecrets", () =>
+        Effect.promise(() =>
+          catalogJson(async () => {
+            const [encryption, stored] = await Promise.all([
+              ctx.secrets.encryption(),
+              ctx.secrets.list(null),
+            ])
+            return { encryption, slots: secretSlots(null, stored) }
+          }),
+        ),
+      )
+      .handle("appSecretSet", ({ params, payload }) =>
+        Effect.promise(() =>
+          catalogJson(async () => {
+            const secret = await ctx.secrets.set(null, params.purpose, payload.value)
+            await ctx.forgetAll()
+            return { secret }
+          }),
+        ),
+      )
+      .handle("appSecretRemove", ({ params }) =>
+        Effect.promise(() =>
+          catalogJson(async () => {
+            await ctx.secrets.remove(null, params.purpose)
+            await ctx.forgetAll()
+            return { removed: params.purpose }
+          }),
+        ),
+      )
+      .handle("siteSecrets", ({ params }) =>
+        Effect.promise(() =>
+          catalogJson(async () => {
+            const site = await ctx.siteFor(SiteId.make(params.id))
+            const [encryption, stored] = await Promise.all([
+              ctx.secrets.encryption(),
+              ctx.secrets.list(site.id),
+            ])
+            return { encryption, slots: secretSlots(site, stored) }
+          }),
+        ),
+      )
+      .handle("siteSecretSet", ({ params, payload }) =>
+        Effect.promise(() =>
+          catalogJson(async () => {
+            const site = await ctx.siteFor(SiteId.make(params.id))
+            const secret = await ctx.secrets.set(site.id, params.purpose, payload.value)
+            await ctx.forget(site.id)
+            return { secret }
+          }),
+        ),
+      )
+      .handle("siteSecretRemove", ({ params }) =>
+        Effect.promise(() =>
+          catalogJson(async () => {
+            const site = await ctx.siteFor(SiteId.make(params.id))
+            await ctx.secrets.remove(site.id, params.purpose)
+            await ctx.forget(site.id)
+            return { removed: params.purpose }
           }),
         ),
       )
@@ -371,7 +464,7 @@ export const makeApiGroup = (ctx: ServerContext) => {
             ? await resolveSite(query.site)
             : await ctx.firstSite()
           if (!("id" in site)) return site
-          const rt = ctx.runtimeFor(site)
+          const rt = await ctx.runtimeFor(site)
           const jobs = await rt.runPromise(Jobs.use.list())
           return jsonEnvelope({ jobs }, ctx.debug)
         }),

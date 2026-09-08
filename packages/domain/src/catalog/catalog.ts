@@ -1,21 +1,17 @@
 // Catalog service: the stored list of sites and their settings, in the
-// app-level SQLite database `<app home>/rankstas-paradise.sqlite`. Process-
-// global, like Sites: the catalog is the same for everyone. Sites reads it and
-// resolves each entry into a Site; the server's settings routes write it.
+// app-level SQLite database (see ../app-database). Process-global, like Sites:
+// the catalog is the same for everyone. Sites reads it and resolves each entry
+// into a Site; the server's settings routes write it.
 //
 // Each entry is stored as one JSON document (`ConfigSite`, validated on read)
 // rather than one column per field, so adding a setting is a schema change in
 // one place, not a table migration. A `catalog_meta` row records that the
 // one-time import from a legacy config.json has run, so an emptied catalog is
 // not silently refilled from the file.
-import { mkdirSync } from "node:fs"
-
 import { Context, Effect, Layer, Schema } from "effect"
-import { Reactivity } from "effect/unstable/reactivity"
 import { type SqlError } from "effect/unstable/sql"
-import { SqliteClient } from "@effect/sql-sqlite-bun"
 
-import { Config } from "../config/config.ts"
+import { AppDatabase } from "../app-database/app-database.ts"
 import { ConfigSite } from "../config/schema.ts"
 import { serviceUse } from "../service-use.ts"
 import { SiteExistsError, UnknownSiteError } from "../sites/schema.ts"
@@ -59,21 +55,7 @@ const decodeEntry = Schema.decodeUnknownEffect(ConfigSite)
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const dataDirectory = yield* Config.use.dataDirectory()
-    const debug = yield* Config.use.debugMode()
-    // Beside `sites/`, and `.debug` in debug mode like the per-site ledgers, so
-    // a debug run never touches the real catalog.
-    const databasePath = `${dataDirectory}/rankstas-paradise${debug ? ".debug" : ""}.sqlite`
-
-    yield* Effect.try({
-      try: () => mkdirSync(dataDirectory, { recursive: true }),
-      catch: (cause) =>
-        new CatalogError({ message: `Could not create ${dataDirectory}`, cause }),
-    })
-
-    const sql = yield* SqliteClient.make({ filename: databasePath }).pipe(
-      Effect.provide(Reactivity.layer),
-    )
+    const { client: sql } = yield* AppDatabase.Service
 
     const catalogError =
       (operation: string) => (cause: SqlError.SqlError) =>
@@ -226,6 +208,6 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(Config.defaultLayer))
+export const defaultLayer = layer.pipe(Layer.provide(AppDatabase.defaultLayer))
 
 export * as Catalog from "./catalog"

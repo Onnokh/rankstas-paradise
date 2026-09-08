@@ -144,6 +144,14 @@ Bodies use `SiteSettings` (`packages/domain/src/config/schema.ts`): `siteUrl` (t
 - `PUT /api/sites/:id/settings` — body: `SiteSettings`. Replaces the whole entry. `404` for an unknown id.
 - `DELETE /api/sites/:id` — removes the entry from the catalog. The site's data directory under `sites/<id>/` stays on disk. `404` for an unknown id.
 
+## Vendor keys (the vault)
+
+Vendor keys are stored encrypted (see [deploy.md](deploy.md) §3c) and addressed by scope and purpose. Values go in and never come out: every response carries a `SecretStatus` (`scope`, `purpose`, `last4`, `updatedAt`) at most. Requests need `RP_MASTER_KEY` on the server; without it writes answer `503` and `encryption.configured` is `false`.
+
+- `GET /api/secrets` and `GET /api/sites/:id/secrets` — `{ encryption: { configured, reason }, slots: [...] }`. One slot per key the scope calls for (the site's analytics and revenue providers; `ahrefs` app-wide) plus anything else stored: `{ purpose, variable, stored: SecretStatus | null, inEnvironment }`, where `variable` is the environment variable the adapter reads and `inEnvironment` says whether the process environment would supply a fallback.
+- `PUT /api/secrets/:purpose` and `PUT /api/sites/:id/secrets/:purpose` — body `{ value }`. Stores or replaces the key and rebuilds the affected site runtime(s), so the next read uses it. `400` for a blank value or a purpose that is not lower-case letters, digits, and hyphens; `404` for an unknown site.
+- `DELETE /api/secrets/:purpose` and `DELETE /api/sites/:id/secrets/:purpose` — removes the key; the environment variable, if set, takes over again. `404` when nothing is stored.
+
 ## Write endpoints
 
 - `POST /api/registry` — body: `RegistryAddInput` (`target`, optional `keyword`/`cluster`/`intent`/`priority`/`country`/`why`/`publishedAt`/`baselineDate`/`status`). Keyword rows require cluster, intent, and priority.

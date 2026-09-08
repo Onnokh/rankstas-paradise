@@ -7,11 +7,11 @@ import { join } from "node:path"
 
 import { Cause, Effect, Exit, Layer, ManagedRuntime } from "effect"
 
+import { AppDatabase } from "../app-database/app-database.ts"
 import { Config } from "../config/config.ts"
 import { type ConfigSite } from "../config/schema.ts"
 import { SiteExistsError, UnknownSiteError } from "../sites/schema.ts"
 import { Catalog } from "./catalog.ts"
-import { type CatalogError } from "./schema.ts"
 
 const fakeConfig = (dataDirectory: string, debugMode = false) =>
   Layer.succeed(
@@ -26,14 +26,20 @@ const fakeConfig = (dataDirectory: string, debugMode = false) =>
     }),
   )
 
+const makeRuntime = (dir: string, debugMode = false) =>
+  ManagedRuntime.make(
+    Catalog.layer.pipe(
+      Layer.provideMerge(AppDatabase.layer),
+      Layer.provide(fakeConfig(dir, debugMode)),
+    ),
+  )
+
 let dir: string
-let runtime: ManagedRuntime.ManagedRuntime<Catalog.Service, CatalogError>
+let runtime: ReturnType<typeof makeRuntime>
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "rp-catalog-"))
-  runtime = ManagedRuntime.make(
-    Catalog.layer.pipe(Layer.provide(fakeConfig(dir))),
-  )
+  runtime = makeRuntime(dir)
 })
 
 afterEach(async () => {
@@ -126,9 +132,7 @@ describe("Catalog", () => {
   })
 
   test("uses a .debug database in debug mode", async () => {
-    const debugRuntime = ManagedRuntime.make(
-      Catalog.layer.pipe(Layer.provide(fakeConfig(dir, true))),
-    )
+    const debugRuntime = makeRuntime(dir, true)
     try {
       await debugRuntime.runPromise(Catalog.use.add(example))
       expect(await run(Catalog.use.list())).toEqual([])

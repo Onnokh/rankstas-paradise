@@ -27,9 +27,10 @@ Without the volume the key and history are lost on every redeploy.
 | `GOOGLE_SERVICE_ACCOUNT_FILE` | no | Override the key path. Defaults to `<app home>/google-service-account.json`. |
 | `SITE_URL` | no | Legacy: the single property a fresh catalog is seeded with when there is no `config.json`. Ignored once the catalog has been imported. |
 | `SEO_PORT` | no | Defaults to 8790. |
-| `AHREFS_API_KEY` | no (secret) | Enables Ahrefs Domain Rating. Without it every site simply has no rating; nothing else changes. A free key covers the endpoint used ([domain-rating-free](https://docs.ahrefs.com/en/api/reference/public/get-domain-rating-free)). |
-| `RYBBIT_API_KEY` | no (secret) | Reads visits for sites whose `config.json` entry names `analytics.provider: "rybbit"` (see [adr/0004](adr/0004-analytics-provider-port.md)). An organisation key from the Rybbit instance the site's `analytics.baseUrl` points at. Without it such a site shows `ready: false` under `analytics` on `GET /api/status` and has no visits; Search Console is unaffected. |
-| `POLAR_API_KEY`, or the name each site's `revenue.keyVariable` gives (e.g. `POLAR_API_KEY_SHADERTOWN`) | no (secret) | Reads sales for sites whose `config.json` entry names `revenue.provider: "polar"` (see [adr/0005](adr/0005-revenue-provider-port.md)). A Polar organization access token with the `metrics:read` scope; Polar issues one per organisation, so a site per organisation names its own variable. Without it the site shows `ready: false` under `revenue` on `GET /api/status` and has no revenue; nothing else changes. |
+| `RP_MASTER_KEY` | yes for stored vendor keys (secret) | The key the vendor-key vault is encrypted with: 32 random bytes, base64 (`openssl rand -base64 32`). Without it the vault is read-only-empty, `GET /api/secrets` reports `encryption.configured: false`, and every key must still come from the environment. See §3c. |
+| `AHREFS_API_KEY` | no (secret) | Fallback when no `ahrefs` key is stored in the vault. Enables Ahrefs Domain Rating. Without it every site simply has no rating; nothing else changes. A free key covers the endpoint used ([domain-rating-free](https://docs.ahrefs.com/en/api/reference/public/get-domain-rating-free)). |
+| `RYBBIT_API_KEY` | no (secret) | Fallback when the site has no `rybbit` key stored in the vault. Reads visits for sites whose `config.json` entry names `analytics.provider: "rybbit"` (see [adr/0004](adr/0004-analytics-provider-port.md)). An organisation key from the Rybbit instance the site's `analytics.baseUrl` points at. Without it such a site shows `ready: false` under `analytics` on `GET /api/status` and has no visits; Search Console is unaffected. |
+| `POLAR_API_KEY`, or the name each site's `revenue.keyVariable` gives (e.g. `POLAR_API_KEY_SHADERTOWN`) | no (secret) | Fallback when the site has no `polar` key stored in the vault. Reads sales for sites whose `config.json` entry names `revenue.provider: "polar"` (see [adr/0005](adr/0005-revenue-provider-port.md)). A Polar organization access token with the `metrics:read` scope; Polar issues one per organisation, so a site per organisation names its own variable. Without it the site shows `ready: false` under `revenue` on `GET /api/status` and has no revenue; nothing else changes. |
 
 No Google credentials go in env: the only one is the service-account key file on the volume (next step).
 
@@ -38,6 +39,16 @@ No Google credentials go in env: the only one is the service-account key file on
 Sites and their settings live in `rankstas-paradise.sqlite` in the app home (the Catalog; see [packages/domain/src/catalog/catalog.ts](../packages/domain/src/catalog/catalog.ts)). Manage them through the API — `POST /api/sites`, `PUT /api/sites/:id/settings`, `DELETE /api/sites/:id` (see [http-api.md](http-api.md)) — rather than by editing files on the volume.
 
 **One-time import.** A deployment that still has a `config.json` on the volume is migrated on the first start after this change: the server reads the file once, stores its `sites` into the catalog, records that the import ran, and logs `Imported N site(s) from config.json`. From then on the file is not read, so you can delete it. An emptied catalog is not refilled from the file. A fresh deployment with no file and no `SITE_URL` starts with an empty catalog; add the first site over the API.
+
+## 3c. Vendor keys: the vault
+
+Vendor keys (Polar, Rybbit, Ahrefs) can be stored through the API instead of the environment, encrypted with AES-256-GCM under `RP_MASTER_KEY` in the same app-level database as the catalog (the Secrets service, [packages/domain/src/secrets/secrets.ts](../packages/domain/src/secrets/secrets.ts)).
+
+- A key is addressed by **scope** and **purpose**: the scope is a site id (or app-wide, for Ahrefs), the purpose is the provider name the site's `analytics` or `revenue` block names.
+- `PUT /api/sites/<id>/secrets/<purpose>` with `{ "value": "…" }` stores a site's key; `PUT /api/secrets/ahrefs` stores the app-wide one. `GET` on the same paths lists statuses (last four characters, when written), never values. See [http-api.md](http-api.md).
+- The server hands a stored key to the provider's adapter under the environment variable it already reads (`RYBBIT_API_KEY`, the site's `revenue.keyVariable`, `AHREFS_API_KEY`), through a per-site ConfigProvider. **A stored key wins over the environment variable; the environment stays the fallback.** So you can move keys over one at a time and remove the env vars in Coolify afterwards.
+- What this protects: copies of the volume and backups. It does not protect against an operator who can read the container's environment — they hold the master key too.
+- **Rotation:** there is no re-encrypt yet. To change `RP_MASTER_KEY`, delete the stored keys, set the new master key, restart, and store them again.
 
 ## 4. Google authentication — a service-account key
 

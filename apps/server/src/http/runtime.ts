@@ -6,19 +6,27 @@
 // real `CurrentSite.layerForSite(site)` supplied at the bottom of the graph —
 // overriding the die-stub that the domain's `AppLayer` composes for type-checking.
 // Runtimes are cached by site id so each site's SQLite connection (opened as a
-// scoped resource on Storage acquisition) is reused across requests. A settings
-// write drops the site's cached runtime (`forget`), because the Site it was
-// built around is now stale; the next request builds a fresh one.
+// scoped resource on Storage acquisition) is reused across requests.
+//
+// Each site runtime also gets its own ConfigProvider: the site's vendor keys
+// from the Secrets vault (and the app-wide ones), decrypted and placed under the
+// environment variable names the adapters already read, in front of the real
+// environment. A stored key therefore wins over an env var; an env var still
+// works as the fallback. Building that provider is async, so `runtimeFor` is.
+// A settings or secret write drops the affected cached runtimes (`forget`,
+// `forgetAll`), because the Site or the keys they were built around are now
+// stale; the next request builds fresh ones.
 //
 // Jobs live inside each site's runtime too (the per-site single-job lock and job
 // registry). `GET /api/jobs` — which is not site-scoped — reads the first
 // configured site's runtime. A truly process-global job view across many sites
 // is out of scope here (the golden fixture is single-site); this matches the
 // legacy single-lock behaviour for the common single-site deployment.
-import { Effect, Layer, ManagedRuntime } from "effect"
+import { ConfigProvider, Effect, Layer, ManagedRuntime, Redacted } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 
 import { Analytics } from "@rp/domain/analytics/analytics"
+import { AppDatabase } from "@rp/domain/app-database/app-database"
 import { Catalog } from "@rp/domain/catalog/catalog"
 import { Config } from "@rp/domain/config/config"
 import { type ConfigSite } from "@rp/domain/config/schema"
@@ -28,6 +36,8 @@ import { Registry } from "@rp/domain/registry/registry"
 import { Reports } from "@rp/domain/reports/reports"
 import { Revenue } from "@rp/domain/revenue/revenue"
 import { SearchConsole } from "@rp/domain/search-console/search-console"
+import { type EncryptionStatus, type SecretStatus } from "@rp/domain/secrets/schema"
+import { Secrets } from "@rp/domain/secrets/secrets"
 import { type Site, type SiteId } from "@rp/domain/sites/schema"
 import { Sitemap } from "@rp/domain/sitemap/sitemap"
 import { Sites } from "@rp/domain/sites/sites"
@@ -37,14 +47,16 @@ import { Sync } from "@rp/domain/sync/sync"
 import { Jobs } from "../jobs/jobs.ts"
 
 // The full per-site graph: every site-scoped service plus Jobs, wired onto a
-// concrete CurrentSite. Provider layers are merged in so the services are also
-// exposed for direct use (native-feed calls Storage/Registry/Sitemap directly).
-const siteLayer = (site: Site) =>
+// concrete CurrentSite and the site's ConfigProvider. Provider layers are
+// merged in so the services are also exposed for direct use (native-feed calls
+// Storage/Registry/Sitemap directly).
+const siteLayer = (site: Site, provider: ConfigProvider.ConfigProvider) =>
   Jobs.layer.pipe(
     Layer.provideMerge(Reports.layer),
     Layer.provideMerge(Sync.layer),
     Layer.provideMerge(Sites.layer),
     Layer.provideMerge(Catalog.layer),
+    Layer.provideMerge(AppDatabase.layer),
     Layer.provideMerge(SearchConsole.layer),
     Layer.provideMerge(Analytics.layer),
     Layer.provideMerge(Revenue.layer),
@@ -57,6 +69,9 @@ const siteLayer = (site: Site) =>
     Layer.provideMerge(CurrentSite.layerForSite(site)),
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(Config.defaultLayer),
+    // Last, so every layer above — the vendor adapters in particular — reads
+    // its configuration through the site's provider.
+    Layer.provide(ConfigProvider.layer(provider)),
   )
 
 export type SiteRuntime = ManagedRuntime.ManagedRuntime<
@@ -88,17 +103,35 @@ export interface CatalogOps {
   readonly remove: (id: SiteId) => Promise<void>
 }
 
+// The vault operations the secrets routes need. Scope is a site id, or null
+// for an app-wide key. Each rejects with the domain's tagged error
+// (EncryptionUnavailableError, InvalidSecretError, UnknownSecretError).
+export interface SecretOps {
+  readonly encryption: () => Promise<EncryptionStatus>
+  readonly list: (scope: SiteId | null) => Promise<ReadonlyArray<SecretStatus>>
+  readonly set: (
+    scope: SiteId | null,
+    purpose: string,
+    value: Redacted.Redacted<string>,
+  ) => Promise<SecretStatus>
+  readonly remove: (scope: SiteId | null, purpose: string) => Promise<void>
+}
+
 export interface ServerContext {
   readonly debug: boolean
   readonly loadSites: () => Promise<ReadonlyArray<Site>>
   // Resolve one site by id; rejects (UnknownSiteError) when it is not configured.
   readonly siteFor: (id: SiteId) => Promise<Site>
   readonly firstSite: () => Promise<Site>
-  // The cached runtime for a resolved site.
-  readonly runtimeFor: (site: Site) => SiteRuntime
-  // Drop a site's cached runtime after its settings changed or it was removed.
+  // The cached runtime for a resolved site, built on first use.
+  readonly runtimeFor: (site: Site) => Promise<SiteRuntime>
+  // Drop a site's cached runtime after its settings or keys changed, or it was
+  // removed.
   readonly forget: (id: SiteId) => Promise<void>
+  // Drop every cached runtime, after an app-wide key changed.
+  readonly forgetAll: () => Promise<void>
   readonly catalog: CatalogOps
+  readonly secrets: SecretOps
 }
 
 // Build the server context: read the debug flag + site catalog once, and set up
@@ -107,29 +140,54 @@ export const makeServerContext = async (): Promise<ServerContext> => {
   const configRuntime = ManagedRuntime.make(Config.defaultLayer)
   const debug = await configRuntime.runPromise(Config.use.debugMode())
 
-  // Sites and the Catalog it reads share one catalog connection here; the
-  // settings routes write through the same runtime.
-  const sitesRuntime = ManagedRuntime.make(
-    Sites.layer.pipe(
+  // Sites, the Catalog it reads, and the Secrets vault share one app-database
+  // connection here; the settings and secrets routes write through the same
+  // runtime.
+  const appRuntime = ManagedRuntime.make(
+    Layer.mergeAll(Sites.layer, Secrets.layer).pipe(
       Layer.provideMerge(Catalog.layer),
+      Layer.provideMerge(AppDatabase.layer),
       Layer.provide(Config.defaultLayer),
     ),
   )
-  const cache = new Map<string, SiteRuntime>()
+  const cache = new Map<string, Promise<SiteRuntime>>()
 
-  const runtimeFor = (site: Site): SiteRuntime => {
+  // The site's ConfigProvider: its own stored keys over the app-wide ones, each
+  // under the variable its adapter reads, over the real environment.
+  const providerFor = async (site: Site): Promise<ConfigProvider.ConfigProvider> => {
+    const [shared, own] = await Promise.all([
+      appRuntime.runPromise(Secrets.use.reveal(null)),
+      appRuntime.runPromise(Secrets.use.reveal(site.id)),
+    ])
+    const env: Record<string, string> = {}
+    for (const secret of [...shared, ...own]) {
+      env[Secrets.variableFor(site, secret.purpose)] = Redacted.value(secret.value)
+    }
+    return ConfigProvider.orElse(ConfigProvider.fromEnv({ env }), ConfigProvider.fromEnv())
+  }
+
+  const runtimeFor = (site: Site): Promise<SiteRuntime> => {
     const existing = cache.get(site.id)
     if (existing) return existing
-    const runtime = ManagedRuntime.make(siteLayer(site)) as SiteRuntime
-    cache.set(site.id, runtime)
-    return runtime
+    const building = providerFor(site).then(
+      (provider) => ManagedRuntime.make(siteLayer(site, provider)) as SiteRuntime,
+    )
+    cache.set(site.id, building)
+    // A runtime that failed to build must not be cached as such.
+    building.catch(() => cache.delete(site.id))
+    return building
   }
 
   const forget = async (id: SiteId): Promise<void> => {
     const existing = cache.get(id)
     if (!existing) return
     cache.delete(id)
-    await existing.dispose()
+    await existing.then((runtime) => runtime.dispose()).catch(() => {})
+  }
+
+  const forgetAll = async (): Promise<void> => {
+    const ids = [...cache.keys()] as SiteId[]
+    await Promise.all(ids.map(forget))
   }
 
   // Validate first, so the catalog never stores an entry Sites cannot serve.
@@ -137,7 +195,7 @@ export const makeServerContext = async (): Promise<ServerContext> => {
     site: ConfigSite,
     store: (site: ConfigSite) => Effect.Effect<void, unknown, Catalog.Service>,
   ) =>
-    sitesRuntime.runPromise(
+    appRuntime.runPromise(
       Effect.gen(function* () {
         const resolved = yield* Sites.resolve(site)
         yield* store(site)
@@ -146,24 +204,34 @@ export const makeServerContext = async (): Promise<ServerContext> => {
     )
 
   const catalog: CatalogOps = {
-    settings: (id) => sitesRuntime.runPromise(Catalog.use.get(id)),
+    settings: (id) => appRuntime.runPromise(Catalog.use.get(id)),
     add: (site) => resolveThenStore(site, Catalog.use.add),
     update: (site) => resolveThenStore(site, Catalog.use.update),
-    remove: (id) => sitesRuntime.runPromise(Catalog.use.remove(id)),
+    remove: (id) => appRuntime.runPromise(Catalog.use.remove(id)),
+  }
+
+  const secrets: SecretOps = {
+    encryption: () => appRuntime.runPromise(Secrets.use.encryption()),
+    list: (scope) => appRuntime.runPromise(Secrets.use.list(scope)),
+    set: (scope, purpose, value) =>
+      appRuntime.runPromise(Secrets.use.set(scope, purpose, value)),
+    remove: (scope, purpose) => appRuntime.runPromise(Secrets.use.remove(scope, purpose)),
   }
 
   return {
     debug,
-    loadSites: () => sitesRuntime.runPromise(Sites.use.loadSites()),
-    siteFor: (id) => sitesRuntime.runPromise(Sites.use.siteFor(id)),
+    loadSites: () => appRuntime.runPromise(Sites.use.loadSites()),
+    siteFor: (id) => appRuntime.runPromise(Sites.use.siteFor(id)),
     firstSite: async () => {
-      const sites = await sitesRuntime.runPromise(Sites.use.loadSites())
+      const sites = await appRuntime.runPromise(Sites.use.loadSites())
       const first = sites[0]
       if (!first) throw new Error("No sites configured")
       return first
     },
     runtimeFor,
     forget,
+    forgetAll,
     catalog,
+    secrets,
   }
 }
