@@ -632,6 +632,125 @@ test("a report reads no demand at all when nothing is stored", async () => {
   ).toBe(true)
 })
 
+// --- seasonality -----------------------------------------------------------
+
+// A synthetic series, newest first, the way DataForSEO sends it. `shape` gives
+// a multiplier per calendar month (index 0 = January) and `growth` compounds
+// per year, so a term can be seasonal, trending, both, or neither.
+const monthly = (
+  options: {
+    readonly years?: number
+    readonly shape?: ReadonlyArray<number>
+    readonly growth?: number
+    readonly startMonth?: number
+    readonly endMonth?: number
+  } = {},
+) => {
+  const {
+    years = 3,
+    shape = Array.from({ length: 12 }, () => 1),
+    growth = 1,
+    startMonth = 1,
+    endMonth = 12,
+  } = options
+  const rows: Array<{ year: number; month: number; searchVolume: number }> = []
+  for (let year = 0; year < years; year += 1)
+    for (let month = 1; month <= 12; month += 1) {
+      if (year === 0 && month < startMonth) continue
+      if (year === years - 1 && month > endMonth) continue
+      rows.push({
+        year: 2020 + year,
+        month,
+        searchVolume: Math.round(1_000 * shape[month - 1]! * growth ** year),
+      })
+    }
+  return rows.reverse()
+}
+
+test("flat demand still names its highest month, and says it is not a season", () => {
+  // Every term has a highest month. Only some have a season, and the whole
+  // point of reporting the index beside the month is telling those apart.
+  const flat = Reports.seasonalityOf(monthly())
+  expect(flat.peakMonth).not.toBeNull()
+  expect(flat.seasonality).toBe(1)
+})
+
+test("a December peak is found", () => {
+  const shape = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3]
+  const result = Reports.seasonalityOf(monthly({ shape }))
+  expect(result.peakMonth).toBe(12)
+  // December runs at three where the others run at one, so the year averages
+  // 1.167 and December indexes at 3 / 1.167.
+  expect(result.seasonality).toBeCloseTo(2.57, 1)
+})
+
+test("a growing term's peak is its season, not the end of the series", () => {
+  // THE case this derivation exists for. Demand doubles every year and peaks
+  // each March. Averaging raw months over the whole series would put the peak
+  // in the last month the data holds, because the newest year dwarfs the
+  // oldest — which is exactly backwards, since a growing term is the one most
+  // worth planning around.
+  const shape = [1, 1, 2.5, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+  const rising = monthly({ years: 4, shape, growth: 2, endMonth: 8 })
+  expect(Reports.seasonalityOf(rising).peakMonth).toBe(3)
+
+  // The naive reading, for contrast: the highest raw month is in the newest
+  // year, and it is not March.
+  const highestRaw = [...rising].sort(
+    (left, right) => right.searchVolume - left.searchVolume,
+  )[0]!
+  expect(highestRaw.year).toBe(2023)
+})
+
+test("a dying term's peak is its season too", () => {
+  // The mirror image: demand halves every year, so the naive reading would
+  // put the peak in the oldest year instead of the newest.
+  const shape = [1, 1, 1, 1, 1, 1, 1, 2.5, 1, 1, 1, 1]
+  const falling = monthly({ years: 4, shape, growth: 0.5 })
+  expect(Reports.seasonalityOf(falling).peakMonth).toBe(8)
+})
+
+test("under two complete years there is no peak to report", () => {
+  // One observation of a calendar month is that month, not an average of it.
+  expect(Reports.seasonalityOf([])).toEqual({ peakMonth: null, seasonality: null })
+  expect(Reports.seasonalityOf(monthly({ years: 1 }))).toEqual({
+    peakMonth: null,
+    seasonality: null,
+  })
+  // Two calendar years, but neither of them complete: 2020 starts in June and
+  // 2021 stops in June. Twenty-four rows is not two years.
+  expect(
+    Reports.seasonalityOf(monthly({ years: 2, startMonth: 6, endMonth: 6 })),
+  ).toEqual({ peakMonth: null, seasonality: null })
+})
+
+test("partial years at the ends are ignored rather than averaged", () => {
+  // The real series runs 2018-10 to 2026-07, so both ends are stubs. An
+  // October-to-December stub read as a year would make Q4 look merely average
+  // and drag every other month's index up against it.
+  const shape = [1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4]
+  const withStubs = monthly({ years: 4, shape, startMonth: 10, endMonth: 7 })
+  const result = Reports.seasonalityOf(withStubs)
+  // Two complete years remain (2021, 2022) and both carry the Q4 shape, so the
+  // peak is still Q4 and its index is unpolluted by the stubs.
+  expect(result.peakMonth).not.toBeNull()
+  expect([10, 11, 12]).toContain(result.peakMonth!)
+  // Nine months at 1 and three at 4 gives a year mean of 1.75, so each Q4
+  // month indexes at 4 / 1.75.
+  expect(result.seasonality).toBeCloseTo(2.29, 1)
+})
+
+test("a year of no searches at all is skipped, not divided by", () => {
+  // Dividing by a zero mean would put an infinity into every index for that
+  // year and poison the average.
+  const dead = monthly({ years: 3 }).map((month) =>
+    month.year === 2021 ? { ...month, searchVolume: 0 } : month,
+  )
+  const result = Reports.seasonalityOf(dead)
+  expect(Number.isFinite(result.seasonality!)).toBe(true)
+  expect(result.seasonality).toBe(1)
+})
+
 // --- the Registry judged on demand -----------------------------------------
 
 test("registryHealth sorts the plan by demand and counts each verdict", async () => {
@@ -686,6 +805,54 @@ test("the verdict decides the order, not the plan's own", async () => {
     // Nobody asked about this one at all, so it comes last.
     ["pocket alternative", "unmeasured"],
   ])
+})
+
+test("registryHealth carries each keyword's peak month", async () => {
+  // The series comes from the store, not from the KeywordMetrics stub, so this
+  // seeds the real table the way a sync would. Demand peaks every March and
+  // doubles each year, which is the case the detrending exists for.
+  const shape = [1, 1, 2.5, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+  await runtime.runPromise(
+    Effect.gen(function* () {
+      const storage = yield* Storage.Service
+      yield* storage.saveKeywordMetrics([
+        {
+          ...demandMetric("save links from iphone", { searchVolume: 720 }),
+          monthlySearches: monthly({ years: 4, shape, growth: 2, endMonth: 8 }),
+        },
+      ])
+    }),
+  )
+  storedDemand.set(
+    "save links from iphone",
+    demandMetric("save links from iphone", { searchVolume: 720 }),
+  )
+
+  const report = await run(Reports.use.registryHealth())
+  const row = report.keywords.find(
+    (candidate) => candidate.keyword === "save links from iphone",
+  )
+  expect(row?.peakMonth).toBe(3)
+  expect(row?.seasonality).toBeGreaterThan(1.5)
+
+  // A keyword with no stored series has no peak, rather than a made-up one.
+  storedDemand.set("pocket alternative", demandMetric("pocket alternative"))
+  const second = await run(Reports.use.registryHealth())
+  expect(
+    second.keywords.find((candidate) => candidate.keyword === "pocket alternative")
+      ?.peakMonth,
+  ).toBeNull()
+
+  // Blanked rather than left in the shared temp database, where it would give a
+  // later test a peak month it did not ask for.
+  await runtime.runPromise(
+    Effect.gen(function* () {
+      const storage = yield* Storage.Service
+      yield* storage.saveKeywordMetrics([
+        { ...demandMetric("save links from iphone"), monthlySearches: [] },
+      ])
+    }),
+  )
 })
 
 test("registryHealth leaves inventory-only rows out", async () => {
@@ -835,12 +1002,16 @@ test("opportunitiesReport carries the demand behind each signal", async () => {
   // is still a real opportunity, and folding that judgement into one number
   // would hide it from the reader who has to make the call.
   expect(known!.score).not.toBe(31)
-  // A signal with no stored answer carries no demand block.
-  expect(
-    report.signals
-      .filter((signal) => signal.query !== "pocket alternative")
-      .every((signal) => signal.demand === undefined),
-  ).toBe(true)
+  // A signal with no stored answer carries no demand block. Asserted against a
+  // named query rather than "every other signal": this database is shared with
+  // every test in the file, so a blanket claim about rows nobody seeded here
+  // makes the suite depend on its own declaration order.
+  const unmeasured = report.signals.find(
+    (signal) => signal.query === "raindrop alternative",
+  )
+  // Found first, so the assertion below cannot pass by matching nothing.
+  expect(unmeasured).toBeDefined()
+  expect(unmeasured?.demand).toBeUndefined()
 
   // Unlike `storedDemand`, this row is in the shared temp database, so it is
   // blanked rather than left to re-rank a later test's digest. A null volume

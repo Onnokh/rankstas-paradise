@@ -17,6 +17,7 @@ import { KeywordMetrics } from "../keyword-metrics/keyword-metrics.ts"
 import {
   foldKeyword,
   type KeywordMetricSummary,
+  type MonthlySearch,
 } from "../keyword-metrics/schema.ts"
 import { type RegistryEntry, type RegistryPatch } from "../registry/schema.ts"
 import { type RegistryError } from "../registry/schema.ts"
@@ -713,6 +714,27 @@ export const layer = Layer.effect(
           Effect.gen(function* () {
             const entries = yield* registry.loadRegistry()
             const demand = yield* keywordMetrics.cached()
+            // The one read in this domain that wants the eight-year series,
+            // which is why it is a separate call — see
+            // Storage.keywordMonthlySearches. Only this report pays for it, and
+            // an unreadable store costs the peak months rather than the report.
+            const series = resolved.market
+              ? yield* storage
+                  .keywordMonthlySearches(
+                    resolved.market.locationCode,
+                    resolved.market.languageCode,
+                  )
+                  .pipe(
+                    Effect.catchCause(() =>
+                      Effect.succeed(
+                        new Map() as ReadonlyMap<
+                          string,
+                          ReadonlyArray<MonthlySearch>
+                        >,
+                      ),
+                    ),
+                  )
+              : new Map<string, ReadonlyArray<MonthlySearch>>()
             // Supplementary, and `cached` cannot fail: a site with no stored
             // rating gets a null gap rather than no report.
             const rating = yield* domainRatingService.cached()
@@ -740,6 +762,7 @@ export const layer = Layer.effect(
                       : null,
                   costPerClick: metric?.costPerClick ?? null,
                   reportedIntent: metric?.intent ?? null,
+                  ...seasonalityOf(series.get(foldKeyword(entry.keyword)) ?? []),
                 }
               })
               .sort((left, right) => {
@@ -1261,6 +1284,67 @@ export const keywordVerdict = (
   if (!metric) return "unmeasured"
   if (metric.searchVolume === null) return "unreported"
   return metric.searchVolume > 0 ? "has-demand" : "no-demand"
+}
+
+// The calendar month a keyword's demand peaks in, and how pronounced that peak
+// is, worked out from the stored monthly series.
+//
+// The naive version of this — average each calendar month over the whole series
+// and take the highest — is wrong, and wrong in the worst direction: it cannot
+// tell seasonality from trend. A term whose demand has tripled over eight years
+// has its highest raw months at the end of the series, so the "peak" would be
+// whichever calendar month the data happens to stop on. That is exactly
+// backwards for planning, because a growing term is the one most worth planning
+// around.
+//
+// So each month is divided by its own year's mean before anything is averaged.
+// What is left is a seasonal index — how a month does relative to its year —
+// which a trend cannot move, because the trend is inside the divisor.
+//
+// Only complete calendar years count. DataForSEO's series starts and ends
+// mid-year (2018-10 to 2026-07 on one live call), and a partial year's mean is
+// biased by whichever months it happens to contain: an October-to-December stub
+// would make Q4 look merely average and drag every other month's index up
+// against it.
+export const seasonalityOf = (
+  months: ReadonlyArray<MonthlySearch>,
+): { readonly peakMonth: number | null; readonly seasonality: number | null } => {
+  const none = { peakMonth: null, seasonality: null }
+
+  const byYear = new Map<number, Array<MonthlySearch>>()
+  for (const month of months) {
+    if (month.month < 1 || month.month > 12) continue
+    byYear.set(month.year, [...(byYear.get(month.year) ?? []), month])
+  }
+
+  // Two complete years is the floor: one observation of a calendar month is
+  // that month, not an average of it.
+  const complete = [...byYear.values()].filter((year) => year.length === 12)
+  if (complete.length < 2) return none
+
+  const index = new Map<number, Array<number>>()
+  for (const year of complete) {
+    const mean = year.reduce((total, month) => total + month.searchVolume, 0) / 12
+    // A year nobody searched in has no shape to read. Skipped rather than
+    // divided by, which would be an infinity.
+    if (mean <= 0) continue
+    for (const month of year)
+      index.set(month.month, [
+        ...(index.get(month.month) ?? []),
+        month.searchVolume / mean,
+      ])
+  }
+  if (index.size < 12) return none
+
+  const means = [...index].map(
+    ([month, ratios]) =>
+      [
+        month,
+        ratios.reduce((total, ratio) => total + ratio, 0) / ratios.length,
+      ] as const,
+  )
+  const peak = means.reduce((best, current) => (current[1] > best[1] ? current : best))
+  return { peakMonth: peak[0], seasonality: Math.round(peak[1] * 100) / 100 }
 }
 
 // The order the health report lists keywords in. Demand first and strongest
