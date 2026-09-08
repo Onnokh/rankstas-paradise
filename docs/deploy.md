@@ -11,7 +11,7 @@ Ranksta's Paradise runs as a single Bun HTTP service (entry `apps/server/src/mai
 
 ## 2. Persistent volume
 
-Everything the app reads or writes — the service-account key, SQLite, registry CSV, `config.json` — lives under one app home: `${XDG_CONFIG_HOME:-~/.config}/rankstas-paradise` (see [packages/domain/src/config/config.ts](../packages/domain/src/config/config.ts)).
+Everything the app reads or writes — the service-account key, the site catalog (`rankstas-paradise.sqlite`), per-site SQLite, registry CSV — lives under one app home: `${XDG_CONFIG_HOME:-~/.config}/rankstas-paradise` (see [packages/domain/src/config/config.ts](../packages/domain/src/config/config.ts)).
 
 - Mount a Coolify **persistent volume** at `/data`.
 - Set env `XDG_CONFIG_HOME=/data`, so the app home is **`/data/rankstas-paradise`**.
@@ -25,22 +25,29 @@ Without the volume the key and history are lost on every redeploy.
 | `RP_TOKEN` | yes (secret) | Bearer token required on every request. Use a long random value. |
 | `XDG_CONFIG_HOME` | yes | Set to `/data` (see above). |
 | `GOOGLE_SERVICE_ACCOUNT_FILE` | no | Override the key path. Defaults to `<app home>/google-service-account.json`. |
-| `SITE_URL` | no | Overrides `siteUrl` from `config.json`. |
+| `SITE_URL` | no | Legacy: the single property a fresh catalog is seeded with when there is no `config.json`. Ignored once the catalog has been imported. |
 | `SEO_PORT` | no | Defaults to 8790. |
 | `AHREFS_API_KEY` | no (secret) | Enables Ahrefs Domain Rating. Without it every site simply has no rating; nothing else changes. A free key covers the endpoint used ([domain-rating-free](https://docs.ahrefs.com/en/api/reference/public/get-domain-rating-free)). |
 | `RYBBIT_API_KEY` | no (secret) | Reads visits for sites whose `config.json` entry names `analytics.provider: "rybbit"` (see [adr/0004](adr/0004-analytics-provider-port.md)). An organisation key from the Rybbit instance the site's `analytics.baseUrl` points at. Without it such a site shows `ready: false` under `analytics` on `GET /api/status` and has no visits; Search Console is unaffected. |
 | `POLAR_API_KEY`, or the name each site's `revenue.keyVariable` gives (e.g. `POLAR_API_KEY_SHADERTOWN`) | no (secret) | Reads sales for sites whose `config.json` entry names `revenue.provider: "polar"` (see [adr/0005](adr/0005-revenue-provider-port.md)). A Polar organization access token with the `metrics:read` scope; Polar issues one per organisation, so a site per organisation names its own variable. Without it the site shows `ready: false` under `revenue` on `GET /api/status` and has no revenue; nothing else changes. |
 
-No Google credentials go in env: the only one is the service-account key file on the volume (next step). See [packages/domain/src/config/config.ts](../packages/domain/src/config/config.ts) — env takes precedence, `config.json` is the fallback.
+No Google credentials go in env: the only one is the service-account key file on the volume (next step).
+
+## 3b. The site catalog
+
+Sites and their settings live in `rankstas-paradise.sqlite` in the app home (the Catalog; see [packages/domain/src/catalog/catalog.ts](../packages/domain/src/catalog/catalog.ts)). Manage them through the API — `POST /api/sites`, `PUT /api/sites/:id/settings`, `DELETE /api/sites/:id` (see [http-api.md](http-api.md)) — rather than by editing files on the volume.
+
+**One-time import.** A deployment that still has a `config.json` on the volume is migrated on the first start after this change: the server reads the file once, stores its `sites` into the catalog, records that the import ran, and logs `Imported N site(s) from config.json`. From then on the file is not read, so you can delete it. An emptied catalog is not refilled from the file. A fresh deployment with no file and no `SITE_URL` starts with an empty catalog; add the first site over the API.
 
 ## 4. Google authentication — a service-account key
 
 The server authenticates with a **service-account key**: it signs a short JWT with the key's private half and exchanges it for an access token ([search-console.ts](../packages/domain/src/search-console/search-console.ts), `getAccessToken`). There is no browser step, no consent screen, no refresh token, and nothing that expires on a timer — the key is valid until you delete it in Google Cloud. Access tokens are cached in memory, never written to disk, so this path works on a read-only mount.
 
-**Two files must be on the volume** (they can't be env vars):
+**One file must be on the volume** (it can't be an env var):
 
-- `config.json` — `siteUrl` and the `sites` array. See [config.example.json](../config.example.json).
 - `google-service-account.json` — the key, **immutable**. The server only ever reads it.
+
+(Sites are no longer a file: see §3b. A `config.json` shaped like [config.example.json](../config.example.json) is only read once, to seed the catalog.)
 
 Steps:
 
@@ -57,11 +64,11 @@ Steps:
 
 2. **Grant it access to each property.** Search Console → **Settings → Users and permissions → Add user**, paste the service account's email (`…@….iam.gserviceaccount.com`), permission **Owner**. This is the step that is easy to forget, and skipping it produces a 403 on every call while auth itself looks fine. Owner (not Full) is required because RP calls the URL Inspection API for index states; Full user is enough for search-analytics data alone. Repeat per property — the grant is per-property.
 
-3. Copy both files onto the volume at `/data/rankstas-paradise/`:
+3. Copy the key onto the volume at `/data/rankstas-paradise/`:
    - Coolify file manager, or
-   - `scp config.json google-service-account.json <server>:<volume-path>/rankstas-paradise/`
+   - `scp google-service-account.json <server>:<volume-path>/rankstas-paradise/`
 
-4. Redeploy / restart, then `POST /api/jobs/sync?site=<id>` per site to catch up.
+4. Redeploy / restart, add each site with `POST /api/sites` (or let a legacy `config.json` seed the catalog, §3b), then `POST /api/jobs/sync?site=<id>` per site to catch up.
 
 Notes:
 
@@ -75,7 +82,7 @@ If you already run RP locally (history, registry, logged actions), migrate it in
 
 Copy the app home into `/data/rankstas-paradise/`, preserving structure:
 
-- `config.json`, `google-service-account.json` (from §4 above)
+- `google-service-account.json` (from §4 above) and `rankstas-paradise.sqlite` (the catalog), or a legacy `config.json` for the one-time import
 - `sites/<id>/keyword-registry.csv`, `search-console.sqlite`, `sitemap.json` — for each site
 
 ```sh

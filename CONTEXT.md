@@ -9,6 +9,13 @@ The vocabulary of a local-only tool that tracks Google Search Console performanc
 **Site**:
 A tracked web property. Each site has isolated Search Console history, registry, and sitemap state.
 
+**Catalog**:
+The stored list of sites and their settings, in the app-level database. The server reads it on every request and the settings routes write it. A legacy `config.json` is imported into it once.
+_Avoid_: "config" for the list of sites.
+
+**Site settings**:
+Everything a catalog entry holds except its id: the Search Console property, name, origin, sitemap URL, brand terms, and the analytics and revenue provider blocks. Never a vendor key.
+
 **Page**:
 A URL on a site — the Search Console "Page" dimension, and the unit measured by true totals.
 _Avoid_: "target" as a synonym (a target URL is a narrower idea; see below).

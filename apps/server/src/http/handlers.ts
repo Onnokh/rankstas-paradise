@@ -21,6 +21,7 @@ import { JobAlreadyRunningError } from "../jobs/schema.ts"
 import { Reports } from "@rp/domain/reports/reports"
 import { Storage } from "@rp/domain/storage/storage"
 import { Sync } from "@rp/domain/sync/sync"
+import { type ConfigSite } from "@rp/domain/config/schema"
 import { type RegistryPatch } from "@rp/domain/registry/schema"
 import { SiteId } from "@rp/domain/sites/schema"
 import { type Site } from "@rp/domain/sites/schema"
@@ -46,6 +47,15 @@ const messageOf = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause)
 
 const SITE_REQUIRED = "site is required: add ?site=<id> (see GET /api/sites)"
+
+// The status a catalog failure maps to: an unknown id is 404, a taken id 409,
+// an entry the server could not serve 400. Anything else is the legacy 400.
+const catalogStatus = (cause: unknown): number => {
+  const tag = (cause as { _tag?: string } | null)?._tag
+  if (tag === "UnknownSiteError") return 404
+  if (tag === "SiteExistsError") return 409
+  return 400
+}
 
 // Site-scoped Sync effects, run on the site runtime by the job handlers.
 const SyncEffect = Sync.use.syncSearchConsole()
@@ -184,11 +194,69 @@ export const makeApiGroup = (ctx: ServerContext) => {
   const runSync = (rt: SiteRuntime): Promise<string> =>
     ctx.debug ? seedDebug(rt) : rt.runPromise(SyncEffect)
 
+  // Run a catalog operation and envelope its result, mapping the domain's
+  // tagged errors to their status.
+  const catalogJson = async <A extends object>(
+    operation: () => Promise<A>,
+    status = 200,
+  ): Promise<HttpServerResponse.HttpServerResponse> => {
+    try {
+      return jsonEnvelope(await operation(), ctx.debug, status)
+    } catch (cause) {
+      return errorEnvelope(messageOf(cause), ctx.debug, catalogStatus(cause))
+    }
+  }
+
+  // Store an entry (new or changed), drop the site's stale runtime, and answer
+  // with the stored settings next to the resolved Site.
+  const storeSite = async (
+    entry: ConfigSite,
+    store: (entry: ConfigSite) => Promise<Site>,
+  ) => {
+    const site = await store(entry)
+    await ctx.forget(site.id)
+    return { site, settings: entry }
+  }
+
   return HttpApiBuilder.group(Api, "api", (handlers) =>
     handlers
       .handle("sites", () =>
         Effect.promise(async () =>
           jsonEnvelope({ sites: await ctx.loadSites() }, ctx.debug),
+        ),
+      )
+      .handle("siteSettings", ({ params }) =>
+        Effect.promise(() =>
+          catalogJson(async () => {
+            const id = SiteId.make(params.id)
+            const [site, settings] = await Promise.all([
+              ctx.siteFor(id),
+              ctx.catalog.settings(id),
+            ])
+            return { site, settings }
+          }),
+        ),
+      )
+      .handle("siteSettingsSet", ({ params, payload }) =>
+        Effect.promise(() =>
+          catalogJson(() =>
+            storeSite({ id: params.id, ...payload }, ctx.catalog.update),
+          ),
+        ),
+      )
+      .handle("siteAdd", ({ payload }) =>
+        Effect.promise(() =>
+          catalogJson(() => storeSite(payload, ctx.catalog.add), 201),
+        ),
+      )
+      .handle("siteRemove", ({ params }) =>
+        Effect.promise(() =>
+          catalogJson(async () => {
+            const id = SiteId.make(params.id)
+            await ctx.catalog.remove(id)
+            await ctx.forget(id)
+            return { removed: params.id }
+          }),
         ),
       )
       .handle("status", ({ query }) =>

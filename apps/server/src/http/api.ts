@@ -37,6 +37,7 @@ import {
   RevenueReport,
   StatusReport,
 } from "@rp/domain/reports/schema"
+import { ConfigSite, SiteSettings } from "@rp/domain/config/schema"
 import { RegistryPatch } from "@rp/domain/registry/schema"
 import { Site } from "@rp/domain/sites/schema"
 import { Job } from "../jobs/schema.ts"
@@ -57,6 +58,11 @@ const enveloped = <F extends Schema.Struct.Fields>(fields: F) =>
 const SitesResponse = enveloped({ sites: Schema.Array(Site) })
 const JobsResponse = enveloped({ jobs: Schema.Array(Job) })
 const JobResponse = enveloped({ job: Job })
+// A site's stored settings next to the Site they resolve to, so a settings
+// page can show both what it saved and what the server derived from it.
+const SiteSettingsResponse = enveloped({ site: Site, settings: ConfigSite })
+const SiteRemovedResponse = enveloped({ removed: Schema.String })
+const siteParams = { id: Schema.String }
 
 // --- endpoint group -----------------------------------------------------------
 
@@ -160,6 +166,32 @@ export const apiGroup = HttpApiGroup.make("api")
     HttpApiEndpoint.get("jobs", "/api/jobs", {
       query: { site: S },
       success: JobsResponse,
+    }),
+  )
+  // --- site catalog and settings ---
+  .add(
+    HttpApiEndpoint.get("siteSettings", "/api/sites/:id/settings", {
+      params: siteParams,
+      success: SiteSettingsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.put("siteSettingsSet", "/api/sites/:id/settings", {
+      params: siteParams,
+      payload: SiteSettings,
+      success: SiteSettingsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("siteAdd", "/api/sites", {
+      payload: ConfigSite,
+      success: SiteSettingsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("siteRemove", "/api/sites/:id", {
+      params: siteParams,
+      success: SiteRemovedResponse,
     }),
   )
   // --- writes ---

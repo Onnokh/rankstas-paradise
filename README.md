@@ -25,7 +25,7 @@ It refreshes that snapshot in the background. No client touches SQLite or
 Google directly. Deploy the service on Coolify — see
 [docs/deploy.md](docs/deploy.md).
 
-Multiple sites are supported; each has an `id` in `config.json` and its own data under `sites/<id>/`.
+Multiple sites are supported; each has an entry in the site catalog (the app-level `rankstas-paradise.sqlite`, edited through the `/api/sites` routes) and its own data under `sites/<id>/`.
 
 ## Getting started
 
@@ -35,19 +35,19 @@ bun run check        # tsc --build across every package
 bun test             # full workspace test suite
 ```
 
-Run the server locally with `bun --cwd apps/server run serve` (= `bun run apps/server/src/main.ts`). It needs `RP_TOKEN` set (bearer, fail-closed), plus a `config.json` and a service-account key for live data; add `--debug` for the isolated fake fixture. Point a UI at it with `RP_API_URL` + `RP_TOKEN`.
+Run the server locally with `bun --cwd apps/server run serve` (= `bun run apps/server/src/main.ts`). It needs `RP_TOKEN` set (bearer, fail-closed), plus at least one site in the catalog and a service-account key for live data; add `--debug` for the isolated fake fixture. Point a UI at it with `RP_API_URL` + `RP_TOKEN`.
 
 ## First connection
 
 1. In Google Cloud Console, create or select a project, enable **Google Search Console API**, and create a **service account** with a JSON key. Save the key as `google-service-account.json` in the app home.
-2. Copy `config.example.json` to `config.json` and set your site(s).
+2. Add your site(s): `POST /api/sites` with `{ id, siteUrl, ... }` (see [docs/http-api.md](docs/http-api.md)). A `config.json` in the app home, shaped like `config.example.json`, is imported into the catalog once on first start instead.
 3. In Search Console → **Settings → Users and permissions**, add the service account's email (`…@….iam.gserviceaccount.com`) as an **Owner** of each property. Without this every call returns 403.
 
 Full walkthrough, including the `gcloud` commands, is in [docs/deploy.md](docs/deploy.md). There is no browser-based authorization step and nothing that expires on a timer — the server signs a JWT with the key and exchanges it for a short-lived access token.
 
 The tool requests only `https://www.googleapis.com/auth/webmasters.readonly`.
 
-State lives in an XDG app home (`${XDG_CONFIG_HOME:-~/.config}/rankstas-paradise`), never next to the code: the service-account key, per-site SQLite and registry CSV, and `config.json`.
+State lives in an XDG app home (`${XDG_CONFIG_HOME:-~/.config}/rankstas-paradise`), never next to the code: the service-account key, the site catalog (`rankstas-paradise.sqlite`), and per-site SQLite and registry CSV.
 
 ## Keyword registry
 

@@ -1,0 +1,231 @@
+// Catalog service: the stored list of sites and their settings, in the
+// app-level SQLite database `<app home>/rankstas-paradise.sqlite`. Process-
+// global, like Sites: the catalog is the same for everyone. Sites reads it and
+// resolves each entry into a Site; the server's settings routes write it.
+//
+// Each entry is stored as one JSON document (`ConfigSite`, validated on read)
+// rather than one column per field, so adding a setting is a schema change in
+// one place, not a table migration. A `catalog_meta` row records that the
+// one-time import from a legacy config.json has run, so an emptied catalog is
+// not silently refilled from the file.
+import { mkdirSync } from "node:fs"
+
+import { Context, Effect, Layer, Schema } from "effect"
+import { Reactivity } from "effect/unstable/reactivity"
+import { type SqlError } from "effect/unstable/sql"
+import { SqliteClient } from "@effect/sql-sqlite-bun"
+
+import { Config } from "../config/config.ts"
+import { ConfigSite } from "../config/schema.ts"
+import { serviceUse } from "../service-use.ts"
+import { SiteExistsError, UnknownSiteError } from "../sites/schema.ts"
+import { CatalogError } from "./schema.ts"
+
+export interface Interface {
+  // Every stored entry, in the order they were added.
+  readonly list: () => Effect.Effect<ReadonlyArray<ConfigSite>, CatalogError>
+  // One entry by id.
+  readonly get: (
+    id: string,
+  ) => Effect.Effect<ConfigSite, CatalogError | UnknownSiteError>
+  // Store a new entry. The id must not be in use.
+  readonly add: (
+    site: ConfigSite,
+  ) => Effect.Effect<void, CatalogError | SiteExistsError>
+  // Replace the settings of an existing entry.
+  readonly update: (
+    site: ConfigSite,
+  ) => Effect.Effect<void, CatalogError | UnknownSiteError>
+  // Remove an entry. The site's data directory on disk is left alone.
+  readonly remove: (
+    id: string,
+  ) => Effect.Effect<void, CatalogError | UnknownSiteError>
+  // The one-time import from a legacy config.json. Stores the entries and
+  // records that the import ran; a later call does nothing and returns false,
+  // whatever the catalog holds by then.
+  readonly importOnce: (
+    sites: ReadonlyArray<ConfigSite>,
+  ) => Effect.Effect<boolean, CatalogError>
+}
+
+export class Service extends Context.Service<Service, Interface>()("@rp/Catalog") {}
+
+export const use = serviceUse(Service)
+
+const importedKey = "config_imported_at"
+
+const decodeEntry = Schema.decodeUnknownEffect(ConfigSite)
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const dataDirectory = yield* Config.use.dataDirectory()
+    const debug = yield* Config.use.debugMode()
+    // Beside `sites/`, and `.debug` in debug mode like the per-site ledgers, so
+    // a debug run never touches the real catalog.
+    const databasePath = `${dataDirectory}/rankstas-paradise${debug ? ".debug" : ""}.sqlite`
+
+    yield* Effect.try({
+      try: () => mkdirSync(dataDirectory, { recursive: true }),
+      catch: (cause) =>
+        new CatalogError({ message: `Could not create ${dataDirectory}`, cause }),
+    })
+
+    const sql = yield* SqliteClient.make({ filename: databasePath }).pipe(
+      Effect.provide(Reactivity.layer),
+    )
+
+    const catalogError =
+      (operation: string) => (cause: SqlError.SqlError) =>
+        new CatalogError({ message: `Catalog.${operation} failed`, cause })
+    const mapErr =
+      (operation: string) =>
+      <A, E, R>(effect: Effect.Effect<A, E | SqlError.SqlError, R>) =>
+        Effect.mapError(effect, (error) =>
+          error instanceof CatalogError ||
+          error instanceof UnknownSiteError ||
+          error instanceof SiteExistsError
+            ? error
+            : catalogError(operation)(error as SqlError.SqlError),
+        )
+
+    const ddl = [
+      `create table if not exists site (
+        id text primary key,
+        position integer not null,
+        settings text not null,
+        updated_at text not null default current_timestamp
+      )`,
+      `create table if not exists catalog_meta (
+        key text primary key,
+        value text not null
+      )`,
+    ]
+    yield* Effect.forEach(ddl, (statement) => sql.unsafe(statement)).pipe(
+      mapErr("initialize"),
+    )
+
+    // --- internal implementations (fail with SqlError; wrapped at the
+    // boundary below). ---
+
+    const parseRow = (row: { id: string; settings: string }) =>
+      Effect.try({
+        try: () => JSON.parse(row.settings) as unknown,
+        catch: (cause) =>
+          new CatalogError({
+            message: `Catalog entry "${row.id}" is not valid JSON`,
+            cause,
+          }),
+      }).pipe(
+        Effect.flatMap((json) =>
+          decodeEntry(json).pipe(
+            Effect.mapError(
+              (cause) =>
+                new CatalogError({
+                  message: `Catalog entry "${row.id}" does not match SiteSettings`,
+                  cause,
+                }),
+            ),
+          ),
+        ),
+      )
+
+    const listI = Effect.gen(function* () {
+      const rows = yield* sql<{ id: string; settings: string }>`
+        select id, settings from site order by position, id`
+      return yield* Effect.forEach(rows, parseRow)
+    })
+
+    const idsI = Effect.gen(function* () {
+      const rows = yield* sql<{ id: string }>`select id from site order by position, id`
+      return rows.map((row) => row.id)
+    })
+
+    const existsI = (id: string) =>
+      Effect.map(
+        sql<{ n: number }>`select count(*) as n from site where id = ${id}`,
+        (rows) => (rows[0]?.n ?? 0) > 0,
+      )
+
+    const unknown = (id: string) =>
+      Effect.flatMap(idsI, (available) =>
+        Effect.fail(new UnknownSiteError({ siteId: id, available })),
+      )
+
+    const insertI = (site: ConfigSite) =>
+      sql`insert into site (id, position, settings)
+          values (
+            ${site.id},
+            (select coalesce(max(position), 0) + 1 from site),
+            ${JSON.stringify(site)}
+          )`
+
+    const getI = (id: string) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{ id: string; settings: string }>`
+          select id, settings from site where id = ${id}`
+        const row = rows[0]
+        if (!row) return yield* unknown(id)
+        return yield* parseRow(row)
+      })
+
+    const addI = (site: ConfigSite) =>
+      sql.withTransaction(
+        Effect.gen(function* () {
+          if (yield* existsI(site.id))
+            return yield* Effect.fail(new SiteExistsError({ siteId: site.id }))
+          yield* insertI(site)
+        }),
+      )
+
+    const updateI = (site: ConfigSite) =>
+      sql.withTransaction(
+        Effect.gen(function* () {
+          if (!(yield* existsI(site.id))) return yield* unknown(site.id)
+          yield* sql`update site
+            set settings = ${JSON.stringify(site)}, updated_at = current_timestamp
+            where id = ${site.id}`
+        }),
+      )
+
+    const removeI = (id: string) =>
+      sql.withTransaction(
+        Effect.gen(function* () {
+          if (!(yield* existsI(id))) return yield* unknown(id)
+          yield* sql`delete from site where id = ${id}`
+        }),
+      )
+
+    const importOnceI = (sites: ReadonlyArray<ConfigSite>) =>
+      sql.withTransaction(
+        Effect.gen(function* () {
+          const done = yield* sql<{ value: string }>`
+            select value from catalog_meta where key = ${importedKey}`
+          if (done.length > 0) return false
+          for (const site of sites) {
+            if (!(yield* existsI(site.id))) yield* insertI(site)
+          }
+          yield* sql`insert into catalog_meta (key, value)
+            values (${importedKey}, ${new Date().toISOString()})`
+          return true
+        }),
+      )
+
+    return {
+      list: Effect.fn("Catalog.list")(() => listI.pipe(mapErr("list"))),
+      get: Effect.fn("Catalog.get")((id) => getI(id).pipe(mapErr("get"))),
+      add: Effect.fn("Catalog.add")((site) => addI(site).pipe(mapErr("add"))),
+      update: Effect.fn("Catalog.update")((site) =>
+        updateI(site).pipe(mapErr("update")),
+      ),
+      remove: Effect.fn("Catalog.remove")((id) => removeI(id).pipe(mapErr("remove"))),
+      importOnce: Effect.fn("Catalog.importOnce")((sites) =>
+        importOnceI(sites).pipe(mapErr("importOnce")),
+      ),
+    }
+  }),
+)
+
+export const defaultLayer = layer.pipe(Layer.provide(Config.defaultLayer))
+
+export * as Catalog from "./catalog"

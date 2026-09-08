@@ -6,18 +6,22 @@
 // real `CurrentSite.layerForSite(site)` supplied at the bottom of the graph —
 // overriding the die-stub that the domain's `AppLayer` composes for type-checking.
 // Runtimes are cached by site id so each site's SQLite connection (opened as a
-// scoped resource on Storage acquisition) is reused across requests.
+// scoped resource on Storage acquisition) is reused across requests. A settings
+// write drops the site's cached runtime (`forget`), because the Site it was
+// built around is now stale; the next request builds a fresh one.
 //
 // Jobs live inside each site's runtime too (the per-site single-job lock and job
 // registry). `GET /api/jobs` — which is not site-scoped — reads the first
 // configured site's runtime. A truly process-global job view across many sites
 // is out of scope here (the golden fixture is single-site); this matches the
 // legacy single-lock behaviour for the common single-site deployment.
-import { Layer, ManagedRuntime } from "effect"
+import { Effect, Layer, ManagedRuntime } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 
 import { Analytics } from "@rp/domain/analytics/analytics"
+import { Catalog } from "@rp/domain/catalog/catalog"
 import { Config } from "@rp/domain/config/config"
+import { type ConfigSite } from "@rp/domain/config/schema"
 import { CurrentSite } from "@rp/domain/sites/current-site"
 import { DomainRating } from "@rp/domain/domain-rating/domain-rating"
 import { Registry } from "@rp/domain/registry/registry"
@@ -40,6 +44,7 @@ const siteLayer = (site: Site) =>
     Layer.provideMerge(Reports.layer),
     Layer.provideMerge(Sync.layer),
     Layer.provideMerge(Sites.layer),
+    Layer.provideMerge(Catalog.layer),
     Layer.provideMerge(SearchConsole.layer),
     Layer.provideMerge(Analytics.layer),
     Layer.provideMerge(Revenue.layer),
@@ -69,6 +74,20 @@ export type SiteRuntime = ManagedRuntime.ManagedRuntime<
   never
 >
 
+// The catalog operations the settings routes need. Each rejects with the
+// domain's tagged error (UnknownSiteError, SiteExistsError, InvalidSiteError)
+// so the handler can pick the status.
+export interface CatalogOps {
+  // The stored entry for a site.
+  readonly settings: (id: SiteId) => Promise<ConfigSite>
+  // Store a new entry and return the resolved Site.
+  readonly add: (site: ConfigSite) => Promise<Site>
+  // Replace an entry's settings and return the resolved Site.
+  readonly update: (site: ConfigSite) => Promise<Site>
+  // Remove an entry. Its data directory stays on disk.
+  readonly remove: (id: SiteId) => Promise<void>
+}
+
 export interface ServerContext {
   readonly debug: boolean
   readonly loadSites: () => Promise<ReadonlyArray<Site>>
@@ -77,6 +96,9 @@ export interface ServerContext {
   readonly firstSite: () => Promise<Site>
   // The cached runtime for a resolved site.
   readonly runtimeFor: (site: Site) => SiteRuntime
+  // Drop a site's cached runtime after its settings changed or it was removed.
+  readonly forget: (id: SiteId) => Promise<void>
+  readonly catalog: CatalogOps
 }
 
 // Build the server context: read the debug flag + site catalog once, and set up
@@ -85,7 +107,14 @@ export const makeServerContext = async (): Promise<ServerContext> => {
   const configRuntime = ManagedRuntime.make(Config.defaultLayer)
   const debug = await configRuntime.runPromise(Config.use.debugMode())
 
-  const sitesRuntime = ManagedRuntime.make(Sites.defaultLayer)
+  // Sites and the Catalog it reads share one catalog connection here; the
+  // settings routes write through the same runtime.
+  const sitesRuntime = ManagedRuntime.make(
+    Sites.layer.pipe(
+      Layer.provideMerge(Catalog.layer),
+      Layer.provide(Config.defaultLayer),
+    ),
+  )
   const cache = new Map<string, SiteRuntime>()
 
   const runtimeFor = (site: Site): SiteRuntime => {
@@ -94,6 +123,33 @@ export const makeServerContext = async (): Promise<ServerContext> => {
     const runtime = ManagedRuntime.make(siteLayer(site)) as SiteRuntime
     cache.set(site.id, runtime)
     return runtime
+  }
+
+  const forget = async (id: SiteId): Promise<void> => {
+    const existing = cache.get(id)
+    if (!existing) return
+    cache.delete(id)
+    await existing.dispose()
+  }
+
+  // Validate first, so the catalog never stores an entry Sites cannot serve.
+  const resolveThenStore = (
+    site: ConfigSite,
+    store: (site: ConfigSite) => Effect.Effect<void, unknown, Catalog.Service>,
+  ) =>
+    sitesRuntime.runPromise(
+      Effect.gen(function* () {
+        const resolved = yield* Sites.resolve(site)
+        yield* store(site)
+        return resolved
+      }),
+    )
+
+  const catalog: CatalogOps = {
+    settings: (id) => sitesRuntime.runPromise(Catalog.use.get(id)),
+    add: (site) => resolveThenStore(site, Catalog.use.add),
+    update: (site) => resolveThenStore(site, Catalog.use.update),
+    remove: (id) => sitesRuntime.runPromise(Catalog.use.remove(id)),
   }
 
   return {
@@ -107,5 +163,7 @@ export const makeServerContext = async (): Promise<ServerContext> => {
       return first
     },
     runtimeFor,
+    forget,
+    catalog,
   }
 }

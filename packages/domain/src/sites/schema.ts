@@ -44,4 +44,27 @@ export class UnknownSiteError extends Schema.TaggedErrorClass<UnknownSiteError>(
   }
 }
 
+// Raised when a site entry cannot be resolved into a Site: an id that is not a
+// safe path segment, or a property/origin that is not a URL. Checked before an
+// entry is stored, so the catalog never holds an entry the server cannot serve.
+export class InvalidSiteError extends Schema.TaggedErrorClass<InvalidSiteError>()(
+  "InvalidSiteError",
+  {
+    message: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {}
+
+// Raised when a site is added under an id the catalog already holds.
+export class SiteExistsError extends Schema.TaggedErrorClass<SiteExistsError>()(
+  "SiteExistsError",
+  {
+    siteId: Schema.String,
+  },
+) {
+  override get message() {
+    return `A site with id "${this.siteId}" already exists`
+  }
+}
+
 export * as SitesSchema from "./schema"

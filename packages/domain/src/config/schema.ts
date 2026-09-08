@@ -5,10 +5,11 @@ import { Schema } from "effect"
 import { ConfigAnalytics } from "../analytics/schema.ts"
 import { ConfigRevenue } from "../revenue/schema.ts"
 
-// One entry in the `sites` catalog of config.json. Only `id` and `siteUrl` are
-// required; the rest are derived (see the Sites domain) when omitted.
-export const ConfigSite = Schema.Struct({
-  id: Schema.String,
+// The editable settings of one site: everything a site entry holds except its
+// id. Only `siteUrl` is required; the rest is derived (see the Sites domain)
+// when omitted. This is the payload a settings page sends, and the shape the
+// Catalog stores.
+export const SiteSettings = Schema.Struct({
   name: Schema.optional(Schema.String),
   siteUrl: Schema.String,
   origin: Schema.optional(Schema.String),
@@ -22,6 +23,15 @@ export const ConfigSite = Schema.Struct({
   // means no revenue, and the key lives in the environment under the variable
   // `keyVariable` names (default `<PROVIDER>_API_KEY`).
   revenue: Schema.optional(ConfigRevenue),
+}).annotate({ identifier: "SiteSettings" })
+export interface SiteSettings extends Schema.Schema.Type<typeof SiteSettings> {}
+
+// One entry in the site catalog: an id plus its settings. Also the shape of an
+// entry in the `sites` array of a legacy config.json, which the Catalog imports
+// once.
+export const ConfigSite = Schema.Struct({
+  id: Schema.String,
+  ...SiteSettings.fields,
 }).annotate({ identifier: "ConfigSite" })
 export interface ConfigSite extends Schema.Schema.Type<typeof ConfigSite> {}
 
