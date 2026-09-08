@@ -17,7 +17,11 @@ import {
   type SiteVisitsHour,
   type VisitsDays,
 } from "../analytics/schema.ts"
-import { type KeywordMetric, type MonthlySearch } from "../keyword-metrics/schema.ts"
+import {
+  foldKeyword,
+  type KeywordMetric,
+  type MonthlySearch,
+} from "../keyword-metrics/schema.ts"
 import { type RevenueDay } from "../revenue/schema.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import {
@@ -682,6 +686,59 @@ export const layer = Layer.effect(
           )
         const current = yield* windowRows(currentStart, latestDate)
         const previous = yield* windowRows(previousStart, previousEnd)
+
+        // The Keyword metrics for the Site's Market, keyed by folded keyword.
+        // Read here rather than passed in: this store already resolves the
+        // Site's origin and brand terms from CurrentSite, and the Market is the
+        // same move — so no caller has to learn about DataForSEO to get a
+        // better-ranked digest. A Site with no Market, or one whose metrics
+        // have never been fetched, simply gets an empty map and the
+        // impression-only behaviour this had before.
+        const demand = new Map(
+          (resolved.market
+            ? yield* keywordMetricsI(
+                resolved.market.locationCode,
+                resolved.market.languageCode,
+              )
+            : []
+          ).map((metric) => [metric.keyword, metric]),
+        )
+        const demandFor = (query: string) => {
+          const metric = demand.get(foldKeyword(query))
+          return metric
+            ? {
+                searchVolume: metric.searchVolume,
+                difficulty: metric.difficulty,
+                intent: metric.intent,
+              }
+            : undefined
+        }
+
+        // How much demand a signal is ranked by.
+        //
+        // Impressions alone are the wrong weight for three of the four kinds,
+        // and the reason is structural: impressions at position 18 are tiny,
+        // because almost nobody reaches the second page of results. A term with
+        // ten thousand monthly searches stuck at 18 can report fewer
+        // impressions in a month than a term with two hundred searches sitting
+        // at 5 — so an impression-weighted striking-distance score
+        // systematically buries exactly the terms it exists to find.
+        //
+        // Search volume is the demand behind the query rather than the traffic
+        // the current ranking happens to catch, so it is the honest weight. The
+        // larger of the two is taken, never the volume alone: volume is scoped
+        // to one Market, while impressions are counted worldwide, so a site
+        // that draws more impressions than its Market's volume is not
+        // over-reporting — it is ranking outside that Market too. Taking the
+        // max means learning a keyword's volume can only ever promote an
+        // under-observed term, never demote a well-observed one.
+        const rankingWeight = (query: string, impressions: number) => {
+          const volume = demand.get(foldKeyword(query))?.searchVolume
+          return typeof volume === "number" && volume > impressions
+            ? volume
+            : impressions
+        }
+
         const previousByKey = new Map(
           previous.map((row) => [`${row.query} ${row.page}`, row]),
         )
@@ -723,7 +780,11 @@ export const layer = Layer.effect(
               recommendation: mapped
                 ? "Improve the mapped page before creating another page."
                 : "Check whether the ranking page satisfies intent before adding a new page.",
-              score: row.impressions * (21 - row.position),
+              // The kind this weighting was written for: everything here sits
+              // between positions 4 and 20, so the observed impressions are
+              // the least trustworthy signal of how much the term is worth.
+              score: rankingWeight(row.query, row.impressions) * (21 - row.position),
+              demand: demandFor(row.query),
             })
           }
           const benchmark =
@@ -745,7 +806,14 @@ export const layer = Layer.effect(
               mapped,
               recommendation:
                 "Test title, description, and snippet alignment; do not repeat keywords.",
+              // Deliberately still weighted by impressions, unlike the other
+              // three kinds. This score estimates the clicks being lost on
+              // appearances the site *already* has, and every one of these rows
+              // ranks in the top ten — so the observed impressions are the
+              // right number, and search volume would answer a different
+              // question.
               score: row.impressions * (benchmark - row.ctr),
+              demand: demandFor(row.query),
             })
           }
         }
@@ -794,7 +862,11 @@ export const layer = Layer.effect(
               recommendation: ranksOnRegisteredTarget
                 ? "Review whether the existing ranking page satisfies this intent before adding a registry mapping."
                 : "Cluster the phrase and map it only if no existing page satisfies the intent.",
-              score: currentMetrics.impressions,
+              // A phrase the site is not planning for is usually ranking badly
+              // by definition, so its impressions understate it for the same
+              // reason striking-distance's do.
+              score: rankingWeight(query, currentMetrics.impressions),
+              demand: demandFor(query),
             })
           }
           // Same impression floor as the other kinds: a query split across
@@ -812,7 +884,11 @@ export const layer = Layer.effect(
             mapped: registryKeywords.has(query.toLowerCase()),
             recommendation:
               "Consolidate content and internal links, or clarify canonicals and page intent.",
-            score: currentMetrics.impressions * pages.length,
+            // Two pages splitting a high-demand term is a worse problem than
+            // two pages splitting a rare one, whatever the impressions each
+            // currently draws.
+            score: rankingWeight(query, currentMetrics.impressions) * pages.length,
+            demand: demandFor(query),
           })
         }
         return {

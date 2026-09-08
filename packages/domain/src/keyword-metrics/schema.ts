@@ -10,6 +10,17 @@
 // opposite decisions about a Keyword.
 import { Schema } from "effect"
 
+// The one form a keyword is stored, compared, and looked up in. DataForSEO
+// answers in lower-case, Search Console reports queries in lower-case, and a
+// Registry keyword is typed by hand — so everything is folded to this form
+// before it is matched, or the same keyword would be paid for twice and joined
+// to neither.
+//
+// It lives here rather than on the service because Storage folds too, and
+// Storage cannot import the service: the service reads Storage.
+export const foldKeyword = (keyword: string): string =>
+  keyword.trim().toLowerCase().replace(/\s+/g, " ")
+
 // One month of a keyword's volume history, as DataForSEO reports it: the last
 // twelve complete months. Kept because seasonality is invisible in the twelve-
 // month average that `searchVolume` is — a term with a December peak and a term

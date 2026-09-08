@@ -33,6 +33,7 @@ import { isOperatorQuery, Storage } from "../storage/storage.ts"
 import { DataForSeo } from "./dataforseo.ts"
 import { Market } from "./market.ts"
 import {
+  foldKeyword as fold,
   type KeywordMetric,
   type KeywordMetricsRefresh,
   KeywordMetricsError,
@@ -70,13 +71,6 @@ export const use = serviceUse(Service)
 // noise at full price. It is deliberately not a Sync constant — this is how
 // long the vendor's answer stays true, not how often we choose to sync.
 export const refreshAfterDays = 30
-
-// The form a keyword is stored and compared in. DataForSEO answers in
-// lower-case, Search Console reports queries in lower-case, and a Registry
-// keyword is typed by hand — so everything is folded to one form before it is
-// matched, or the same keyword would be paid for twice and joined to neither.
-export const fold = (keyword: string): string =>
-  keyword.trim().toLowerCase().replace(/\s+/g, " ")
 
 // Whether any of the site's brand terms appears in the keyword. The same test
 // the ledger's non-brand filter applies, repeated here because this decision is
