@@ -1,8 +1,13 @@
 import { describe, expect, test } from "bun:test"
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
 import { Cause, Effect, Exit, Layer } from "effect"
 
+import { Catalog } from "../catalog/catalog.ts"
 import { Config } from "../config/config.ts"
-import { type SeoConfig } from "../config/schema.ts"
+import { ConfigLoadError, type SeoConfig } from "../config/schema.ts"
 import { CurrentSite } from "./current-site.ts"
 import { SiteId, UnknownSiteError } from "./schema.ts"
 import { Sites } from "./sites.ts"
@@ -14,7 +19,8 @@ const fakeConfig = (
   config: Partial<SeoConfig>,
   opts: { dataDirectory?: string; debugMode?: boolean } = {},
 ) => {
-  const dataDirectory = opts.dataDirectory ?? "/data"
+  const dataDirectory =
+    opts.dataDirectory ?? mkdtempSync(join(tmpdir(), "rp-sites-"))
   return Layer.succeed(
     Config.Service,
     Config.Service.of({
@@ -32,6 +38,11 @@ const fakeConfig = (
   )
 }
 
+// Sites over a fresh Catalog in the fake Config's data directory (a temp dir by
+// default), so each test starts from an empty catalog.
+const sitesLayer = (config: Layer.Layer<Config.Service>) =>
+  Sites.layer.pipe(Layer.provideMerge(Catalog.layer), Layer.provide(config))
+
 const run = <A, E>(
   effect: Effect.Effect<A, E, never>,
 ): Promise<Exit.Exit<A, E>> =>
@@ -39,12 +50,10 @@ const run = <A, E>(
 
 describe("Sites.loadSites", () => {
   test("normalizes an sc-domain property and fills defaults", async () => {
-    const layer = Sites.layer.pipe(
-      Layer.provide(
-        fakeConfig({
-          sites: [{ id: "example", siteUrl: "sc-domain:example.com" }],
-        }),
-      ),
+    const layer = sitesLayer(
+      fakeConfig({
+        sites: [{ id: "example", siteUrl: "sc-domain:example.com" }],
+      }),
     )
     const exit = await run(Sites.use.loadSites().pipe(Effect.provide(layer)))
     const sites = Exit.isSuccess(exit) ? exit.value : undefined
@@ -61,20 +70,18 @@ describe("Sites.loadSites", () => {
   })
 
   test("strips a trailing slash and keeps explicit overrides", async () => {
-    const layer = Sites.layer.pipe(
-      Layer.provide(
-        fakeConfig({
-          sites: [
-            {
-              id: SiteId.make("bar"),
-              name: "Bar Co",
-              siteUrl: "https://bar.test/",
-              sitemapUrl: "https://bar.test/custom-sitemap.xml",
-              brandTerms: ["bar", "barco"],
-            },
-          ],
-        }),
-      ),
+    const layer = sitesLayer(
+      fakeConfig({
+        sites: [
+          {
+            id: SiteId.make("bar"),
+            name: "Bar Co",
+            siteUrl: "https://bar.test/",
+            sitemapUrl: "https://bar.test/custom-sitemap.xml",
+            brandTerms: ["bar", "barco"],
+          },
+        ],
+      }),
     )
     const exit = await run(Sites.use.loadSites().pipe(Effect.provide(layer)))
     const sites = Exit.isSuccess(exit) ? exit.value : []
@@ -89,9 +96,7 @@ describe("Sites.loadSites", () => {
   })
 
   test("derives a single site from legacy siteUrl when sites[] is absent", async () => {
-    const layer = Sites.layer.pipe(
-      Layer.provide(fakeConfig({ siteUrl: "sc-domain:acme.co.uk" })),
-    )
+    const layer = sitesLayer(fakeConfig({ siteUrl: "sc-domain:acme.co.uk" }))
     const exit = await run(Sites.use.loadSites().pipe(Effect.provide(layer)))
     const sites = Exit.isSuccess(exit) ? exit.value : []
     expect(sites).toEqual([
@@ -107,14 +112,61 @@ describe("Sites.loadSites", () => {
   })
 })
 
+describe("Sites catalog import", () => {
+  test("imports config.json once; later changes to the file are not read", async () => {
+    const dataDirectory = mkdtempSync(join(tmpdir(), "rp-sites-"))
+    const first = sitesLayer(
+      fakeConfig(
+        { sites: [{ id: "one", siteUrl: "sc-domain:one.example" }] },
+        { dataDirectory },
+      ),
+    )
+    const before = await run(Sites.use.loadSites().pipe(Effect.provide(first)))
+    expect(Exit.isSuccess(before) ? before.value.map((s) => String(s.id)) : []).toEqual(["one"])
+
+    // Same catalog, different file contents: the catalog wins.
+    const second = sitesLayer(
+      fakeConfig(
+        { sites: [{ id: "two", siteUrl: "sc-domain:two.example" }] },
+        { dataDirectory },
+      ),
+    )
+    const after = await run(Sites.use.loadSites().pipe(Effect.provide(second)))
+    expect(Exit.isSuccess(after) ? after.value.map((s) => String(s.id)) : []).toEqual(["one"])
+  })
+
+  test("a deployment with no config and no SITE_URL has an empty catalog", async () => {
+    const layer = Sites.layer.pipe(
+      Layer.provideMerge(Catalog.layer),
+      Layer.provide(
+        Layer.succeed(
+          Config.Service,
+          Config.Service.of({
+            load: () =>
+              Effect.fail(
+                new ConfigLoadError({
+                  message: "Missing config: set siteUrl in config.json (or SITE_URL in the environment)",
+                }),
+              ),
+            dataDirectory: () => Effect.succeed(mkdtempSync(join(tmpdir(), "rp-sites-"))),
+            serviceAccountPath: () => Effect.succeed("/nowhere"),
+            debugMode: () => Effect.succeed(false),
+            ensureDataDirectory: () => Effect.void,
+          }),
+        ),
+      ),
+    )
+    const exit = await run(Sites.use.loadSites().pipe(Effect.provide(layer)))
+    expect(Exit.isSuccess(exit) ? exit.value : undefined).toEqual([])
+  })
+})
+
 describe("Sites.siteFor", () => {
   test("resolves a known site", async () => {
-    const layer = Sites.layer.pipe(
-      Layer.provide(
-        fakeConfig({
-          sites: [{ id: "example", siteUrl: "sc-domain:example.com" }],
-        }),
-      ),
+    const layer = sitesLayer(
+      fakeConfig({
+        sites: [{ id: "example", siteUrl: "sc-domain:example.com" }],
+      }),
     )
     const exit = await run(
       Sites.use.siteFor(SiteId.make("example")).pipe(Effect.provide(layer)),
@@ -124,15 +176,13 @@ describe("Sites.siteFor", () => {
   })
 
   test("fails with UnknownSiteError listing available ids", async () => {
-    const layer = Sites.layer.pipe(
-      Layer.provide(
-        fakeConfig({
-          sites: [
-            { id: "one", siteUrl: "sc-domain:one.com" },
-            { id: "two", siteUrl: "sc-domain:two.com" },
-          ],
-        }),
-      ),
+    const layer = sitesLayer(
+      fakeConfig({
+        sites: [
+          { id: "one", siteUrl: "sc-domain:one.com" },
+          { id: "two", siteUrl: "sc-domain:two.com" },
+        ],
+      }),
     )
     const exit = await run(
       Sites.use.siteFor(SiteId.make("missing")).pipe(Effect.provide(layer)),
@@ -188,7 +238,7 @@ describe("CurrentSite", () => {
 
   test("databasePath uses the .debug suffix in debug mode", async () => {
     const layer = CurrentSite.layerForSite(site).pipe(
-      Layer.provide(fakeConfig({}, { debugMode: true })),
+      Layer.provide(fakeConfig({}, { dataDirectory: "/data", debugMode: true })),
     )
     const exit = await run(
       CurrentSite.use.databasePath().pipe(Effect.provide(layer)),
@@ -203,11 +253,10 @@ describe("CurrentSite", () => {
   test("layerFor resolves the site id through the Sites catalog", async () => {
     const config = fakeConfig(
       { sites: [{ id: "example", siteUrl: "sc-domain:example.com" }] },
-      { dataDirectory: "/data" },
     )
-    const sitesLayer = Sites.layer.pipe(Layer.provide(config))
+    const sites = sitesLayer(config)
     const layer = CurrentSite.layerFor(SiteId.make("example")).pipe(
-      Layer.provide(Layer.mergeAll(sitesLayer, config)),
+      Layer.provide(Layer.mergeAll(sites, config)),
     )
     const exit = await run(
       CurrentSite.use.current().pipe(Effect.provide(layer)),
@@ -220,9 +269,9 @@ describe("CurrentSite", () => {
     const config = fakeConfig({
       sites: [{ id: "example", siteUrl: "sc-domain:example.com" }],
     })
-    const sitesLayer = Sites.layer.pipe(Layer.provide(config))
+    const sites = sitesLayer(config)
     const layer = CurrentSite.layerFor(SiteId.make("nope")).pipe(
-      Layer.provide(Layer.mergeAll(sitesLayer, config)),
+      Layer.provide(Layer.mergeAll(sites, config)),
     )
     const exit = await run(
       CurrentSite.use.current().pipe(Effect.provide(layer)),
@@ -235,22 +284,20 @@ describe("CurrentSite", () => {
 
 describe("Sites.loadSites analytics", () => {
   test("fills the analytics defaults and trims the base URL", async () => {
-    const layer = Sites.layer.pipe(
-      Layer.provide(
-        fakeConfig({
-          sites: [
-            {
-              id: "example",
-              siteUrl: "sc-domain:example.com",
-              analytics: {
-                provider: "rybbit",
-                siteId: "12",
-                baseUrl: "https://rybbit.example.com/",
-              },
+    const layer = sitesLayer(
+      fakeConfig({
+        sites: [
+          {
+            id: "example",
+            siteUrl: "sc-domain:example.com",
+            analytics: {
+              provider: "rybbit",
+              siteId: "12",
+              baseUrl: "https://rybbit.example.com/",
             },
-          ],
-        }),
-      ),
+          },
+        ],
+      }),
     )
     const exit = await run(Sites.use.loadSites().pipe(Effect.provide(layer)))
     const sites = Exit.isSuccess(exit) ? exit.value : undefined
@@ -263,30 +310,28 @@ describe("Sites.loadSites analytics", () => {
   })
 
   test("fills the revenue defaults, borrowing the analytics zone", async () => {
-    const layer = Sites.layer.pipe(
-      Layer.provide(
-        fakeConfig({
-          sites: [
-            {
-              id: "shop",
-              siteUrl: "sc-domain:shop.example",
-              analytics: { provider: "rybbit", siteId: "1", timeZone: "Europe/Amsterdam" },
-              revenue: { provider: "polar" },
+    const layer = sitesLayer(
+      fakeConfig({
+        sites: [
+          {
+            id: "shop",
+            siteUrl: "sc-domain:shop.example",
+            analytics: { provider: "rybbit", siteId: "1", timeZone: "Europe/Amsterdam" },
+            revenue: { provider: "polar" },
+          },
+          {
+            id: "other",
+            siteUrl: "sc-domain:other.example",
+            revenue: {
+              provider: "polar",
+              accountId: "org_1",
+              keyVariable: "POLAR_API_KEY_OTHER",
+              baseUrl: "https://sandbox-api.polar.sh/",
+              timeZone: "America/New_York",
             },
-            {
-              id: "other",
-              siteUrl: "sc-domain:other.example",
-              revenue: {
-                provider: "polar",
-                accountId: "org_1",
-                keyVariable: "POLAR_API_KEY_OTHER",
-                baseUrl: "https://sandbox-api.polar.sh/",
-                timeZone: "America/New_York",
-              },
-            },
-          ],
-        }),
-      ),
+          },
+        ],
+      }),
     )
     const exit = await run(Sites.use.loadSites().pipe(Effect.provide(layer)))
     const sites = Exit.isSuccess(exit) ? exit.value : undefined
@@ -307,12 +352,10 @@ describe("Sites.loadSites analytics", () => {
   })
 
   test("a site without an analytics block has none", async () => {
-    const layer = Sites.layer.pipe(
-      Layer.provide(
-        fakeConfig({
-          sites: [{ id: "example", siteUrl: "sc-domain:example.com" }],
-        }),
-      ),
+    const layer = sitesLayer(
+      fakeConfig({
+        sites: [{ id: "example", siteUrl: "sc-domain:example.com" }],
+      }),
     )
     const exit = await run(Sites.use.loadSites().pipe(Effect.provide(layer)))
     const sites = Exit.isSuccess(exit) ? exit.value : undefined

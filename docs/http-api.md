@@ -6,7 +6,8 @@
 
 | Endpoint | CLI equivalent |
 |---|---|
-| `GET /api/sites` | — (configured site catalog) |
+| `GET /api/sites` | — (the site catalog, resolved) |
+| `GET /api/sites/:id/settings` | — (one site's stored settings next to the resolved Site) |
 | `GET /api/status` | `status` |
 | `GET /api/pages?window=N` | `pages --window N` |
 | `GET /api/page?path=/x` | `page /x` |
@@ -133,7 +134,15 @@ GET /api/opportunities?site=<id>
 GET /tui/home.txt?site=<id>
 ```
 
-The site catalog is configured in `config.json` under `sites`. Each site gets isolated SQLite, registry, and sitemap state under `sites/<id>/` in the app home. On the server, each site is served by its own cached `ManagedRuntime` with the active site bound as `CurrentSite` (see [adr/0002-effect-v4-monorepo.md](adr/0002-effect-v4-monorepo.md)).
+The site catalog lives in the app-level database `rankstas-paradise.sqlite` in the app home and is edited through the routes below. A legacy `config.json` with a `sites` array is imported into it once, the first time the server reads an empty catalog; after that the file is not read again. Each site gets isolated SQLite, registry, and sitemap state under `sites/<id>/` in the app home. On the server, each site is served by its own cached `ManagedRuntime` with the active site bound as `CurrentSite` (see [adr/0002-effect-v4-monorepo.md](adr/0002-effect-v4-monorepo.md)); a settings write drops that runtime so the next request sees the new settings.
+
+## Site catalog and settings
+
+Bodies use `SiteSettings` (`packages/domain/src/config/schema.ts`): `siteUrl` (the Search Console property) is required; `name`, `origin`, `sitemapUrl`, `brandTerms`, `analytics`, and `revenue` are optional and derived when absent. Every write answers `{ site, settings }`: the resolved Site next to what was stored. Vendor keys are never part of the settings.
+
+- `POST /api/sites` — body: `{ id, ...SiteSettings }`. `201` with the new site; `409` when the id is taken; `400` when the id is not lower-case letters, digits, and hyphens, or the property/origin is not a URL.
+- `PUT /api/sites/:id/settings` — body: `SiteSettings`. Replaces the whole entry. `404` for an unknown id.
+- `DELETE /api/sites/:id` — removes the entry from the catalog. The site's data directory under `sites/<id>/` stays on disk. `404` for an unknown id.
 
 ## Write endpoints
 

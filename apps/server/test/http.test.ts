@@ -245,3 +245,99 @@ describe("text feeds", () => {
     expect(response.headers.get("content-type")).toContain("text/plain")
   })
 })
+
+// --- site catalog and settings ---
+
+describe("site settings routes", () => {
+  const newSite = { id: "newsite", siteUrl: "sc-domain:newsite.example" }
+
+  test("GET /api/sites/:id/settings → the stored entry next to the resolved Site", async () => {
+    const { status, body } = await requestJson(
+      server,
+      `/api/sites/${FIXTURE_SITE_ID}/settings`,
+    )
+    expect(status).toBe(200)
+    const envelope = body as { site: { id: string; origin: string }; settings: { id: string; siteUrl: string } }
+    expect(envelope.settings.id).toBe(FIXTURE_SITE_ID)
+    expect(envelope.settings.siteUrl).toBe("https://sleevy.app")
+    expect(envelope.site.origin).toBe("https://sleevy.app")
+  })
+
+  test("GET /api/sites/:id/settings for an unknown id → 404", async () => {
+    const { status } = await requestJson(server, "/api/sites/nope/settings")
+    expect(status).toBe(404)
+  })
+
+  test("POST /api/sites → 201, the site appears in the catalog, a second POST → 409", async () => {
+    const created = await requestJson(server, "/api/sites", {
+      method: "POST",
+      body: newSite,
+    })
+    expect(created.status).toBe(201)
+    const envelope = created.body as { site: { id: string; origin: string; name: string } }
+    expect(envelope.site.id).toBe("newsite")
+    expect(envelope.site.origin).toBe("https://newsite.example")
+    expect(envelope.site.name).toBe("newsite")
+
+    const listed = await requestJson(server, "/api/sites")
+    const ids = (listed.body as { sites: ReadonlyArray<{ id: string }> }).sites.map((s) => s.id)
+    expect(ids).toContain("newsite")
+
+    const again = await requestJson(server, "/api/sites", { method: "POST", body: newSite })
+    expect(again.status).toBe(409)
+  })
+
+  test("POST /api/sites with an unsafe id or a non-URL origin → 400", async () => {
+    const badId = await requestJson(server, "/api/sites", {
+      method: "POST",
+      body: { id: "Bad Id", siteUrl: "sc-domain:bad.example" },
+    })
+    expect(badId.status).toBe(400)
+    const badOrigin = await requestJson(server, "/api/sites", {
+      method: "POST",
+      body: { id: "badorigin", siteUrl: "not a url" },
+    })
+    expect(badOrigin.status).toBe(400)
+    const listed = await requestJson(server, "/api/sites")
+    const ids = (listed.body as { sites: ReadonlyArray<{ id: string }> }).sites.map((s) => s.id)
+    expect(ids).not.toContain("badorigin")
+  })
+
+  test("PUT /api/sites/:id/settings replaces the settings and the catalog reflects it", async () => {
+    const updated = await requestJson(server, "/api/sites/newsite/settings", {
+      method: "PUT",
+      body: { siteUrl: newSite.siteUrl, name: "Renamed", brandTerms: ["new", "site"] },
+    })
+    expect(updated.status).toBe(200)
+    const envelope = updated.body as { site: { name: string; brandTerms: string[] } }
+    expect(envelope.site.name).toBe("Renamed")
+    expect(envelope.site.brandTerms).toEqual(["new", "site"])
+
+    const listed = await requestJson(server, "/api/sites")
+    const sites = (listed.body as { sites: ReadonlyArray<{ id: string; name: string }> }).sites
+    expect(sites.find((s) => s.id === "newsite")?.name).toBe("Renamed")
+
+    // The site is served from a fresh runtime after the change.
+    const status = await requestJson(server, "/api/status?site=newsite")
+    expect(status.status).toBe(200)
+  })
+
+  test("PUT /api/sites/:id/settings for an unknown id → 404", async () => {
+    const { status } = await requestJson(server, "/api/sites/nope/settings", {
+      method: "PUT",
+      body: { siteUrl: "sc-domain:nope.example" },
+    })
+    expect(status).toBe(404)
+  })
+
+  test("DELETE /api/sites/:id removes the entry; a second DELETE → 404", async () => {
+    const removed = await requestJson(server, "/api/sites/newsite", { method: "DELETE" })
+    expect(removed.status).toBe(200)
+    expect((removed.body as { removed: string }).removed).toBe("newsite")
+
+    const settings = await requestJson(server, "/api/sites/newsite/settings")
+    expect(settings.status).toBe(404)
+    const again = await requestJson(server, "/api/sites/newsite", { method: "DELETE" })
+    expect(again.status).toBe(404)
+  })
+})
