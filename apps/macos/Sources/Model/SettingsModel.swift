@@ -7,9 +7,8 @@ extension Notification.Name {
     static let settingsDidChangeSites = Notification.Name("rp.settingsDidChangeSites")
 }
 
-/// The state behind the Settings window: the server target, every site's stored settings and
-/// key slots, the app-wide keys, and the clients. One object for the whole window, so the
-/// sidebar and the detail pages agree on what is loaded and what failed.
+/// The state behind the Settings window: every site's stored settings and key slots, and the
+/// app-wide keys.
 @MainActor
 @Observable
 final class SettingsModel {
@@ -19,26 +18,22 @@ final class SettingsModel {
     private(set) var entries: [Site.ID: SiteEntry] = [:]
     private(set) var siteSecrets: [Site.ID: SecretsEnvelope] = [:]
     private(set) var appSecrets: SecretsEnvelope?
-    private(set) var clients: [ClientRecord] = []
     private(set) var isLoading = false
     private(set) var errorMessage: String?
 
     @ObservationIgnored private let makeBackend: @Sendable (RemoteTarget) -> any SettingsBackend
     @ObservationIgnored private let loadTarget: @Sendable () throws -> RemoteTarget
-    @ObservationIgnored private let saveTarget: @Sendable (RemoteTarget) throws -> Void
     @ObservationIgnored private let notify: @Sendable () -> Void
 
     init(
         makeBackend: @escaping @Sendable (RemoteTarget) -> any SettingsBackend = { APIClient(target: $0) },
         loadTarget: @escaping @Sendable () throws -> RemoteTarget = { try ClientConfiguration.load() },
-        saveTarget: @escaping @Sendable (RemoteTarget) throws -> Void = { try ClientConfiguration.save($0) },
         notify: @escaping @Sendable () -> Void = {
             NotificationCenter.default.post(name: .settingsDidChangeSites, object: nil)
         }
     ) {
         self.makeBackend = makeBackend
         self.loadTarget = loadTarget
-        self.saveTarget = saveTarget
         self.notify = notify
     }
 
@@ -65,39 +60,10 @@ final class SettingsModel {
         do {
             sites = try await backend.sites()
             appSecrets = try await backend.secrets(siteID: nil)
-            clients = try await backend.clients()
             for site in sites {
                 entries[site.id] = try await backend.siteSettings(id: site.id).settings
                 siteSecrets[site.id] = try await backend.secrets(siteID: site.id)
             }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    // MARK: Server
-
-    /// Keep a new server address and token for later launches, then load against them.
-    func saveTarget(apiUrl: String, token: String) async {
-        let target = RemoteTarget(apiUrl: apiUrl.trimmingCharacters(in: .whitespaces), token: token)
-        do {
-            try saveTarget(target)
-            await load()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    /// Ask the server for a token of this Mac's own, keep it, and use it from now on. The
-    /// shared token that made the request keeps working elsewhere.
-    func adoptOwnToken(label: String) async {
-        guard let backend, let target else { return }
-        do {
-            let created = try await backend.createClient(label: label)
-            let own = RemoteTarget(apiUrl: target.apiUrl, token: created.token)
-            try saveTarget(own)
-            self.target = own
-            clients = try await makeBackend(own).clients()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -120,36 +86,6 @@ final class SettingsModel {
         }
     }
 
-    func addSite(id: String, settings: SiteSettings) async -> Site? {
-        guard let backend else { return nil }
-        do {
-            let envelope = try await backend.addSite(SiteEntry(id: id, settings: settings))
-            entries[envelope.site.id] = envelope.settings
-            sites.append(envelope.site)
-            siteSecrets[envelope.site.id] = try await backend.secrets(siteID: envelope.site.id)
-            notify()
-            return envelope.site
-        } catch {
-            errorMessage = error.localizedDescription
-            return nil
-        }
-    }
-
-    func removeSite(id: Site.ID) async -> Bool {
-        guard let backend else { return false }
-        do {
-            try await backend.removeSite(id: id)
-            sites.removeAll { $0.id == id }
-            entries[id] = nil
-            siteSecrets[id] = nil
-            notify()
-            return true
-        } catch {
-            errorMessage = error.localizedDescription
-            return false
-        }
-    }
-
     // MARK: Vendor keys
 
     func setSecret(siteID: Site.ID?, purpose: String, value: String) async -> Bool {
@@ -164,16 +100,6 @@ final class SettingsModel {
         }
     }
 
-    func removeSecret(siteID: Site.ID?, purpose: String) async {
-        guard let backend else { return }
-        do {
-            try await backend.removeSecret(siteID: siteID, purpose: purpose)
-            await reloadSecrets(siteID: siteID, backend: backend)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
     private func reloadSecrets(siteID: Site.ID?, backend: any SettingsBackend) async {
         do {
             let envelope = try await backend.secrets(siteID: siteID)
@@ -182,31 +108,6 @@ final class SettingsModel {
             } else {
                 appSecrets = envelope
             }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    // MARK: Clients
-
-    /// Issue a token for another client and hand it back once, for the sheet to show.
-    func createClient(label: String) async -> ClientCreatedEnvelope? {
-        guard let backend else { return nil }
-        do {
-            let created = try await backend.createClient(label: label)
-            clients = try await backend.clients()
-            return created
-        } catch {
-            errorMessage = error.localizedDescription
-            return nil
-        }
-    }
-
-    func revokeClient(id: String) async {
-        guard let backend else { return }
-        do {
-            _ = try await backend.revokeClient(id: id)
-            clients = try await backend.clients()
         } catch {
             errorMessage = error.localizedDescription
         }
