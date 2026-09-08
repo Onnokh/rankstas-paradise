@@ -277,7 +277,10 @@ export const makeServerContext = async (): Promise<ServerContext> => {
       const value = Bun.env[Secrets.variableFor(site, purpose)]
       if (value && value.trim() !== "") entries.push({ scope, purpose, value: Redacted.make(value) })
     }
+    // App-wide, both of them: one Ahrefs account rates every site, and one
+    // DataForSEO account answers for every Market.
     fromEnv(null, null, "ahrefs")
+    fromEnv(null, null, "dataforseo")
     for (const site of sites) {
       if (site.analytics) fromEnv(site.id, site, site.analytics.provider)
       if (site.revenue) fromEnv(site.id, site, site.revenue.provider)

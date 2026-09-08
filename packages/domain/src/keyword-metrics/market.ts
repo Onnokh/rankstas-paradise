@@ -240,8 +240,10 @@ export const locationFor = (locationCode: number): Location | null =>
 // the honest answer, because Labs is the shorter of the two lists and a code
 // that is not on our table cannot be claimed as covered by it. A caller still
 // has to check the Market first; this is a router, not a guard.
-export const providerFor = (locationCode: number): KeywordDataProvider =>
-  byCode.get(locationCode)?.googleAdsOnly ? "google-ads" : "labs"
+export const providerFor = (locationCode: number): KeywordDataProvider => {
+  const location = byCode.get(locationCode)
+  return !location || location.googleAdsOnly ? "google-ads" : "labs"
+}
 
 // Every language DataForSEO serves for this country, its default first.
 export const languagesFor = (

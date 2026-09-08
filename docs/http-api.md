@@ -162,7 +162,7 @@ The site catalog lives in the app-level database `rankstas-paradise.sqlite` in t
 
 ## Site catalog and settings
 
-Bodies use `SiteSettings` (`packages/domain/src/config/schema.ts`): `siteUrl` (the Search Console property) is required; `name`, `origin`, `sitemapUrl`, `brandTerms`, `analytics`, and `revenue` are optional and derived when absent. Every write answers `{ site, settings }`: the resolved Site next to what was stored. Vendor keys are never part of the settings.
+Bodies use `SiteSettings` (`packages/domain/src/config/schema.ts`): `siteUrl` (the Search Console property) is required; `name`, `origin`, `sitemapUrl`, `brandTerms`, `market`, `analytics`, and `revenue` are optional and derived when absent. A `market` names a DataForSEO `locationCode` and optionally a `languageCode`; absent, it resolves to the United States in English, and an absent language takes the country's primary search language. Every write answers `{ site, settings }`: the resolved Site next to what was stored. Vendor keys are never part of the settings.
 
 - `POST /api/sites` — body: `{ id, ...SiteSettings }`. `201` with the new site; `409` when the id is taken; `400` when the id is not lower-case letters, digits, and hyphens, or the property/origin is not a URL.
 - `PUT /api/sites/:id/settings` — body: `SiteSettings`. Replaces the whole entry. `404` for an unknown id.
