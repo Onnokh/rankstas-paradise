@@ -4,6 +4,35 @@ struct Site: Codable, Identifiable, Sendable {
     let id: String
     let name: String
     let origin: String
+    /// The provider blocks as the server resolved them, defaults filled in. Optional so
+    /// snapshots and older servers still decode.
+    var analytics: ResolvedAnalytics?
+    var revenue: ResolvedRevenue?
+
+    init(id: String, name: String, origin: String, analytics: ResolvedAnalytics? = nil, revenue: ResolvedRevenue? = nil) {
+        self.id = id
+        self.name = name
+        self.origin = origin
+        self.analytics = analytics
+        self.revenue = revenue
+    }
+}
+
+/// A site's analytics source with the server's defaults filled: what the adapter runs with.
+struct ResolvedAnalytics: Codable, Sendable, Equatable {
+    let provider: String
+    let siteId: String
+    let baseUrl: String?
+    let timeZone: String
+}
+
+/// A site's revenue source with the server's defaults filled.
+struct ResolvedRevenue: Codable, Sendable, Equatable {
+    let provider: String
+    let accountId: String?
+    let keyVariable: String
+    let baseUrl: String?
+    let timeZone: String
 }
 
 struct SitesEnvelope: Codable, Sendable {
