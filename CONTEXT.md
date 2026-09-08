@@ -92,6 +92,8 @@ A target URL's pre-launch 28-day window — the reference point for measuring li
 
 **Keyword metric**:
 What DataForSEO says about one term in one Market: its search volume, difficulty, cost per click, competition, intent, and monthly searches. Cached, not accumulated — every number can be asked for again, so a stored answer older than thirty days is stale rather than historical, and is replaced. Held for planned Keywords and for observed non-brand Queries alike. A brand query and an operator query are never asked about, because the vendor charges per term and neither answer could change a decision.
+
+A metric is also held for a Keyword the vendor said *nothing* about. DataForSEO answers with one row per term it knows and silently omits the rest, so silence is its answer — "no data for this" — and it is stored as a row with every number null. Two reasons it must be: without a row the Keyword reads as never asked, which is false about a term just paid for and points at the opposite fix; and the thirty-day rule can only skip a Keyword that has a row, so an unrecorded silence is re-asked and re-billed on every Sync for ever.
 _Avoid_: "keyword data"; "SEO metrics"; treating an absent number as a zero — a null means "not told", which leads to the opposite decision from "nobody searches this".
 
 **Search volume**:

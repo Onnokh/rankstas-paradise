@@ -190,7 +190,8 @@ export const layer = Layer.effect(
               ),
           ),
         ]
-        if (asked.length === 0) return { asked: 0, answered: 0, requests: 0 }
+        if (asked.length === 0)
+          return { asked: 0, answered: 0, unreported: 0, requests: 0 }
 
         const call =
           resolved.provider === "google-ads"
@@ -198,6 +199,7 @@ export const layer = Layer.effect(
             : DataForSeo.keywordOverview
         const fetchedAt = new Date().toISOString()
         let answered = 0
+        let unreported = 0
         let requests = 0
 
         // Batches run one after another, not in parallel. DataForSEO
@@ -216,12 +218,43 @@ export const layer = Layer.effect(
             fetchedAt,
           )
           requests += 1
+
+          // What came back, plus a row for every keyword that did not. Both are
+          // answers: DataForSEO returns one item per keyword it knows, and it
+          // simply omits the rest, so silence about a keyword is the vendor
+          // saying it has no data for it.
+          //
+          // Recording that silence is not tidiness. Without a row the keyword
+          // reads as `unmeasured` — "never asked" — which is a false statement
+          // about a keyword just paid for, and it is the opposite conclusion:
+          // unmeasured invites configuring a key, where the truth is that the
+          // term is too rare for the vendor to report. And since the freshness
+          // cutoff can only skip keywords that HAVE a row, an unrecorded
+          // silence is re-asked and re-billed on every sync, for ever.
+          //
+          // The volume is null, never zero. Zero is a measurement — "nobody
+          // searches this" — and this is the absence of one.
+          const returned = new Set(metrics.map((metric) => fold(metric.keyword)))
+          const silent = keywords.filter((keyword) => !returned.has(keyword))
+
           // Stored per batch rather than at the end: a later batch that fails
           // must not throw away an answer already paid for.
           yield* storage
-            .saveKeywordMetrics(
-              metrics.map((metric) => ({ ...metric, keyword: fold(metric.keyword) })),
-            )
+            .saveKeywordMetrics([
+              ...metrics.map((metric) => ({ ...metric, keyword: fold(metric.keyword) })),
+              ...silent.map((keyword) => ({
+                keyword,
+                locationCode: resolved.locationCode,
+                languageCode: resolved.languageCode,
+                fetchedAt,
+                searchVolume: null,
+                difficulty: null,
+                costPerClick: null,
+                competition: null,
+                intent: null,
+                monthlySearches: [],
+              })),
+            ])
             .pipe(
               Effect.mapError(
                 (cause) =>
@@ -232,9 +265,10 @@ export const layer = Layer.effect(
               ),
             )
           answered += metrics.length
+          unreported += silent.length
         }
 
-        return { asked: asked.length, answered, requests }
+        return { asked: asked.length, answered, unreported, requests }
       }),
     }
 

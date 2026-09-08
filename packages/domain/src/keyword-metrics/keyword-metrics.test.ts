@@ -159,7 +159,7 @@ test("refresh asks Labs, stores the answer, and cached reads it back", async () 
       .pipe(Effect.provide(buildLayer(store, http))),
   )
 
-  expect(summary).toEqual({ asked: 1, answered: 1, requests: 1 })
+  expect(summary).toEqual({ asked: 1, answered: 1, unreported: 0, requests: 1 })
   expect(calls).toHaveLength(1)
   expect(calls[0]!.url).toContain("/v3/dataforseo_labs/google/keyword_overview/live")
   expect(calls[0]!.auth).toBe("Basic test-key")
@@ -281,7 +281,7 @@ test("a keyword with a fresh answer is not asked about again", async () => {
       .refresh(["wow mount tracker", "wow mount list"])
       .pipe(Effect.provide(buildLayer(store, http))),
   )
-  expect(third).toEqual({ asked: 0, answered: 0, requests: 0 })
+  expect(third).toEqual({ asked: 0, answered: 0, unreported: 0, requests: 0 })
   expect(calls).toHaveLength(2)
 })
 
@@ -436,4 +436,81 @@ test("a batch over the cap is split, and a later failure keeps what was paid for
   // The first batch was stored before the second was attempted, so a failure
   // halfway does not throw away an answer already paid for.
   expect(store.get("keyword 0|2840|en")?.searchVolume).toBe(10)
+})
+
+test("a keyword DataForSEO says nothing about is recorded as asked, not left absent", async () => {
+  // The bug this fixes, seen on a live site: 37 keywords asked, 11 answered,
+  // and the other 26 read "Not measured" on the planning screen — which means
+  // "never asked" and was false about keywords just paid for. Worse, the
+  // freshness cutoff can only skip a keyword that HAS a row, so all 26 were
+  // re-asked and re-billed on the next sync, and the one after that.
+  const store: Store = new Map()
+  const calls: Array<Call> = []
+  const http = fakeHttp(calls, [
+    // Two keywords asked about; DataForSEO answers for one and omits the other.
+    { status: 200, body: labsBody([labsItem("aurora shader", 110, 4)]) },
+  ])
+
+  const summary = await Effect.runPromise(
+    KeywordMetrics.use
+      .refresh(["aurora shader", "webgpu shader library"])
+      .pipe(Effect.provide(buildLayer(store, http))),
+  )
+
+  expect(summary).toEqual({ asked: 2, answered: 1, unreported: 1, requests: 1 })
+
+  const silent = store.get("webgpu shader library|2840|en")
+  expect(silent).toBeDefined()
+  // Null, never zero. Zero is a measurement — "nobody searches this" — and this
+  // is the absence of one, which the verdict rules read as `unreported`.
+  expect(silent?.searchVolume).toBeNull()
+  expect(silent?.difficulty).toBeNull()
+  expect(silent?.intent).toBeNull()
+  expect(silent?.monthlySearches).toEqual([])
+  // Stamped with this run, which is what makes the freshness rule apply to it.
+  expect(silent?.fetchedAt).toBe(store.get("aurora shader|2840|en")?.fetchedAt)
+})
+
+test("a silence is not re-asked, and so not re-billed, while it is fresh", async () => {
+  const store: Store = new Map()
+  const calls: Array<Call> = []
+  const http = fakeHttp(calls, [
+    { status: 200, body: labsBody([labsItem("aurora shader", 110, 4)]) },
+  ])
+
+  await Effect.runPromise(
+    KeywordMetrics.use
+      .refresh(["aurora shader", "webgpu shader library"])
+      .pipe(Effect.provide(buildLayer(store, http))),
+  )
+  expect(calls).toHaveLength(1)
+
+  // The same two again, as the next sync would.
+  const second = await Effect.runPromise(
+    KeywordMetrics.use
+      .refresh(["aurora shader", "webgpu shader library"])
+      .pipe(Effect.provide(buildLayer(store, http))),
+  )
+
+  expect(second).toEqual({ asked: 0, answered: 0, unreported: 0, requests: 0 })
+  expect(calls).toHaveLength(1)
+})
+
+test("a batch that fails records no silence, because nothing was learned", async () => {
+  // The counterpart: a rejected request tells us nothing about any keyword in
+  // it, so writing "asked and unreported" rows would turn a transport failure
+  // into a vendor verdict — and stop the next sync from ever retrying them.
+  const store: Store = new Map()
+  const exit = await Effect.runPromiseExit(
+    KeywordMetrics.use
+      .refresh(["aurora shader", "webgpu shader library"])
+      .pipe(
+        Effect.provide(
+          buildLayer(store, fakeHttp([], [{ status: 500, body: "nope" }])),
+        ),
+      ),
+  )
+
+  expect(Exit.isFailure(exit)).toBe(true)
+  expect(store.size).toBe(0)
 })
