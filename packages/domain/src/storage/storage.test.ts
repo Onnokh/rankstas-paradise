@@ -701,3 +701,198 @@ test("a Site with no brand terms filters no Query out of Non-brand", async () =>
     rmSync(noBrandDir, { recursive: true, force: true })
   }
 })
+
+// --- Operator queries: out of Opportunity detection, still in the metrics ---
+
+// Observed twice on the shadertown site, with real impressions. Search Console
+// reports a site: search as an ordinary Query row.
+const operatorQuery = "(shadertown.com) (site:sleevy.app or site:www.shadertown.com)"
+
+test("the observed Operator query does not become a new-demand Opportunity", async () => {
+  await run(
+    Storage.use.saveSnapshots([
+      snapshot({ query: "widget", clicks: 5, impressions: 100, position: 8 }),
+      snapshot({ query: operatorQuery, clicks: 0, impressions: 40, position: 15 }),
+    ]),
+  )
+
+  // Both rows clear the new-demand floor of 20 impressions and neither has a
+  // Registry row, so without the filter the operator expression would be read
+  // as fresh demand to plan a page for.
+  const digest = await run(Storage.use.opportunityDigest([]))
+  const newDemand = digest.signals.filter((signal) => signal.kind === "new-demand")
+  expect(newDemand.map((signal) => signal.query)).toEqual(["widget"])
+  expect(digest.signals.map((signal) => signal.query)).not.toContain(operatorQuery)
+})
+
+test("an Operator query reaches none of the four Opportunity kinds", async () => {
+  // "widget frame" and the Operator query carry identical figures on identical
+  // pages, so the control proves the fixture really does cross every threshold
+  // and the Operator query is absent because it was filtered, not because its
+  // numbers were too small. The alpha/beta/gamma rows set the 6-10 position
+  // band's CTR benchmark high enough for the ctr kind to fire.
+  const widgets = "https://example.com/widgets"
+  const frames = "https://example.com/frames"
+  await run(
+    Storage.use.saveSnapshots([
+      snapshot({
+        query: "alpha widget",
+        page: widgets,
+        clicks: 10,
+        impressions: 100,
+        position: 7,
+      }),
+      snapshot({
+        query: "beta widget",
+        page: widgets,
+        clicks: 12,
+        impressions: 100,
+        position: 8,
+      }),
+      snapshot({
+        query: "gamma widget",
+        page: widgets,
+        clicks: 11,
+        impressions: 100,
+        position: 9,
+      }),
+      snapshot({
+        query: "widget frame",
+        page: widgets,
+        clicks: 1,
+        impressions: 60,
+        position: 6,
+      }),
+      snapshot({
+        query: "widget frame",
+        page: frames,
+        clicks: 1,
+        impressions: 60,
+        position: 6,
+      }),
+      snapshot({
+        query: operatorQuery,
+        page: widgets,
+        clicks: 1,
+        impressions: 60,
+        position: 6,
+      }),
+      snapshot({
+        query: operatorQuery,
+        page: frames,
+        clicks: 1,
+        impressions: 60,
+        position: 6,
+      }),
+    ]),
+  )
+
+  const digest = await run(Storage.use.opportunityDigest([]))
+  const kindsOf = (query: string) =>
+    [
+      ...new Set(
+        digest.signals
+          .filter((signal) => signal.query === query)
+          .map((signal) => signal.kind),
+      ),
+    ].sort()
+
+  expect(kindsOf("widget frame")).toEqual([
+    "cannibalization",
+    "ctr",
+    "new-demand",
+    "striking-distance",
+  ])
+  expect(kindsOf(operatorQuery)).toEqual([])
+  // Nor may it ride along as another signal's label.
+  expect(digest.signals.map((signal) => signal.label)).not.toContain(operatorQuery)
+})
+
+test("all-queries and non-brand totals are unchanged by the Operator query filter", async () => {
+  await run(
+    Storage.use.saveSnapshots([
+      snapshot({ query: "widget", clicks: 5, impressions: 100, position: 8 }),
+      snapshot({ query: operatorQuery, clicks: 0, impressions: 40, position: 15 }),
+    ]),
+  )
+
+  // all-queries is a mechanical sum over the stored per-query rows, and
+  // non-brand is that sum with Brand queries taken out. Neither drops an
+  // Operator query, so both still count all 140 impressions.
+  const overview = await run(Storage.use.pagesWindowOverview())
+  const page = overview.rows.find(
+    (candidate) => candidate.page === "https://example.com/widgets",
+  )
+  expect(page?.allQueries.current.impressions).toBe(140)
+  expect(page?.nonBrand.current.impressions).toBe(140)
+
+  const between = await run(
+    Storage.use.metricsBetween("/widgets", "2024-01-10", "2024-01-10", true),
+  )
+  expect(between.impressions).toBe(140)
+
+  // And the Query list still shows the row Search Console reported.
+  const listed = await run(Storage.use.topQueries({ includeBrand: true }))
+  expect(listed.rows.map((row) => row.query)).toContain(operatorQuery)
+})
+
+test("natural Queries survive the Operator query filter, colons included", async () => {
+  // A colon alone is not an operator: a natural phrase may hold one, a Query
+  // may be a pasted URL, and "opposite:" holds the letters "site:" without
+  // starting the token. "define:" is left off the token list on purpose.
+  const natural = [
+    "widget frame",
+    "sleevy: the sleeve tool",
+    "define:widget",
+    "https://example.com/widgets",
+    "opposite: which widget to buy",
+    "widget site plan",
+  ]
+  await run(
+    Storage.use.saveSnapshots([
+      ...natural.map((query) =>
+        snapshot({ query, clicks: 0, impressions: 40, position: 15 }),
+      ),
+      snapshot({ query: operatorQuery, clicks: 0, impressions: 40, position: 15 }),
+    ]),
+  )
+
+  const digest = await run(Storage.use.opportunityDigest([]))
+  const newDemand = digest.signals
+    .filter((signal) => signal.kind === "new-demand")
+    .map((signal) => signal.query)
+    .sort()
+  expect(newDemand).toEqual([...natural].sort())
+})
+
+test("isOperatorQuery matches the listed tokens and nothing else", () => {
+  for (const query of [
+    "site:example.com",
+    "SITE:Example.com",
+    operatorQuery,
+    "-site:example.com",
+    "inurl:widgets",
+    "intitle:widget review",
+    "intext:widget",
+    "allintitle:widget review",
+    "allinurl:widgets",
+    "allintext:widget",
+    "cache:example.com",
+    "related:example.com",
+    "filetype:pdf widget guide",
+  ])
+    expect(Storage.isOperatorQuery(query)).toBe(true)
+
+  for (const query of [
+    "widget frame",
+    "define:widget",
+    "before:2024 widget",
+    "after:2024 widget",
+    "https://example.com/widgets",
+    "opposite: which widget to buy",
+    "widget site plan",
+    "on site widget repair",
+    "sleevy: the sleeve tool",
+  ])
+    expect(Storage.isOperatorQuery(query)).toBe(false)
+})

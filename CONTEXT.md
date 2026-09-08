@@ -65,6 +65,10 @@ _Avoid_: using "keyword" for an observed term.
 **Brand query**:
 A query containing the site's brand name. Its complement is **non-brand**.
 
+**Operator query**:
+A query that is a Google search-operator expression rather than a search term — a query holding an operator token followed by a colon (`site:`, `inurl:`, `intitle:`, `intext:`, `allintitle:`, `allinurl:`, `allintext:`, `cache:`, `related:`, `filetype:`). Search Console reports these as Query rows, with impressions, because somebody ran such a search in Google. Kept in the ledger and counted in all-queries, non-brand, and true totals; ruled out of Opportunity detection and of every surface that offers Queries as keyword candidates.
+_Avoid_: "operator" on its own; "junk query".
+
 **All-queries**:
 Metrics summed from stored per-query rows, brand *included*. Inventory-only pages are judged on this.
 
