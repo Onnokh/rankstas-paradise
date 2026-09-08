@@ -10,13 +10,11 @@ it in the background, so the full overview is not gated on network latency.
 
 ## Configure
 
-The app resolves the server and its bearer token in this order:
-
-1. `RP_API_URL` and `RP_TOKEN` from the process environment (a developer override);
-2. the login Keychain (service `com.rankstasparadise.mac`), where the app keeps the target between launches;
-3. `$XDG_CONFIG_HOME/rankstas-paradise/client.json` (`~/.config` by default), the convention the TUI and Electron client use. A target found there is copied into the Keychain; the file is left for the other clients.
-
-Prefer a per-client token from `POST /api/clients` over the shared `RP_TOKEN` (see [docs/http-api.md](../../docs/http-api.md)). The legacy file is JSON:
+The app resolves the server and its bearer token from `RP_API_URL` and `RP_TOKEN` in the
+process environment, else from `$XDG_CONFIG_HOME/rankstas-paradise/client.json` (`~/.config`
+by default), the convention the TUI and Electron client share. Prefer a per-client token from
+`POST /api/clients` over the shared `RP_TOKEN` (see [docs/http-api.md](../../docs/http-api.md)).
+The file is JSON:
 
 ```json
 {

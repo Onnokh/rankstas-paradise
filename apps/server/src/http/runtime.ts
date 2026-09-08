@@ -135,6 +135,14 @@ export interface AuthOps {
   readonly hasActiveClient: () => Promise<boolean>
 }
 
+// The one-time import of vendor keys from the environment into the vault; see
+// `importEnvironmentKeys`.
+export interface EnvironmentImport {
+  // How many keys were stored, or null when the import did not run (no master
+  // key yet, or it ran on an earlier start).
+  readonly stored: number | null
+}
+
 export interface ServerContext {
   readonly debug: boolean
   readonly loadSites: () => Promise<ReadonlyArray<Site>>
@@ -152,6 +160,10 @@ export interface ServerContext {
   readonly secrets: SecretOps
   readonly clients: ClientOps
   readonly auth: AuthOps
+  // Store, once, every vendor key the environment holds for a slot the vault
+  // has nothing for: the sites' analytics and revenue providers, and Ahrefs
+  // app-wide. After it the environment variables can be removed.
+  readonly importEnvironmentKeys: () => Promise<EnvironmentImport>
 }
 
 // Build the server context: read the debug flag + site catalog once, and set up
@@ -255,6 +267,23 @@ export const makeServerContext = async (): Promise<ServerContext> => {
       appRuntime.runPromise(Clients.use.hasActive()).catch(() => false),
   }
 
+  const importEnvironmentKeys = async (): Promise<EnvironmentImport> => {
+    const sites = await appRuntime.runPromise(Sites.use.loadSites())
+    const entries: Array<{ scope: string | null; purpose: string; value: Redacted.Redacted<string> }> = []
+    const fromEnv = (scope: string | null, site: Site | null, purpose: string) => {
+      const value = Bun.env[Secrets.variableFor(site, purpose)]
+      if (value && value.trim() !== "") entries.push({ scope, purpose, value: Redacted.make(value) })
+    }
+    fromEnv(null, null, "ahrefs")
+    for (const site of sites) {
+      if (site.analytics) fromEnv(site.id, site, site.analytics.provider)
+      if (site.revenue) fromEnv(site.id, site, site.revenue.provider)
+    }
+    const stored = await appRuntime.runPromise(Secrets.use.importOnce(entries))
+    if (stored !== null && stored > 0) await forgetAll()
+    return { stored }
+  }
+
   return {
     debug,
     loadSites: () => appRuntime.runPromise(Sites.use.loadSites()),
@@ -272,5 +301,6 @@ export const makeServerContext = async (): Promise<ServerContext> => {
     secrets,
     clients,
     auth,
+    importEnvironmentKeys,
   }
 }

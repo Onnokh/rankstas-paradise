@@ -26,8 +26,18 @@ export interface RunningServer {
   readonly stop: () => void
 }
 
+// A second fixture site with an analytics provider, for the tests that need
+// a key slot. Its base URL is never reached: the adapter only needs the key to
+// report ready.
+export const KEYED_SITE_ID = "keyed"
+export const keyedSite = {
+  id: KEYED_SITE_ID,
+  siteUrl: "sc-domain:keyed.example",
+  analytics: { provider: "rybbit", siteId: "1", baseUrl: "http://127.0.0.1:9" },
+}
+
 // Write a config.json + sites catalog into a fresh XDG data home and return it.
-export const makeFixtureHome = (): string => {
+export const makeFixtureHome = (extraSites: ReadonlyArray<object> = []): string => {
   const home = mkdtempSync(join(tmpdir(), "rp-golden-"))
   const appHome = join(home, "rankstas-paradise")
   mkdirSync(appHome, { recursive: true })
@@ -42,6 +52,7 @@ export const makeFixtureHome = (): string => {
         sitemapUrl: "https://sleevy.app/sitemap.xml",
         brandTerms: ["sleevy"],
       },
+      ...extraSites,
     ],
   }
   writeFileSync(join(appHome, "config.json"), `${JSON.stringify(config, null, 2)}\n`)
@@ -66,6 +77,9 @@ export interface StartServerOptions {
   // The vault's master key; null starts the server without one.
   readonly masterKey?: string | null
   readonly debug?: boolean
+  // Extra environment for the server process, applied last (after the vendor
+  // keys are stripped), so a test can hand it a vendor key on purpose.
+  readonly env?: Record<string, string>
 }
 
 // Boot the server as a subprocess and wait until it accepts connections.
@@ -93,6 +107,7 @@ export const startServer = async (
   for (const name of Object.keys(env)) {
     if (/^(RYBBIT|AHREFS|POLAR)_API_KEY/.test(name)) delete env[name]
   }
+  Object.assign(env, options.env ?? {})
 
   const args = ["run", entry, ...(debug ? ["--debug"] : [])]
   const proc = Bun.spawn(["bun", ...args], {
