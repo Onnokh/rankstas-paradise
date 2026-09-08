@@ -24,9 +24,12 @@
 		49747DECBAF0F2C43A75D190 /* SettingsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A33B8C6DA2F4312E7BD1B2EE /* SettingsModel.swift */; };
 		4EB19731C7D64342D90C3020 /* CommandKeyMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8D78F25509D227C0557EB01 /* CommandKeyMonitor.swift */; };
 		4FC046F39092489938767509 /* WindowChromeReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02EB9D6D72519239BBF7226 /* WindowChromeReader.swift */; };
+		506F6A55790BE3EB2E38BFAD /* RegistryList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E34F9FA49926BC589A78FDA /* RegistryList.swift */; };
 		558BA52213440023D16C0D9F /* LiveStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B526F19FE23F5E62A81B79B2 /* LiveStore.swift */; };
 		5D5175994B1AD981AA0DDFC2 /* OverviewRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61874C20B6B2BCAFB1667A61 /* OverviewRepository.swift */; };
+		5E749651BF26A490B3445FA4 /* RegistryListTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDC6E243495CA4B80193ED12 /* RegistryListTests.swift */; };
 		600131182EB7D5FD428F140B /* MinuteBars.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A8D921447231A8740629F4 /* MinuteBars.swift */; };
+		612570DF71A10726B57A14CF /* RegistryScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3DCF7AFEF4D3332FFD8F949 /* RegistryScreen.swift */; };
 		68693A7FA4C972E5F5B88414 /* PageParts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CC4E7D2903AC4572529357B /* PageParts.swift */; };
 		6C4D82C06AFA2FA77BFB2C4C /* ClientConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B6D80C6335A6E427340BA33 /* ClientConfigurationTests.swift */; };
 		6F1B4B6AE4AF188CE868FAD5 /* LiveFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = C866EACE6DF0FE67ADBCEA73 /* LiveFeed.swift */; };
@@ -78,6 +81,7 @@
 		15EAE1B69201C1D588D04C18 /* RankingStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RankingStoreTests.swift; sourceTree = "<group>"; };
 		180FE48DAA2E1B49D9795319 /* SettingsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsModels.swift; sourceTree = "<group>"; };
 		1A150D8B80757FCED82E85B5 /* TabContentStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabContentStack.swift; sourceTree = "<group>"; };
+		1E34F9FA49926BC589A78FDA /* RegistryList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegistryList.swift; sourceTree = "<group>"; };
 		20D0DB50A815C0FD4CB715E0 /* OverviewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewModel.swift; sourceTree = "<group>"; };
 		263902669DFF0DA465682E2B /* SiteSettingsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiteSettingsPage.swift; sourceTree = "<group>"; };
 		2EECC279489F2799FC2058D9 /* OverviewStartupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewStartupTests.swift; sourceTree = "<group>"; };
@@ -106,6 +110,7 @@
 		A8D78F25509D227C0557EB01 /* CommandKeyMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandKeyMonitor.swift; sourceTree = "<group>"; };
 		A9315B96CB87D84C07606E52 /* Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
 		AA98EFEB479445BEFCA726CD /* PeriodStatsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeriodStatsTests.swift; sourceTree = "<group>"; };
+		B3DCF7AFEF4D3332FFD8F949 /* RegistryScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegistryScreen.swift; sourceTree = "<group>"; };
 		B526F19FE23F5E62A81B79B2 /* LiveStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveStore.swift; sourceTree = "<group>"; };
 		B5B9A04E26D93153A62163C4 /* APIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIModels.swift; sourceTree = "<group>"; };
 		BE562BC678FA721589263640 /* Palette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Palette.swift; sourceTree = "<group>"; };
@@ -125,6 +130,7 @@
 		E1CA89C89C02C407A80DF8C6 /* RankstasParadise.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RankstasParadise.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F0A714F9E6B0DA6A3253E672 /* LiveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTests.swift; sourceTree = "<group>"; };
 		FDBE29CE70B5A9DA353D559F /* OverviewScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewScreen.swift; sourceTree = "<group>"; };
+		FDC6E243495CA4B80193ED12 /* RegistryListTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegistryListTests.swift; sourceTree = "<group>"; };
 		FF8132411C3FF78734ECE39C /* DashboardStatsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardStatsTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -161,6 +167,7 @@
 				61874C20B6B2BCAFB1667A61 /* OverviewRepository.swift */,
 				50CD5971030788D8D00BC8D9 /* PeriodStats.swift */,
 				D48AE16DAFEBEDC4046EDBF1 /* RankingStore.swift */,
+				1E34F9FA49926BC589A78FDA /* RegistryList.swift */,
 				7F478A66E4FE597CBECAE492 /* RelativeAge.swift */,
 				D47884F5C76365B32D976D91 /* RemoteTarget.swift */,
 				A33B8C6DA2F4312E7BD1B2EE /* SettingsModel.swift */,
@@ -182,6 +189,7 @@
 			isa = PBXGroup;
 			children = (
 				FDBE29CE70B5A9DA353D559F /* OverviewScreen.swift */,
+				B3DCF7AFEF4D3332FFD8F949 /* RegistryScreen.swift */,
 				110B138E26420AE2E80212B4 /* SiteTabScreen.swift */,
 				5B221BE06A0C0C969C69E053 /* TabScreen.swift */,
 			);
@@ -210,6 +218,7 @@
 				4CBE8B0CA6B44C981EE7AE2F /* PeekProgressTests.swift */,
 				AA98EFEB479445BEFCA726CD /* PeriodStatsTests.swift */,
 				15EAE1B69201C1D588D04C18 /* RankingStoreTests.swift */,
+				FDC6E243495CA4B80193ED12 /* RegistryListTests.swift */,
 				C0F25BCA3C4E7F2C30714553 /* RevenueTests.swift */,
 				7A62C64B20653DBC3179A840 /* SettingsModelTests.swift */,
 				DF3CCE903967EA97F88CF96F /* VisitsComparisonTests.swift */,
@@ -365,6 +374,7 @@
 				E6BE7E42DE600F1584F97274 /* PeekProgressTests.swift in Sources */,
 				85B4E755EBE5C81DEF17A7AA /* PeriodStatsTests.swift in Sources */,
 				1CA76DD10EDFFCD39BA6D88F /* RankingStoreTests.swift in Sources */,
+				5E749651BF26A490B3445FA4 /* RegistryListTests.swift in Sources */,
 				A03ACD2F5879178078B98CD5 /* RevenueTests.swift in Sources */,
 				7139D5EEE9442741B134BE30 /* SettingsModelTests.swift in Sources */,
 				053F52BB4172591F3B89ED51 /* VisitsComparisonTests.swift in Sources */,
@@ -397,6 +407,8 @@
 				7B63796B1698692B64A36D1F /* PeriodStats.swift in Sources */,
 				9D1607CB25A2C156E018F215 /* RankingStore.swift in Sources */,
 				FCF8BB7FA387F8E6EF75DE9C /* RankstasParadiseApp.swift in Sources */,
+				506F6A55790BE3EB2E38BFAD /* RegistryList.swift in Sources */,
+				612570DF71A10726B57A14CF /* RegistryScreen.swift in Sources */,
 				F031E639C1AC38B117298F75 /* RelativeAge.swift in Sources */,
 				BC6BF8F8C2FBC906EC76D8D1 /* RemoteTarget.swift in Sources */,
 				AAA57221A6143D5011DA8867 /* RootView.swift in Sources */,

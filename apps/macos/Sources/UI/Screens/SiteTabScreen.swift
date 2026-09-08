@@ -24,12 +24,12 @@ struct SiteTabScreen: View {
                     case .opportunities:
                         OpportunitiesScreen(overview: overview, onBack: pop)
                     case .registry:
-                        PlaceholderScreen(
-                            title: "Registry",
-                            message: "The registry for \(overview.site.name) is not in the macOS app yet.",
-                            systemImage: "list.bullet.rectangle",
-                            backTitle: overview.site.name,
-                            onBack: pop
+                        RegistryScreen(
+                            overview: overview,
+                            state: state,
+                            rankings: rankings,
+                            onBack: pop,
+                            onRefresh: onRefresh
                         )
                     case .log:
                         PlaceholderScreen(
@@ -244,7 +244,14 @@ struct SiteTabScreen: View {
             RankingCard(
                 title: "Registry",
                 rows: (rankings.registry[overview.id] ?? []).map {
-                    RankingCard.Row(id: $0.id, label: $0.targetUrl, metrics: $0.window, visits: $0.visits?.current.visits)
+                    RankingCard.Row(
+                        id: $0.id,
+                        label: $0.targetUrl,
+                        metrics: $0.window,
+                        visits: $0.visits?.current.visits,
+                        unindexed: $0.isUnindexed,
+                        indexNote: $0.coverageState
+                    )
                 },
                 loading: loading,
                 emptyMessage: "No target pages in the registry yet."
@@ -703,12 +710,21 @@ private struct RankingCard: View {
         /// Visits from the analytics provider over the same window. Nil for rows that have
         /// none (keywords, or a site without a provider); the switch then hides the option.
         var visits: Double? = nil
+        /// Google reports this page is not in its index: the row is dimmed. Always false for
+        /// rows that are not pages.
+        var unindexed: Bool = false
+        /// Google's own words for that verdict, shown on hover.
+        var indexNote: String? = nil
     }
 
     let title: String
     let rows: [Row]
     let loading: Bool
     let emptyMessage: String
+
+    /// How far a row drops when Google reports the page is not indexed. Enough to read as a
+    /// second rank, not so far that the row's numbers stop being legible.
+    private static let unindexedOpacity: Double = 0.45
 
     @State private var chosen = RankMetric.impressions
 
@@ -750,34 +766,57 @@ private struct RankingCard: View {
                 let strongest = max(ranked.map { metric.value(of: $0) }.max() ?? 1, 1)
                 VStack(spacing: 6) {
                     ForEach(ranked) { row in
-                        let value = metric.value(of: row)
-                        HStack(spacing: 12) {
-                            Text(row.label)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Spacer(minLength: 0)
-                            Text(value.formatted(.number.precision(.fractionLength(0))))
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(alignment: .leading) {
-                            GeometryReader { geometry in
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(metric.color.opacity(0.16))
-                                    .frame(width: max(geometry.size.width * (value / strongest), 6))
-                            }
-                        }
-                        .accessibilityElement(children: .combine)
+                        bar(row, strongest: strongest)
                     }
                 }
                 .animation(.snappy(duration: 0.25), value: metric)
+
+                if ranked.contains(where: \.unindexed) {
+                    Text("Dimmed rows are pages Google reports as not indexed.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .cardSurface(cornerRadius: 12)
+    }
+
+    /// One row of the list: its label, its count, and the tint reaching as far as the count
+    /// does. A page Google reports as not indexed keeps its place in the ranking and drops
+    /// back instead, the same reading the other clients give it.
+    @ViewBuilder
+    private func bar(_ row: Row, strongest: Double) -> some View {
+        let value = metric.value(of: row)
+        let plain = HStack(spacing: 12) {
+            Text(row.label)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+            Text(value.formatted(.number.precision(.fractionLength(0))))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(alignment: .leading) {
+            GeometryReader { geometry in
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(metric.color.opacity(0.16))
+                    .frame(width: max(geometry.size.width * (value / strongest), 6))
+            }
+        }
+        .accessibilityElement(children: .combine)
+
+        if row.unindexed {
+            plain
+                .opacity(Self.unindexedOpacity)
+                .accessibilityHint("Not indexed")
+                .help(row.indexNote ?? "Google reports this page is not indexed")
+        } else {
+            plain
+        }
     }
 }
 

@@ -75,6 +75,70 @@ final class LiveTests: XCTestCase {
         XCTAssertNil(targets[2].visits)
     }
 
+    func testRegistryTargetDecodesEveryFieldTheServerSends() throws {
+        // The shape of one target as `/api/registry` sends it, fields and all.
+        let target = try decode("""
+        {"targetUrl":"/chrome-extension","phase":"LIVE","state":"measuring",
+         "indexed":"indexed","coverageState":"Submitted and indexed",
+         "inspectedAt":"2026-09-08 14:58:33","priority":"P0","intent":"product-solution",
+         "publishedAt":"2026-07-16","baselineDate":"2026-07-16","status":"Published",
+         "whyOpportunity":"Read-later extension demand is established.",
+         "measuredFrom":"2026-08-09",
+         "window":{"impressions":15,"clicks":0,"ctr":0,"position":41.5},
+         "baseline":{"impressions":0,"clicks":0,"ctr":0,"position":0},
+         "visits":{"current":{"pageviews":16,"visits":10},"previous":{"pageviews":0,"visits":0},
+                   "deltaPageviews":16,"deltaVisits":10},
+         "keywords":[{"keyword":"Chrome read later extension","cluster":"Chrome capture",
+                      "intent":"product-solution","country":"nld"}]}
+        """, as: RegistryTarget.self)
+
+        XCTAssertEqual(target.priority, "P0")
+        XCTAssertEqual(target.publishedAt, "2026-07-16")
+        XCTAssertEqual(target.measuredFrom, "2026-08-09")
+        XCTAssertEqual(target.baseline?.impressions, 0)
+        XCTAssertEqual(target.mappedKeywords.count, 1)
+        XCTAssertEqual(target.mappedKeywords.first?.cluster, "Chrome capture")
+        XCTAssertEqual(RegistryPhase(rawValue: target.phase), .live)
+        // The registry's own words are the sitemap page's too, with nulls where it has none.
+        let inventory = try decode("""
+        {"targetUrl":"/support","phase":"PAGE","state":"measuring","indexed":"not-indexed",
+         "coverageState":"URL is unknown to Google","inspectedAt":"2026-09-08 14:58:33",
+         "priority":null,"intent":"site-inventory","publishedAt":"2026-07-18","baselineDate":null,
+         "status":"Inventory only","whyOpportunity":null,"measuredFrom":"2026-08-09",
+         "window":{"impressions":0,"clicks":0,"ctr":0,"position":0},"baseline":null,
+         "visits":null,"keywords":[]}
+        """, as: RegistryTarget.self)
+
+        XCTAssertTrue(inventory.isUnindexed)
+        XCTAssertNil(inventory.priority)
+        XCTAssertNil(inventory.baseline)
+        XCTAssertTrue(inventory.mappedKeywords.isEmpty)
+    }
+
+    func testOnlyANotIndexedVerdictDimsARegistryRow() throws {
+        let targets = try decode("""
+        [{"targetUrl":"/","phase":"live","status":"published",
+          "window":{"impressions":10,"clicks":1,"ctr":0.1,"position":5},
+          "indexed":"indexed","coverageState":"Submitted and indexed"},
+         {"targetUrl":"/waiting","phase":"live","status":"published",
+          "window":{"impressions":10,"clicks":1,"ctr":0.1,"position":5},
+          "indexed":"not-indexed","coverageState":"Discovered - currently not indexed"},
+         {"targetUrl":"/never-inspected","phase":"live","status":"published",
+          "window":{"impressions":10,"clicks":1,"ctr":0.1,"position":5},
+          "indexed":"unknown","coverageState":null},
+         {"targetUrl":"/older-server","phase":"live","status":"published",
+          "window":{"impressions":10,"clicks":1,"ctr":0.1,"position":5}}]
+        """, as: [RegistryTarget].self)
+
+        XCTAssertFalse(targets[0].isUnindexed)
+        XCTAssertTrue(targets[1].isUnindexed)
+        XCTAssertEqual(targets[1].coverageState, "Discovered - currently not indexed")
+        // A verdict Google has not given, and a server that sends none, are not "not indexed".
+        XCTAssertFalse(targets[2].isUnindexed)
+        XCTAssertFalse(targets[3].isUnindexed)
+        XCTAssertNil(targets[3].indexed)
+    }
+
     func testTodayReportDecodes() throws {
         let report = try decode("""
         {"generatedAt":"2026-09-07T19:51:20.381Z","mode":"live",
