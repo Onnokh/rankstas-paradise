@@ -1350,3 +1350,105 @@ test("a Site with no Market reads no metrics and scores as it always did", async
   ])
   expect(striking[0]!.demand).toBeUndefined()
 })
+
+test("keyword proposals round-trip, ordered by demand", async () => {
+  const proposal = (keyword: string, volume: number | null) => ({
+    keyword,
+    seed: "mount tracker",
+    source: "suggestions" as const,
+    locationCode: 2840,
+    languageCode: "en",
+    searchVolume: volume,
+    difficulty: 20,
+    costPerClick: 0.8,
+    competition: 0.3,
+    intent: "informational",
+    status: "proposed" as const,
+    discoveredAt: "2026-09-08T00:00:00.000Z",
+  })
+
+  await run(
+    Storage.use.saveKeywordProposals([
+      proposal("mount tracker app", 90),
+      proposal("mount tracker addon", 480),
+      // Another Market: keyed separately, and never read by this one.
+      { ...proposal("bergwandelen", 300), locationCode: 2528, languageCode: "nl" },
+    ]),
+  )
+
+  const rows = await run(Storage.use.keywordProposals(2840, "en"))
+  // Strongest demand first, which is the order a reader reads.
+  expect(rows.map((row) => row.keyword)).toEqual([
+    "mount tracker addon",
+    "mount tracker app",
+  ])
+  expect(rows[0]).toEqual(proposal("mount tracker addon", 480))
+})
+
+test("a dismissal survives the same keyword being discovered again", async () => {
+  // The one thing this table must not do: a run that finds a keyword the
+  // reader has already set aside must not put it back in front of them, and a
+  // run is the thing most likely to find it again.
+  const proposal = {
+    keyword: "mount tracker app",
+    seed: "mount tracker",
+    source: "suggestions" as const,
+    locationCode: 2840,
+    languageCode: "en",
+    searchVolume: 90,
+    difficulty: 20,
+    costPerClick: 0.8,
+    competition: 0.3,
+    intent: "informational",
+    status: "proposed" as const,
+    discoveredAt: "2026-09-08T00:00:00.000Z",
+  }
+
+  await run(Storage.use.saveKeywordProposals([proposal]))
+  expect(await run(Storage.use.dismissKeywordProposals(["mount tracker app"], 2840, "en"))).toBe(1)
+
+  // Found again a month later, with a fresher number.
+  await run(
+    Storage.use.saveKeywordProposals([
+      { ...proposal, searchVolume: 140, discoveredAt: "2026-10-08T00:00:00.000Z" },
+    ]),
+  )
+
+  const rows = await run(Storage.use.keywordProposals(2840, "en"))
+  expect(rows).toHaveLength(1)
+  expect(rows[0]!.status).toBe("dismissed")
+  // The rest of the row did update: the reader's decision is preserved, not the
+  // vendor's stale numbers.
+  expect(rows[0]!.searchVolume).toBe(140)
+})
+
+test("dismissing counts rows changed, not keywords named", async () => {
+  await run(
+    Storage.use.saveKeywordProposals([
+      {
+        keyword: "mount tracker app",
+        seed: "mount tracker",
+        source: "suggestions" as const,
+        locationCode: 2840,
+        languageCode: "en",
+        searchVolume: 90,
+        difficulty: null,
+        costPerClick: null,
+        competition: null,
+        intent: null,
+        status: "proposed" as const,
+        discoveredAt: "2026-09-08T00:00:00.000Z",
+      },
+    ]),
+  )
+
+  // One known keyword, one never proposed, and then the same one twice.
+  expect(
+    await run(
+      Storage.use.dismissKeywordProposals(["mount tracker app", "never seen"], 2840, "en"),
+    ),
+  ).toBe(1)
+  expect(
+    await run(Storage.use.dismissKeywordProposals(["mount tracker app"], 2840, "en")),
+  ).toBe(0)
+})

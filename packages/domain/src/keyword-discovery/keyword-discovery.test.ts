@@ -7,7 +7,7 @@
 // in what it removes before a person reads it — so each filter is tested by the
 // count it reports, not only by the rows that survive.
 import { expect, test } from "bun:test"
-import { ConfigProvider, Effect, Exit, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 
 import { Registry } from "../registry/registry.ts"
@@ -128,6 +128,13 @@ const storageStub = (store: Store) =>
         return dismissed
       }),
   })
+
+// The error a run reported. `flip` rather than `runPromiseExit` plus
+// `Exit.isFailure`, because that pair is also satisfied by a crash — and a crash
+// is exactly what a removed guard produces. A flipped run that succeeds fails
+// the test, and a defect still reaches it as a defect.
+const failureOf = <A, E>(effect: Effect.Effect<A, E, never>) =>
+  Effect.runPromise(Effect.flip(effect))
 
 const entry = (keyword: string): RegistryEntry => ({
   cluster: "test",
@@ -417,19 +424,42 @@ test("a keyword the registry has taken stops being proposed", async () => {
 
 test("no API key is an error, not an empty result, and costs nothing", async () => {
   const calls: Array<Call> = []
-  const exit = await Effect.runPromiseExit(
+  const error = await failureOf(
     KeywordDiscovery.use
       .discover({ seed: "mount tracker" })
       .pipe(Effect.provide(buildLayer(new Map(), fakeHttp(calls, labsBody([])), { env: {} }))),
   )
 
-  expect(Exit.isFailure(exit)).toBe(true)
+  // The named error, not any failure: without the guard the missing key still
+  // ends the run — as a crash reaching for a value that is not there — and a
+  // test that only asked for a failure would pass on that.
+  expect(error.message).toContain("API key")
   expect(calls).toHaveLength(0)
+})
+
+test("the seed's own row is never proposed back to the caller", async () => {
+  // The expansions are asked not to send it, and a Labs answer can hold it
+  // anyway. Proposing it would offer the reader the keyword they just typed.
+  const result = await Effect.runPromise(
+    KeywordDiscovery.use
+      .discover({ seed: "Mount Tracker" })
+      .pipe(
+        Effect.provide(
+          buildLayer(
+            new Map(),
+            fakeHttp([], labsBody([labsItem("mount tracker", 5000), labsItem("mount tracker addon", 480)])),
+          ),
+        ),
+      ),
+  )
+
+  expect(result.returned).toBe(1)
+  expect(result.proposals.map((proposal) => proposal.keyword)).toEqual(["mount tracker addon"])
 })
 
 test("an unserved market fails before anything is billed", async () => {
   const calls: Array<Call> = []
-  const exit = await Effect.runPromiseExit(
+  const error = await failureOf(
     KeywordDiscovery.use
       .discover({ seed: "mount tracker" })
       .pipe(
@@ -443,19 +473,19 @@ test("an unserved market fails before anything is billed", async () => {
       ),
   )
 
-  expect(Exit.isFailure(exit)).toBe(true)
+  expect(error._tag).toBe("UnservedMarketError")
   expect(calls).toHaveLength(0)
 })
 
 test("a limit above the vendor's own cap fails before anything is billed", async () => {
   const calls: Array<Call> = []
-  const exit = await Effect.runPromiseExit(
+  const error = await failureOf(
     KeywordDiscovery.use
       .discover({ seed: "mount tracker", limit: 5000 })
       .pipe(Effect.provide(buildLayer(new Map(), fakeHttp(calls, labsBody([]))))),
   )
 
-  expect(Exit.isFailure(exit)).toBe(true)
+  expect(error.message).toContain("between 1 and 1000")
   expect(calls).toHaveLength(0)
 })
 
