@@ -18,7 +18,6 @@ import { z } from "zod"
 
 import { Config } from "@rp/domain/config/config"
 import { KeywordDiscovery } from "@rp/domain/keyword-discovery/keyword-discovery"
-import { ProposalInput } from "@rp/domain/keyword-discovery/schema"
 import type {
   KeywordDiscoveryError,
 } from "@rp/domain/keyword-discovery/schema"
@@ -601,10 +600,16 @@ export const buildMcpServer = (run: RunTool): McpServer => {
           ),
       },
     },
+    // No second decode over the zod one, unlike `registry_add`: there the zod
+    // schema is loose (every field an optional string) and `RegistryAddInput`
+    // is what validates. Here the zod object names exactly the fields
+    // `ProposalInput` holds, so it both validates them and strips the market,
+    // the status and the instant a caller pasted along — and a
+    // `Schema.decodeUnknownSync` after it could not fail, which is a guard no
+    // test can reach.
     async ({ site, keywords }) => {
-      const rows = Schema.decodeUnknownSync(Schema.Array(ProposalInput))(keywords)
       const id = toSiteId(site)
-      return run(id, scopedDiscovery(KeywordDiscovery.use.propose(rows), id))
+      return run(id, scopedDiscovery(KeywordDiscovery.use.propose(keywords), id))
     },
   )
 
