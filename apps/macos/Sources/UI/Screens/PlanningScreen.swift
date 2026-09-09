@@ -336,6 +336,7 @@ struct PlanningScreen: View {
         case .noDemand: "The vendor measured zero searches. A page aimed here will not be found."
         case .unreported: "Asked, and the term is too rare for the vendor to report a volume."
         case .unmeasured: "Never asked. Says nothing about the keyword — configure a DataForSEO key and sync."
+        case .brand: "Your own name. Never asked about, key or no key: volume on your brand is not something you can act on."
         }
     }
 
@@ -522,8 +523,12 @@ private struct PlanningRow: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 9)
         // A row the vendor never answered for is dimmed, the reading the registry screen
-        // gives an unindexed page: present, and not something to act on yet.
-        .opacity(keyword.verdictKind == .unmeasured ? 0.55 : 1)
+        // gives an unindexed page: present, and not something to act on yet. A brand row
+        // is dimmed for the stronger version of the same reason — it will never be
+        // something to act on.
+        .opacity(
+            keyword.verdictKind == .unmeasured || keyword.verdictKind == .brand ? 0.55 : 1
+        )
     }
 
     /// Difficulty, coloured against the reader's own threshold. Nil for a Google-Ads market

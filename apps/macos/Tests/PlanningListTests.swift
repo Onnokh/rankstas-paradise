@@ -307,3 +307,38 @@ extension PlanningListTests {
         )
     }
 }
+
+// MARK: - The brand verdict
+
+extension PlanningListTests {
+    func testABrandVerdictIsItsOwnFilterAndItsOwnAdvice() {
+        // The bug: a planned keyword that is the site's own name read as "Not measured",
+        // whose help text tells the reader to configure a DataForSEO key and sync. That
+        // would change nothing — a brand query is never asked about, key or no key.
+        XCTAssertEqual(KeywordVerdict(rawValue: "brand"), .brand)
+        XCTAssertEqual(KeywordVerdict.brand.label, "Your own brand")
+        XCTAssertTrue(
+            KeywordVerdict.allCases.contains(.brand),
+            "The chips are built from allCases, so a verdict missing here cannot be filtered on."
+        )
+    }
+
+    func testAVerdictThisBuildDoesNotKnowStillReadsAsUnmeasured() {
+        // A newer server may add a verdict. Claiming the vendor said something it did not
+        // is worse than admitting we have not asked.
+        let unknown = KeywordHealth(
+            keyword: "x",
+            targetUrl: "/x",
+            cluster: "c",
+            priority: "P1",
+            intent: "informational",
+            verdict: "something-new",
+            searchVolume: nil,
+            difficulty: nil,
+            difficultyGap: nil,
+            costPerClick: nil,
+            reportedIntent: nil
+        )
+        XCTAssertEqual(unknown.verdictKind, .unmeasured)
+    }
+}

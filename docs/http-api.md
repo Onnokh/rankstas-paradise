@@ -119,8 +119,11 @@ yet cannot answer any other way. Every planned keyword carries a `verdict`:
 | `no-demand` | zero | measured empty; the rows to act on |
 | `unreported` | null | the term is too rare for the vendor to report |
 | `unmeasured` | nothing — it was never asked | says nothing about the keyword |
+| `brand` | nothing, and it never will be | the keyword is the site's own name, which is never asked about — the row needs nothing |
 
-Keywords with demand come first, strongest first. `totals.monthlyVolume` sums
+`brand` is separate from `unmeasured` because the two ask opposite things of the reader: an unmeasured keyword asks to be measured, and a brand keyword asks nothing, ever — volume on your own name cannot change a decision, so `KeywordMetrics` never spends on it. Left as `unmeasured` the row advises configuring a key, which would change nothing. The five verdict counts in `totals` sum to `totals.keywords`.
+
+Keywords with demand come first, strongest first, and brand rows last. `totals.monthlyVolume` sums
 only those, and is the size of the addressable market — every search, not the
 share a first-page ranking would win. It is not a traffic forecast.
 
