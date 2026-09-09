@@ -14,6 +14,7 @@ struct PlanningScreen: View {
     let overview: SiteOverview
     @Bindable var state: SiteTabState
     let rankings: RankingStore
+    let preferences: PlanningPreferences
     let onBack: () -> Void
     let onRefresh: () -> Void
 
@@ -37,12 +38,15 @@ struct PlanningScreen: View {
         return nil
     }
 
-    /// The difficulty a keyword has to be at or under to count as within reach. Defaults to
-    /// the site's own domain rating, and the reader moves it — this is a rough guide across
-    /// two vendors' unrelated scales, not a rule, so it belongs on the screen where it can
-    /// be seen rather than baked into the report.
+    /// The difficulty a keyword has to be at or under to count as within reach: this
+    /// site's own saved value, or `PlanningList.defaultReach` until the reader sets one.
+    ///
+    /// A rough guide across two vendors' unrelated scales, not a rule — which is why it is
+    /// a slider on the screen rather than a band in the report, and why the number is
+    /// printed beside it.
     private var reach: Double {
-        state.planningReach ?? report?.domainRating ?? 30
+        preferences.reach(for: overview.id)
+            ?? PlanningList.defaultReach(domainRating: report?.domainRating)
     }
 
     private var rows: [KeywordHealth] {
@@ -271,7 +275,8 @@ struct PlanningScreen: View {
                     Slider(
                         value: Binding(
                             get: { reach },
-                            set: { state.planningReach = $0 }
+                            // Saved per site as it moves, so the judgement is made once.
+                            set: { preferences.setReach($0, for: overview.id) }
                         ),
                         in: 0...100,
                         step: 1
@@ -281,6 +286,18 @@ struct PlanningScreen: View {
                         .font(.subheadline)
                         .monospacedDigit()
                         .frame(width: 22, alignment: .trailing)
+                    // Only offered once there is something to undo. Clearing hands the
+                    // threshold back to the default, which then follows the site's domain
+                    // rating as that moves — something a pinned number cannot do.
+                    if preferences.reach(for: overview.id) != nil {
+                        Button("Reset", systemImage: "arrow.uturn.backward") {
+                            preferences.clearReach(for: overview.id)
+                        }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .help("Back to this site's domain rating.")
+                    }
                 }
             }
 
