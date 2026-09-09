@@ -10,6 +10,10 @@
 // `ManagedRuntime`. Tests inject a test runtime over a mock `Reports`; PLO-276
 // injects the real application runtime. Reads SKIP warm-on-read (that is Jobs'
 // concern, PLO-273) — they just run the read.
+//
+// The Market tools are the exception, and they have a second seam of their own:
+// a Site setting is not site-scoped work, so it cannot run inside the runtime
+// the setting is about. See `MarketTool`.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
@@ -21,7 +25,16 @@ import { KeywordDiscovery } from "@rp/domain/keyword-discovery/keyword-discovery
 import type {
   KeywordDiscoveryError,
 } from "@rp/domain/keyword-discovery/schema"
-import type { UnservedMarketError } from "@rp/domain/keyword-metrics/schema"
+import { KeywordMetrics } from "@rp/domain/keyword-metrics/keyword-metrics"
+import { Market } from "@rp/domain/keyword-metrics/market"
+import { UnservedMarketError } from "@rp/domain/keyword-metrics/schema"
+import type {
+  KeywordMetricsError,
+  MarketSetResult,
+  MarketSettings,
+} from "@rp/domain/keyword-metrics/schema"
+import { Registry } from "@rp/domain/registry/registry"
+import type { RegistryError } from "@rp/domain/registry/schema"
 import { RegistryPatch } from "@rp/domain/registry/schema"
 import { Reports } from "@rp/domain/reports/reports"
 import type { ReportsError } from "@rp/domain/reports/schema"
@@ -50,12 +63,38 @@ import { Sites } from "@rp/domain/sites/sites"
 export type McpRuntimeContext =
   | Reports.Service
   | KeywordDiscovery.Service
+  // `keywords_refresh` composes the two: the Registry names the planned
+  // Keywords, KeywordMetrics asks the vendor about them.
+  | KeywordMetrics.Service
+  | Registry.Service
   | Sites.Service
   | Config.Service
 export type RunTool = <A>(
   site: SiteId,
   effect: Effect.Effect<A, never, McpRuntimeContext>,
 ) => Promise<A>
+
+// The Site-settings seam, beside the runtime one above.
+//
+// A Market read and a Market write both live outside every per-site runtime,
+// so they arrive as promises rather than as effects, and for two separate
+// reasons. The read needs the *stored* entry: a resolved Site has the default
+// Market filled in already, so it cannot say whether anybody chose one. The
+// write has to drop the Site's cached runtime, which is the mount's business —
+// the runtime cannot retire itself.
+//
+// `mcp-mount.ts` implements this over the same ServerContext the HTTP settings
+// route writes through, so the two surfaces cannot disagree about what a
+// settings write does.
+export interface MarketTool {
+  readonly read: (site: SiteId, search?: string) => Promise<MarketSettings>
+  // The pair is already checked against the Market table when it arrives here;
+  // see `market_set` below.
+  readonly set: (
+    site: SiteId,
+    market: { readonly locationCode: number; readonly languageCode: string },
+  ) => Promise<MarketSetResult>
+}
 
 // The DTO rendered as compact JSON text — the same document the HTTP API
 // returns. Compact, not pretty: these documents land in an agent's context
@@ -70,6 +109,8 @@ const errorResult = (
     | ReportsError
     | UnknownSiteError
     | KeywordDiscoveryError
+    | KeywordMetricsError
+    | RegistryError
     | UnservedMarketError,
 ): CallToolResult => ({
   content: [
@@ -85,6 +126,27 @@ const errorResult = (
             cause._tag === "UnservedMarketError"
               ? `${cause.reason} (location ${cause.locationCode}, language ${cause.languageCode})`
               : cause.message,
+        },
+        null,
+        2,
+      ),
+    },
+  ],
+  isError: true,
+})
+
+// A rejected settings call rendered the same way. The seam is a promise, not an
+// effect, so a domain failure arrives as a rejection and its tag has to be read
+// off the value. An untagged rejection is a bug rather than a domain outcome, so
+// it keeps its own text instead of being dressed up as one.
+const rejection = (cause: unknown): CallToolResult => ({
+  content: [
+    {
+      type: "text",
+      text: JSON.stringify(
+        {
+          error: (cause as { _tag?: string } | null)?._tag ?? "Error",
+          message: cause instanceof Error ? cause.message : String(cause),
         },
         null,
         2,
@@ -135,13 +197,35 @@ const scopedDiscovery = <A>(
     }),
   )
 
+// The metrics twin of the two helpers above. Its own because it spends money
+// against a third party like discovery does, and because a Registry read can
+// fail on its way to the vendor call.
+const scopedMetrics = <A>(
+  effect: Effect.Effect<
+    A,
+    KeywordMetricsError | UnservedMarketError | RegistryError,
+    KeywordMetrics.Service | Registry.Service | CurrentSite.Service
+  >,
+  siteId: SiteId,
+): Effect.Effect<CallToolResult, never, McpRuntimeContext> =>
+  effect.pipe(
+    Effect.map(asReport),
+    Effect.provide(CurrentSite.layerFor(siteId)),
+    Effect.catchTags({
+      KeywordMetricsError: (cause) => Effect.succeed(errorResult(cause)),
+      UnservedMarketError: (cause) => Effect.succeed(errorResult(cause)),
+      RegistryError: (cause) => Effect.succeed(errorResult(cause)),
+      UnknownSiteError: (cause) => Effect.succeed(errorResult(cause)),
+    }),
+  )
+
 const site = z
   .string()
   .describe("Site id to scope the query to (from the configured catalog).")
 
 // Build a fresh, stateless MCP server exposing the report tools over `run`. Name
 // and version match the legacy server for a behaviour-preserving port.
-export const buildMcpServer = (run: RunTool): McpServer => {
+export const buildMcpServer = (run: RunTool, market: MarketTool): McpServer => {
   const server = new McpServer({ name: "rankstas-paradise", version: "1.0.0" })
 
   // --- reads ---
@@ -479,6 +563,122 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     },
   )
 
+  // --- the Market: the country and language every demand number is in ---
+
+  server.registerTool(
+    "market",
+    {
+      // The one description on this surface that has to explain a *silent*
+      // failure. Every other read either has the data or says it has none;
+      // this one guards a setting whose wrong value produces a full report of
+      // numbers that describe another country. So the description names the
+      // default, names the symptom to look for, and gives the case that found
+      // the gap — an agent that has never seen this trap will not go looking
+      // for it on its own.
+      description:
+        "The site's Market — the DataForSEO country and language every `demand` " +
+        "number in `registry_health`, `registry`, `queries` and `opportunities` is " +
+        "measured in — next to every Market DataForSEO serves. Free and offline: the " +
+        "country table is in the code, so nothing is asked and nothing is billed. " +
+        "`configured` false means the SITE SETTINGS NAME NO MARKET and the site is on " +
+        "the default, which is THE UNITED STATES IN ENGLISH. A wrong Market is worse " +
+        "than no data: the numbers arrive, they look right, and they are about another " +
+        "country — where no data at least reads as no data. printfeest.nl is a Dutch " +
+        "site that had never set one; its 31 planned keywords reported 10 searches a " +
+        "month between them, and 29 of the 31 read \"too rare for the vendor to " +
+        "report\". The same plan in the Netherlands reports demand in the thousands. " +
+        "READ THIS FIRST whenever `registry_health` " +
+        "says a plan has almost no demand and the keywords are not in English. " +
+        "`served` names all 143 countries with the languages each one is served in, " +
+        "its primary search language first — pass `search` to narrow it to a country " +
+        "name or a two-letter code. `provider` says which DataForSEO product answers: " +
+        "a `google-ads` country reports no difficulty and no search intent at all, so " +
+        "those columns cannot arrive for it.",
+      inputSchema: {
+        site,
+        search: z
+          .string()
+          .optional()
+          .describe(
+            "Keep only the served countries whose name contains this, or whose " +
+              "two-letter code equals it. Absent returns all 143.",
+          ),
+      },
+    },
+    async ({ site, search }) => {
+      try {
+        return asReport(await market.read(toSiteId(site), search))
+      } catch (cause) {
+        return rejection(cause)
+      }
+    },
+  )
+
+  server.registerTool(
+    "market_set",
+    {
+      // The write an agent reaches for after `market` shows the default on a
+      // site that is not English. Two things belong in the description because
+      // they are the two an agent gets wrong: that the language is optional
+      // (it would otherwise guess one, and a guessed language is what
+      // DataForSEO charges to reject), and that the stored numbers do not
+      // travel with the Market.
+      description:
+        "Set the site's Market, and change NOTHING ELSE in its Site settings — this " +
+        "is a targeted patch, so the site's analytics, revenue, brand terms and " +
+        "sitemap URL are left exactly as stored. `languageCode` is optional and is " +
+        "best left out: the country's primary search language is used, which is what " +
+        "the site wants in nearly every case. A location and language pair DataForSEO " +
+        "does not serve is REFUSED before anything is stored, because DataForSEO bills " +
+        "for a task it rejects; the error names the languages that country is served " +
+        "in. Take `locationCode` from `market`, never from memory. " +
+        "THE STORED KEYWORD METRICS DO NOT MOVE WITH THE MARKET: they are keyed by " +
+        "country and language, so a change leaves an empty cache, every planned " +
+        "keyword reads `unmeasured` in `registry_health`, and each one must be asked " +
+        "at DataForSEO again — which is billed per term. Run `keywords_refresh` next, " +
+        "then read `registry_health` for the new numbers.",
+      inputSchema: {
+        site,
+        locationCode: z
+          .number()
+          .int()
+          .describe("DataForSEO location code, e.g. 2528 for the Netherlands."),
+        languageCode: z
+          .string()
+          .optional()
+          .describe(
+            'Language code, e.g. "nl". Omit to take the country\'s primary search ' +
+              "language, which is the first entry in that country's `languageCodes`.",
+          ),
+      },
+    },
+    // The pair is checked here, before the seam, and this is the only surface
+    // that offers the write — so a Market that DataForSEO will not answer never
+    // reaches the Catalog. The check itself is the Market table's, not this
+    // adapter's; all this decides is that a refusal comes before a store.
+    async ({ site, locationCode, languageCode }) => {
+      const candidate = Market.setting(locationCode, languageCode)
+      if (candidate.problem)
+        return errorResult(
+          new UnservedMarketError({
+            locationCode: candidate.locationCode,
+            languageCode: candidate.languageCode,
+            reason: candidate.problem,
+          }),
+        )
+      try {
+        return asReport(
+          await market.set(toSiteId(site), {
+            locationCode: candidate.locationCode,
+            languageCode: candidate.languageCode,
+          }),
+        )
+      } catch (cause) {
+        return rejection(cause)
+      }
+    },
+  )
+
   // --- keyword discovery (spends money; see the tool descriptions) ---
 
   server.registerTool(
@@ -670,6 +870,33 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     },
   )
 
+  server.registerTool(
+    "keywords_refresh",
+    {
+      description:
+        "Ask DataForSEO about the registry's planned keywords and store the answers, " +
+        "so `registry_health`, `registry` and `queries` report demand for them. " +
+        "COSTS MONEY, but it is bounded and cheap beside `keywords_discover`: it asks " +
+        "only about keywords the plan already names, in batches, and it skips every " +
+        "keyword whose stored answer is under 30 days old — so a second call in the " +
+        "same month sends nothing and costs nothing. Brand and site: keywords are " +
+        "never asked about. Run it after `market_set`, since a Market change leaves " +
+        "every planned keyword unmeasured, and whenever `registry_health` reports " +
+        "keywords as `unmeasured`. `candidates` counts the keywords offered; " +
+        "`refreshed.asked` counts the ones that got past those filters and were paid " +
+        "for, and `refreshed.unreported` the ones DataForSEO had no volume for — that " +
+        "is an answer, not a failure, and it is stored so it is not paid for twice. " +
+        "`refreshed` is null when the server has no DataForSEO key. The daily sync " +
+        "asks about these same keywords plus the queries the site already draws " +
+        "impressions on; this is the half you can ask for now.",
+      inputSchema: { site },
+    },
+    async ({ site }) => {
+      const id = toSiteId(site)
+      return run(id, scopedMetrics(KeywordMetrics.refreshPlanned(), id))
+    },
+  )
+
   // --- writes (no warm-on-read; recording an action shouldn't fetch) ---
 
   server.registerTool(
@@ -797,9 +1024,9 @@ export const buildMcpServer = (run: RunTool): McpServer => {
 // Standard transport speaks the Request/Response model directly. PLO-276 mounts
 // this at `/mcp` behind the shared bearer gate.
 export const mcpHandler =
-  (run: RunTool) =>
+  (run: RunTool, market: MarketTool) =>
   async (request: Request): Promise<Response> => {
-    const server = buildMcpServer(run)
+    const server = buildMcpServer(run, market)
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

@@ -27,6 +27,8 @@
 import { Config as EffectConfig, Context, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 
+import { Registry } from "../registry/registry.ts"
+import { type RegistryError } from "../registry/schema.ts"
 import { serviceUse } from "../service-use.ts"
 import { CurrentSite } from "../sites/current-site.ts"
 import { isOperatorQuery, Storage } from "../storage/storage.ts"
@@ -36,6 +38,7 @@ import {
   foldKeyword as fold,
   type KeywordMetricSummary,
   type KeywordMetricsRefresh,
+  type KeywordMetricsSync,
   KeywordMetricsError,
   UnservedMarketError,
 } from "./schema.ts"
@@ -275,6 +278,43 @@ export const layer = Layer.effect(
     return impl
   }),
 )
+
+// The Site's planned Keywords asked about again: the Registry's own keywords
+// offered to `refresh`, with the Market the answers are stored under.
+//
+// A module-level effect rather than a method on the service, so the service
+// keeps its one rule — the caller decides which keywords are worth money —
+// while the one set that is never a judgement call does not have to be
+// assembled by each caller. The Registry *is* the plan; asking whether the plan
+// aims at demand that exists is the reason this store exists at all.
+//
+// Sync offers these keywords plus the Queries its own run has just stored. This
+// is the half a caller can ask for on its own, which is what a Market change
+// needs: the store is keyed by location code and language code, so a Site that
+// changes Market reads as unmeasured until its plan is asked again.
+export const refreshPlanned = (): Effect.Effect<
+  KeywordMetricsSync,
+  KeywordMetricsError | UnservedMarketError | RegistryError,
+  Service | Registry.Service | CurrentSite.Service
+> =>
+  Effect.gen(function* () {
+    const site = yield* CurrentSite.use.current()
+    const entries = yield* Registry.use.loadRegistry()
+    // Folded and de-duplicated here as well as inside `refresh`, so
+    // `candidates` counts keywords and not Registry rows: an inventory-only row
+    // carries a blank keyword, and one keyword may target several pages.
+    const candidates = [
+      ...new Set(
+        entries.map((entry) => fold(entry.keyword)).filter((keyword) => keyword !== ""),
+      ),
+    ]
+    const refreshed = yield* use.refresh(candidates)
+    return {
+      market: site.market ?? Market.resolve(undefined),
+      candidates: candidates.length,
+      refreshed,
+    }
+  })
 
 export const defaultLayer = layer.pipe(
   Layer.provide(Storage.defaultLayer),

@@ -26,6 +26,13 @@
 // /v3/dataforseo_labs/locations_and_languages endpoint. Ported rather than
 // derived at run time: the list changes about once a year, and a Market must be
 // checkable without a network call and without a key.
+import type {
+  ConfigMarket,
+  Market as MarketShape,
+  MarketSettings,
+  MarketSetResult,
+  ServedMarket,
+} from "./schema.ts"
 
 // One country DataForSEO serves keyword data for. `code` is DataForSEO's
 // `location_code`, `shortLabel` is the ISO 3166-1 alpha-2 code (except the
@@ -279,6 +286,129 @@ export const marketProblem = (
   if (!served.includes(languageCode))
     return `DataForSEO serves ${location.label} in ${served.join(", ")}, not "${languageCode}".`
   return null
+}
+
+// A Site's Market with its defaults filled: no Market at all means the United
+// States in English, and a Market that names only a country takes that
+// country's primary search language. `label` and `provider` are looked up here
+// so a caller never needs the table above to say which Market a Site is in, or
+// whether keyword difficulty can arrive for it.
+//
+// An unserved country or language is *not* refused here. This runs on every
+// read of the Catalog, and a refusal would take the whole Site out of it — a
+// Site whose keyword numbers cannot be fetched still has Search Console history
+// worth serving. `marketProblem` is the refusal, and it runs where the mistake
+// costs something: before a Market is stored, and again before a request is
+// paid for.
+export const resolve = (market: ConfigMarket | undefined): MarketShape => {
+  const locationCode = market?.locationCode ?? defaultLocationCode
+  return {
+    locationCode,
+    languageCode: market?.languageCode ?? languageFor(locationCode),
+    label: locationFor(locationCode)?.label ?? `Location ${locationCode}`,
+    provider: providerFor(locationCode),
+  }
+}
+
+// Every country DataForSEO answers keyword data for, each with its served
+// languages and the product that answers. Derived from the table above rather
+// than written out again, so a re-port cannot leave the two disagreeing.
+//
+// `search` keeps the countries whose two-letter code equals it, or, when no
+// code matches, the ones whose name contains it — either case. The code wins
+// because it is exact and a two-letter substring is not: "nl" appears in
+// "Finland" and "de" in "Bangladesh", so a caller that sends a code would
+// otherwise read the country it wants beside two it does not.
+//
+// The whole list is 143 rows, which is a lot of an agent's context window to
+// spend on one lookup, so a caller that already knows roughly what it wants can
+// say so.
+export const served = (search?: string): ReadonlyArray<ServedMarket> => {
+  const needle = search?.trim().toLowerCase()
+  const byShortLabel = needle
+    ? locations.filter((location) => location.shortLabel.toLowerCase() === needle)
+    : []
+  const matched =
+    byShortLabel.length > 0
+      ? byShortLabel
+      : locations.filter(
+          (location) => !needle || location.label.toLowerCase().includes(needle),
+        )
+  return matched
+    .map((location) => ({
+      locationCode: location.code,
+      label: location.label,
+      shortLabel: location.shortLabel,
+      languageCodes: languagesFor(location.code),
+      provider: providerFor(location.code),
+    }))
+}
+
+// The Site's Market as a settings answer: what it resolves to now, whether
+// anybody chose it, and every Market it could be changed to.
+//
+// `configured` is the field that earns this its own shape. A resolved Market
+// always names a country, so the United States in English reads the same
+// whether a Dutch site chose it or nobody chose anything — and those are
+// opposite states. A reader that cannot tell them apart cannot find the mistake.
+export const settingsFor = (
+  stored: ConfigMarket | undefined,
+  search?: string,
+): MarketSettings => ({
+  market: resolve(stored),
+  configured: stored !== undefined,
+  default: resolve(undefined),
+  served: served(search),
+})
+
+// A Market a caller asked for: the language filled in when it named none, and
+// the reason DataForSEO will not answer for the pair, or null.
+//
+// One function rather than two calls, because the order matters. The check has
+// to run on the *filled* pair: a caller that names only a country would
+// otherwise be checked against a language it never sent.
+export const setting = (
+  locationCode: number,
+  languageCode?: string,
+): {
+  readonly locationCode: number
+  readonly languageCode: string
+  readonly problem: string | null
+} => {
+  const language = languageCode ?? languageFor(locationCode)
+  return {
+    locationCode,
+    languageCode: language,
+    problem: marketProblem(locationCode, language),
+  }
+}
+
+// What a Market write changed, and what it costs. The Keyword metrics store is
+// keyed by location code and language code, so a changed Market does not make
+// the stored numbers wrong — it makes them unreachable. The plan then reads as
+// unmeasured until each planned Keyword is asked again, and DataForSEO bills
+// per term. That is said in the answer because an empty report does not explain
+// itself, and the reader who caused it is the one who can pay for the repair.
+export const setResult = (
+  previous: ConfigMarket | undefined,
+  stored: ConfigMarket,
+): MarketSetResult => {
+  const before = resolve(previous)
+  const after = resolve(stored)
+  const changed =
+    before.locationCode !== after.locationCode ||
+    before.languageCode !== after.languageCode
+  return {
+    market: after,
+    previous: before,
+    changed,
+    demand: {
+      stale: changed,
+      note: changed
+        ? `The stored Keyword metrics belong to ${before.label} in ${before.languageCode}. This Market does not read them. Ask DataForSEO about each planned Keyword again to get numbers for ${after.label} in ${after.languageCode}. DataForSEO bills per term.`
+        : "The Market did not change, so the stored Keyword metrics still apply.",
+    },
+  }
 }
 
 export * as Market from "./market"

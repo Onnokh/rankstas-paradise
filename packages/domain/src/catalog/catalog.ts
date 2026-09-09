@@ -12,7 +12,7 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { type SqlError } from "effect/unstable/sql"
 
 import { AppDatabase } from "../app-database/app-database.ts"
-import { ConfigSite } from "../config/schema.ts"
+import { ConfigSite, type SiteSettings } from "../config/schema.ts"
 import { serviceUse } from "../service-use.ts"
 import { SiteExistsError, UnknownSiteError } from "../sites/schema.ts"
 import { CatalogError } from "./schema.ts"
@@ -32,6 +32,22 @@ export interface Interface {
   readonly update: (
     site: ConfigSite,
   ) => Effect.Effect<void, CatalogError | UnknownSiteError>
+  // Change some settings of an existing entry and leave the rest as stored.
+  // Answers with the entry as it now reads, which saves the caller a re-read.
+  //
+  // The targeted counterpart of `update`, which replaces the whole document. A
+  // caller that holds one setting would otherwise have to read the entry, merge
+  // its own field in, and write the result back — and a caller that skipped the
+  // read would silently drop the Site's analytics or revenue block. One field
+  // is the common case for an agent, and losing a block it never mentioned is
+  // the failure it cannot see.
+  //
+  // A key that is absent, or present and undefined, is left alone, so this
+  // cannot clear a setting. `update` stays the way to do that.
+  readonly patch: (
+    id: string,
+    changes: Partial<SiteSettings>,
+  ) => Effect.Effect<ConfigSite, CatalogError | UnknownSiteError>
   // Remove an entry. The site's data directory on disk is left alone.
   readonly remove: (
     id: string,
@@ -170,6 +186,28 @@ export const layer = Layer.effect(
         }),
       )
 
+    const patchI = (id: string, changes: Partial<SiteSettings>) =>
+      sql.withTransaction(
+        Effect.gen(function* () {
+          const rows = yield* sql<{ id: string; settings: string }>`
+            select id, settings from site where id = ${id}`
+          const row = rows[0]
+          if (!row) return yield* unknown(id)
+          const stored = yield* parseRow(row)
+          // An undefined value is dropped rather than spread over the stored
+          // one: `{ market: undefined }` from a caller that built its patch
+          // object with optional fields must not clear the Market.
+          const named = Object.fromEntries(
+            Object.entries(changes).filter(([, value]) => value !== undefined),
+          ) as Partial<SiteSettings>
+          const patched: ConfigSite = { ...stored, ...named, id: stored.id }
+          yield* sql`update site
+            set settings = ${JSON.stringify(patched)}, updated_at = current_timestamp
+            where id = ${id}`
+          return patched
+        }),
+      )
+
     const removeI = (id: string) =>
       sql.withTransaction(
         Effect.gen(function* () {
@@ -199,6 +237,9 @@ export const layer = Layer.effect(
       add: Effect.fn("Catalog.add")((site) => addI(site).pipe(mapErr("add"))),
       update: Effect.fn("Catalog.update")((site) =>
         updateI(site).pipe(mapErr("update")),
+      ),
+      patch: Effect.fn("Catalog.patch")((id, changes) =>
+        patchI(id, changes).pipe(mapErr("patch")),
       ),
       remove: Effect.fn("Catalog.remove")((id) => removeI(id).pipe(mapErr("remove"))),
       importOnce: Effect.fn("Catalog.importOnce")((sites) =>

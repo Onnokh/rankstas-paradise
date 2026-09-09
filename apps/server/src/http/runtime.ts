@@ -32,6 +32,12 @@ import { type Client } from "@rp/domain/clients/schema"
 import { Clients } from "@rp/domain/clients/clients"
 import { Config } from "@rp/domain/config/config"
 import { type ConfigSite } from "@rp/domain/config/schema"
+import { Market } from "@rp/domain/keyword-metrics/market"
+import {
+  type ConfigMarket,
+  type MarketSetResult,
+  type MarketSettings,
+} from "@rp/domain/keyword-metrics/schema"
 import { CurrentSite } from "@rp/domain/sites/current-site"
 import { DomainRating } from "@rp/domain/domain-rating/domain-rating"
 import { KeywordDiscovery } from "@rp/domain/keyword-discovery/keyword-discovery"
@@ -93,6 +99,9 @@ export type SiteRuntime = ManagedRuntime.ManagedRuntime<
   | Revenue.Service
   | Storage.Service
   | Registry.Service
+  // Exposed so a caller can ask about the plan's Keyword metrics on their own,
+  // outside a Sync run — see KeywordMetrics.refreshPlanned.
+  | KeywordMetrics.Service
   | KeywordDiscovery.Service
   | Sitemap.Service
   | CurrentSite.Service,
@@ -109,6 +118,17 @@ export interface CatalogOps {
   readonly add: (site: ConfigSite) => Promise<Site>
   // Replace an entry's settings and return the resolved Site.
   readonly update: (site: ConfigSite) => Promise<Site>
+  // The Site's Market, and every Market DataForSEO serves. Here rather than on
+  // a per-site runtime because only the stored entry knows whether anybody
+  // chose the Market — the resolved Site has the default filled in already.
+  readonly market: (id: SiteId, search?: string) => Promise<MarketSettings>
+  // Change the Site's Market and leave every other setting as stored. Drops the
+  // Site's cached runtime, like every other settings write, so the next call
+  // reads the new Market.
+  readonly setMarket: (
+    id: SiteId,
+    market: ConfigMarket,
+  ) => Promise<MarketSetResult>
   // Remove an entry. Its data directory stays on disk.
   readonly remove: (id: SiteId) => Promise<void>
 }
@@ -247,6 +267,21 @@ export const makeServerContext = async (): Promise<ServerContext> => {
     settings: (id) => appRuntime.runPromise(Catalog.use.get(id)),
     add: (site) => resolveThenStore(site, Catalog.use.add),
     update: (site) => resolveThenStore(site, Catalog.use.update),
+    market: (id, search) =>
+      appRuntime.runPromise(
+        Effect.map(Catalog.use.get(id), (entry) =>
+          Market.settingsFor(entry.market, search),
+        ),
+      ),
+    // Read before write, and both inside one call: the answer names what the
+    // Site was measured in before, and a caller reading it afterwards would
+    // only ever see the new one.
+    setMarket: async (id, market) => {
+      const before = await appRuntime.runPromise(Catalog.use.get(id))
+      await appRuntime.runPromise(Catalog.use.patch(id, { market }))
+      await forget(id)
+      return Market.setResult(before.market, market)
+    },
     remove: (id) => appRuntime.runPromise(Catalog.use.remove(id)),
   }
 

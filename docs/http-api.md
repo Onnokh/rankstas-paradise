@@ -263,8 +263,22 @@ The site catalog lives in the app-level database `rankstas-paradise.sqlite` in t
 Bodies use `SiteSettings` (`packages/domain/src/config/schema.ts`): `siteUrl` (the Search Console property) is required; `name`, `origin`, `sitemapUrl`, `brandTerms`, `market`, `analytics`, and `revenue` are optional and derived when absent. A `market` names a DataForSEO `locationCode` and optionally a `languageCode`; absent, it resolves to the United States in English, and an absent language takes the country's primary search language. Every write answers `{ site, settings }`: the resolved Site next to what was stored. Vendor keys are never part of the settings.
 
 - `POST /api/sites` — body: `{ id, ...SiteSettings }`. `201` with the new site; `409` when the id is taken; `400` when the id is not lower-case letters, digits, and hyphens, or the property/origin is not a URL.
-- `PUT /api/sites/:id/settings` — body: `SiteSettings`. Replaces the whole entry. `404` for an unknown id.
+- `PUT /api/sites/:id/settings` — body: `SiteSettings`. Replaces the whole entry, so a caller must send every setting it wants to keep. `404` for an unknown id.
 - `DELETE /api/sites/:id` — removes the entry from the catalog. The site's data directory under `sites/<id>/` stays on disk. `404` for an unknown id.
+
+The Market has no HTTP route of its own; it is read and written over MCP, with
+`market` and `market_set`. Those go through `Catalog.patch`, which changes only
+the settings it is given and leaves the rest of the entry as stored — the
+targeted counterpart of the whole-entry `PUT` above, so a caller that holds one
+setting cannot drop the site's analytics or revenue block. `market_set` refuses
+a location and language pair `Market.served()` does not hold before it stores
+anything, because DataForSEO bills for a task it rejects, and it drops the
+site's cached runtime like every other settings write.
+
+A Market change makes the stored Keyword metrics unreachable rather than wrong:
+they are keyed by location code and language code, so the plan reads as
+`unmeasured` until each planned keyword is asked again. `keywords_refresh` over
+MCP is that request on its own, without the rest of a sync.
 
 ## Vendor keys (the vault)
 

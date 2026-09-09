@@ -20,6 +20,10 @@ Everything a catalog entry holds except its id: the Search Console property, nam
 The country and language a site's keyword demand is measured in — one per site, stored as a DataForSEO location code and language code. Every Keyword metric belongs to exactly one market, because a search volume is only comparable with another volume from the same one. A site that names no market is measured in the United States in English. Language, not country, is the axis that matters: a German visitor to an English site searches in English.
 _Avoid_: "location" or "locale" on their own; "country" (a market is a country *and* a language). The Registry used to carry a per-row `country` column; it was unvalidated free text, nothing read it, and it is gone — a row cannot be in a different market from the site it belongs to.
 
+**Served market**:
+One country DataForSEO answers keyword data for, with every language it serves for that country and the product that answers. The 143 of them are held in the code, not asked for: DataForSEO bills for a location and language pair it rejects, so a Market has to be checkable against this list before it is stored and again before a request is paid for. A market must be one of these; a market that is not is a settings mistake and never a vendor failure.
+_Avoid_: "supported country"; treating the list as the site's own markets — a site has exactly one Market, and these are the ones it may choose from.
+
 **Vendor key**:
 The API key a provider (Polar, Rybbit, Ahrefs, DataForSEO) is read with. Stored encrypted in the vault, addressed by scope (a site, or the app) and purpose (the provider name), and handed to the provider's adapter under the environment variable it reads. The environment variable is the fallback. Never part of Site settings.
 _Avoid_: "secret" for the concept in prose (the code's name for the vault entry); "credential".
