@@ -402,6 +402,41 @@ test("index coverage records one tally a day over the keyword targets", async ()
   expect(second[0]).toMatchObject({ keywordTargets: 3, indexed: 2, notIndexed: 0 })
 })
 
+test("a database holding the first index_coverage shape is rebuilt, not broken", async () => {
+  // What a deployment actually hit. The first version of the table counted every
+  // tracked page in a `tracked` column; `create table if not exists` is a no-op
+  // over it, so every registry read failed on "no such column: keyword_targets"
+  // until the table was dropped on acquisition.
+  await runtime.dispose()
+  const db = new Database(dbPath)
+  db.run(`drop table if exists index_coverage`)
+  db.run(`create table index_coverage (
+    date text primary key,
+    tracked integer not null,
+    indexed integer not null,
+    not_indexed integer not null,
+    recorded_at text not null default current_timestamp
+  )`)
+  db.run(
+    `insert into index_coverage (date, tracked, indexed, not_indexed) values ('2026-09-09', 18, 12, 6)`,
+  )
+  db.close()
+
+  runtime = ManagedRuntime.make(
+    Storage.layer.pipe(Layer.provide(currentSiteLayer(dir, dbPath))),
+  )
+
+  // The reading is gone with the old shape, and that is the intent: its
+  // numerators were counted over every tracked page, so keeping them would put
+  // two populations in one series.
+  expect(await run(Storage.use.indexCoverageHistory())).toEqual([])
+
+  await run(Storage.use.recordIndexCoverage(["https://example.com/a"]))
+  expect(await run(Storage.use.indexCoverageHistory())).toEqual([
+    { date: expect.any(String), keywordTargets: 1, indexed: 0, notIndexed: 0 },
+  ])
+})
+
 test("index coverage counts a repeated target once", async () => {
   // The Registry holds one row per keyword, so a page with four keywords arrives
   // four times. Counted as four, a plan of one page would read as four.
