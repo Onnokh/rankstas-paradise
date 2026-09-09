@@ -90,10 +90,64 @@ describe("Catalog", () => {
     expect(stored.analytics).toBeUndefined()
   })
 
-  test("get, update, and remove fail with UnknownSiteError for a missing id", async () => {
+  test("patch changes the named settings and leaves the rest as stored", async () => {
+    // The whole reason `patch` exists beside `update`: a caller that holds one
+    // setting must not have to resend the other six, and a caller that forgot
+    // one must not silently lose it. A Market write from an agent is exactly
+    // that caller.
+    const full: ConfigSite = {
+      ...example,
+      sitemapUrl: "https://example.com/sitemap-index.xml",
+      revenue: { provider: "polar" },
+      market: { locationCode: 2840, languageCode: "en" },
+    }
+    await run(Catalog.use.add(full))
+
+    const patched = await run(
+      Catalog.use.patch("example", { market: { locationCode: 2528, languageCode: "nl" } }),
+    )
+    expect(patched).toEqual({ ...full, market: { locationCode: 2528, languageCode: "nl" } })
+    // Answered from the same transaction that wrote it, so the answer and the
+    // store cannot disagree.
+    expect(await run(Catalog.use.get("example"))).toEqual(patched)
+  })
+
+  test("patch adds a setting the entry never had", async () => {
+    // The printfeest case: the entry names no Market at all, so the patch has
+    // nothing to replace and must still land.
+    await run(Catalog.use.add(example))
+    const patched = await run(
+      Catalog.use.patch("example", { market: { locationCode: 2528 } }),
+    )
+    expect(patched.market).toEqual({ locationCode: 2528 })
+    expect(patched.analytics).toEqual(example.analytics)
+    expect(patched.brandTerms).toEqual(["example"])
+  })
+
+  test("patch ignores a key whose value is undefined", async () => {
+    // A caller building a patch from optional fields sends `{ market:
+    // undefined }` without meaning to clear the Market. Clearing a setting is
+    // `update`'s job, where it is written out.
+    const withMarket = { ...example, market: { locationCode: 2528, languageCode: "nl" } }
+    await run(Catalog.use.add(withMarket))
+    const patched = await run(Catalog.use.patch("example", { market: undefined }))
+    expect(patched.market).toEqual({ locationCode: 2528, languageCode: "nl" })
+  })
+
+  test("patch cannot change the id it was addressed by", async () => {
+    await run(Catalog.use.add(example))
+    const patched = await run(
+      Catalog.use.patch("example", { name: "Renamed" } as Partial<ConfigSite>),
+    )
+    expect(patched.id).toBe("example")
+    expect(patched.name).toBe("Renamed")
+  })
+
+  test("get, patch, update, and remove fail with UnknownSiteError for a missing id", async () => {
     await run(Catalog.use.add(example))
     for (const effect of [
       Catalog.use.get("missing"),
+      Catalog.use.patch("missing", { market: { locationCode: 2528 } }),
       Catalog.use.update({ id: "missing", siteUrl: "sc-domain:m.example" }),
       Catalog.use.remove("missing"),
     ]) {

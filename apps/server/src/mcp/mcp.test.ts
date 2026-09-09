@@ -13,7 +13,14 @@ import { Config } from "@rp/domain/config/config"
 import { KeywordDiscovery } from "@rp/domain/keyword-discovery/keyword-discovery"
 import { KeywordDiscoveryError } from "@rp/domain/keyword-discovery/schema"
 import type { KeywordProposal } from "@rp/domain/keyword-discovery/schema"
+import { KeywordMetrics } from "@rp/domain/keyword-metrics/keyword-metrics"
+import { Market } from "@rp/domain/keyword-metrics/market"
 import { UnservedMarketError } from "@rp/domain/keyword-metrics/schema"
+import type {
+  MarketSetResult,
+  MarketSettings,
+} from "@rp/domain/keyword-metrics/schema"
+import { Registry } from "@rp/domain/registry/registry"
 import { Reports } from "@rp/domain/reports/reports"
 import { ReportsError } from "@rp/domain/reports/schema"
 import { Sites } from "@rp/domain/sites/sites"
@@ -24,7 +31,7 @@ import type {
   StatusReport,
 } from "@rp/domain/reports/schema"
 
-import { buildMcpServer, type RunTool } from "./mcp.ts"
+import { buildMcpServer, type MarketTool, type RunTool } from "./mcp.ts"
 
 const fakeSite: Site = {
   id: SiteId.make("acme"),
@@ -131,11 +138,76 @@ const discoveryMock = Layer.mock(KeywordDiscovery.Service)({
     Effect.fail(new KeywordDiscoveryError({ message: "no DataForSEO key" })),
 })
 
-const testLayer = Layer.mergeAll(reportsMock, sitesMock, configMock, discoveryMock)
+// Mock KeywordMetrics and the Registry behind `keywords_refresh`. The tool
+// calls the domain's `refreshPlanned`, so the plan really is read here and the
+// keywords really are handed to `refresh` — a mock of the whole effect would
+// prove only that the tool calls something.
+const fakeEntry = {
+  cluster: "widgets",
+  keyword: "Acme Widget Sizes",
+  targetUrl: "/widgets",
+  intent: "informational",
+  whyOpportunity: "",
+  priority: "high",
+  publishedAt: "",
+  baselineDate: "",
+  status: "",
+}
+
+const registryMock = Layer.mock(Registry.Service)({
+  loadRegistry: () =>
+    Effect.succeed([
+      fakeEntry,
+      // A second row for the same keyword, differently cased, plus an
+      // inventory-only row: neither may reach the vendor as its own term.
+      { ...fakeEntry, keyword: "acme widget sizes", targetUrl: "/sizes" },
+      { ...fakeEntry, keyword: "", targetUrl: "/about" },
+    ]),
+})
+
+const metricsMock = (
+  refresh: KeywordMetrics.Interface["refresh"],
+) => Layer.mock(KeywordMetrics.Service)({ refresh })
+
+const testLayer = Layer.mergeAll(
+  reportsMock,
+  sitesMock,
+  configMock,
+  discoveryMock,
+  registryMock,
+  metricsMock(() =>
+    Effect.succeed({ asked: 1, answered: 1, unreported: 0, requests: 1 }),
+  ),
+)
+
+// The Market seam, faked as a recorder: the two tools are the only callers, so
+// what reaches it and what does NOT are both assertions worth making.
+const fakeMarketSettings: MarketSettings = Market.settingsFor(undefined, "nether")
+
+const marketRecorder = () => {
+  const set: Array<{ site: string; locationCode: number; languageCode: string }> = []
+  const read: Array<{ site: string; search?: string }> = []
+  const tool: MarketTool = {
+    read: (site, search) => {
+      read.push({ site, search })
+      return Promise.resolve(fakeMarketSettings)
+    },
+    set: (site, chosen) => {
+      set.push({ site, ...chosen })
+      return Promise.resolve(
+        Market.setResult(undefined, chosen) satisfies MarketSetResult,
+      )
+    },
+  }
+  return { tool, read, set }
+}
 
 // A test client connected to the adapter over the given runtime seam.
-const connectClient = async (run: RunTool): Promise<Client> => {
-  const server = buildMcpServer(run)
+const connectClient = async (
+  run: RunTool,
+  market: MarketTool = marketRecorder().tool,
+): Promise<Client> => {
+  const server = buildMcpServer(run, market)
   const [clientTransport, serverTransport] =
     InMemoryTransport.createLinkedPair()
   await server.connect(serverTransport)
@@ -144,12 +216,15 @@ const connectClient = async (run: RunTool): Promise<Client> => {
   return client
 }
 
-const withClient = async (fn: (client: Client) => Promise<void>): Promise<void> => {
+const withClient = async (
+  fn: (client: Client) => Promise<void>,
+  market?: MarketTool,
+): Promise<void> => {
   const runtime = ManagedRuntime.make(testLayer)
   // The test uses a single site whose services the mock provides, so the run
   // ignores the site arg and runs every tool effect on the one test runtime.
   const run: RunTool = (_site, effect) => runtime.runPromise(effect)
-  const client = await connectClient(run)
+  const client = await connectClient(run, market)
   try {
     await fn(client)
   } finally {
@@ -224,6 +299,8 @@ test("keywords_propose hands the rows to the domain and reports what it stored",
       reportsMock,
       sitesMock,
       configMock,
+      registryMock,
+      metricsMock(() => Effect.succeed(null)),
       Layer.mock(KeywordDiscovery.Service)({
         propose: (keywords) =>
           Effect.sync(() => {
@@ -311,6 +388,8 @@ test("an unserved market names the pair, since it carries no message", async () 
       reportsMock,
       sitesMock,
       configMock,
+      registryMock,
+      metricsMock(() => Effect.succeed(null)),
       Layer.mock(KeywordDiscovery.Service)({
         discover: () =>
           Effect.fail(
@@ -353,6 +432,8 @@ test("keywords_discover passes its filters through and never invents a limit", a
       reportsMock,
       sitesMock,
       configMock,
+      registryMock,
+      metricsMock(() => Effect.succeed(null)),
       Layer.mock(KeywordDiscovery.Service)({
         discover: (request) =>
           Effect.sync(() => {
@@ -393,6 +474,197 @@ test("keywords_discover passes its filters through and never invents a limit", a
         intents: ["informational"],
       },
     ])
+  } finally {
+    await client.close()
+    await runtime.dispose()
+  }
+})
+
+test("market answers with the settings report and passes the search through", async () => {
+  const recorder = marketRecorder()
+  await withClient(async (client) => {
+    const result = await client.callTool({
+      name: "market",
+      arguments: { site: "acme", search: "nether" },
+    })
+    expect(result.isError).toBeFalsy()
+    const payload = JSON.parse(textOf(result))
+    // `configured` is the field the report exists for: it is what tells a
+    // reader that nobody chose the United States, and the resolved Market
+    // cannot say so on its own.
+    expect(payload.configured).toBe(false)
+    expect(payload.market).toEqual({
+      locationCode: 2840,
+      languageCode: "en",
+      label: "United States",
+      provider: "labs",
+    })
+    expect(payload.served).toEqual([
+      {
+        locationCode: 2528,
+        label: "Netherlands",
+        shortLabel: "NL",
+        languageCodes: ["nl"],
+        provider: "labs",
+      },
+    ])
+    expect(recorder.read).toEqual([{ site: "acme", search: "nether" }])
+  }, recorder.tool)
+})
+
+test("market_set fills in the country's primary language when none is named", async () => {
+  const recorder = marketRecorder()
+  await withClient(async (client) => {
+    const result = await client.callTool({
+      name: "market_set",
+      arguments: { site: "acme", locationCode: 2528 },
+    })
+    expect(result.isError).toBeFalsy()
+    // The seam is handed a complete pair, never a bare country: the Catalog
+    // stores what was resolved, so a later read cannot resolve it differently.
+    expect(recorder.set).toEqual([
+      { site: "acme", locationCode: 2528, languageCode: "nl" },
+    ])
+    const payload = JSON.parse(textOf(result))
+    expect(payload.market.languageCode).toBe("nl")
+    expect(payload.previous.label).toBe("United States")
+    expect(payload.changed).toBe(true)
+    // The consequence of the change is in the answer, not left for the reader
+    // to work out from an empty `registry_health`.
+    expect(payload.demand.stale).toBe(true)
+    expect(payload.demand.note).toContain("Netherlands")
+  }, recorder.tool)
+})
+
+test("market_set refuses an unserved pair and stores nothing", async () => {
+  const recorder = marketRecorder()
+  await withClient(async (client) => {
+    const result = await client.callTool({
+      name: "market_set",
+      arguments: { site: "acme", locationCode: 2528, languageCode: "de" },
+    })
+    expect(result.isError).toBe(true)
+    const payload = JSON.parse(textOf(result))
+    expect(payload.error).toBe("UnservedMarketError")
+    // The error has to name the languages the country IS served in: the fix is
+    // a different pair, and a caller cannot guess one.
+    expect(payload.message).toContain("Netherlands")
+    expect(payload.message).toContain("nl")
+    // Nothing reached the settings seam, so nothing was stored — and nothing
+    // will be sent to DataForSEO, which bills for a task it rejects.
+    expect(recorder.set).toEqual([])
+  }, recorder.tool)
+})
+
+test("keywords_refresh offers the plan's keywords once each and reports the run", async () => {
+  const asked: Array<ReadonlyArray<string>> = []
+  const runtime = ManagedRuntime.make(
+    Layer.mergeAll(
+      reportsMock,
+      sitesMock,
+      configMock,
+      discoveryMock,
+      registryMock,
+      metricsMock((candidates) =>
+        Effect.sync(() => {
+          asked.push(candidates)
+          return { asked: 1, answered: 1, unreported: 0, requests: 1 }
+        }),
+      ),
+    ),
+  )
+  const client = await connectClient((_site, effect) => runtime.runPromise(effect))
+  try {
+    const result = await client.callTool({
+      name: "keywords_refresh",
+      arguments: { site: "acme" },
+    })
+    expect(result.isError).toBeFalsy()
+    // Three Registry rows, one keyword: two rows name the same term in
+    // different cases and the third is an inventory-only row. Paying twice for
+    // one term, or once for an empty one, is money for nothing.
+    expect(asked).toEqual([["acme widget sizes"]])
+    expect(JSON.parse(textOf(result))).toEqual({
+      market: {
+        locationCode: 2840,
+        languageCode: "en",
+        label: "United States",
+        provider: "labs",
+      },
+      candidates: 1,
+      refreshed: { asked: 1, answered: 1, unreported: 0, requests: 1 },
+    })
+  } finally {
+    await client.close()
+    await runtime.dispose()
+  }
+})
+
+test("keywords_refresh answers with a null run when no vendor key is set", async () => {
+  // A deployment with no DataForSEO key must read as "nothing was asked",
+  // never as an error: the feature is optional, and an error here would tell a
+  // caller to retry something that can never work.
+  const runtime = ManagedRuntime.make(
+    Layer.mergeAll(
+      reportsMock,
+      sitesMock,
+      configMock,
+      discoveryMock,
+      registryMock,
+      metricsMock(() => Effect.succeed(null)),
+    ),
+  )
+  const client = await connectClient((_site, effect) => runtime.runPromise(effect))
+  try {
+    const result = await client.callTool({
+      name: "keywords_refresh",
+      arguments: { site: "acme" },
+    })
+    expect(result.isError).toBeFalsy()
+    const payload = JSON.parse(textOf(result))
+    expect(payload.refreshed).toBeNull()
+    // The plan is still counted, so a reader can see what would have been
+    // asked about.
+    expect(payload.candidates).toBe(1)
+  } finally {
+    await client.close()
+    await runtime.dispose()
+  }
+})
+
+test("an unserved Market on a refresh names the pair, like a discovery run", async () => {
+  // The same error from the other spending path: a Market stored before this
+  // check existed, or set over HTTP, still has to fail with the pair in it.
+  const runtime = ManagedRuntime.make(
+    Layer.mergeAll(
+      reportsMock,
+      sitesMock,
+      configMock,
+      discoveryMock,
+      registryMock,
+      metricsMock(() =>
+        Effect.fail(
+          new UnservedMarketError({
+            locationCode: 2528,
+            languageCode: "de",
+            reason: "DataForSEO serves Netherlands in nl, not \"de\".",
+          }),
+        ),
+      ),
+    ),
+  )
+  const client = await connectClient((_site, effect) => runtime.runPromise(effect))
+  try {
+    const result = await client.callTool({
+      name: "keywords_refresh",
+      arguments: { site: "acme" },
+    })
+    expect(result.isError).toBe(true)
+    expect(JSON.parse(textOf(result))).toEqual({
+      error: "UnservedMarketError",
+      message:
+        'DataForSEO serves Netherlands in nl, not "de". (location 2528, language de)',
+    })
   } finally {
     await client.close()
     await runtime.dispose()

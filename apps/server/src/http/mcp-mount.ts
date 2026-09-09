@@ -11,7 +11,12 @@
 //     `CurrentSite.layerFor` can surface the `UnknownSiteError` as a structured
 //     MCP error result (it fails before any Reports work runs).
 //
-//  2. Transport shape. The adapter is a Web-standard `(Request) => Promise<Response>`;
+//  2. Site settings. A Market read has to see the stored catalog entry and a
+//     Market write has to retire the Site's cached runtime, so neither can run
+//     inside one. Both are wired to the same ServerContext the HTTP settings
+//     route uses, so the two surfaces write the catalog the same way.
+//
+//  3. Transport shape. The adapter is a Web-standard `(Request) => Promise<Response>`;
 //     the seam expects an Effect over the platform's request/response. We convert
 //     at the boundary and never leak an error out of the route (any failure maps
 //     to a 500 body, matching a raw handler crash).
@@ -20,7 +25,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 
 import { Config } from "@rp/domain/config/config"
 
-import { mcpHandler, type RunTool } from "../mcp/mcp.ts"
+import { mcpHandler, type MarketTool, type RunTool } from "../mcp/mcp.ts"
 import { type McpHandler } from "./mcp.ts"
 import { type ServerContext } from "./runtime.ts"
 
@@ -41,7 +46,15 @@ export const makeMcpMount = (ctx: ServerContext): McpHandler => {
     return (await ctx.runtimeFor(site)).runPromise(runnable)
   }
 
-  const webHandler = mcpHandler(run)
+  // Straight through to the catalog operations: the pair a write names is
+  // already checked against the Market table at the tool boundary, and the
+  // runtime drop happens inside `setMarket`.
+  const market: MarketTool = {
+    read: (site, search) => ctx.catalog.market(site, search),
+    set: (site, chosen) => ctx.catalog.setMarket(site, chosen),
+  }
+
+  const webHandler = mcpHandler(run, market)
 
   return (request) =>
     HttpServerRequest.toWeb(request).pipe(

@@ -69,6 +69,59 @@ export const Market = Schema.Struct({
 }).annotate({ identifier: "Market" })
 export interface Market extends Schema.Schema.Type<typeof Market> {}
 
+// One country DataForSEO answers keyword data for, with every language it
+// serves for that country. Derived from the offline table in ./market.ts, so a
+// caller can pick a valid Market without a request and without a key — which
+// matters because DataForSEO bills for a location/language pair it rejects.
+export const ServedMarket = Schema.Struct({
+  locationCode: Schema.Number,
+  label: Schema.String,
+  // The ISO 3166-1 alpha-2 code, except the United Kingdom, which the ported
+  // table carries as the friendlier "UK".
+  shortLabel: Schema.String,
+  // Every language served for this country, its primary search language first.
+  // That first entry is what a Market with no language resolves to.
+  languageCodes: Schema.Array(Schema.String),
+  provider: Schema.Literals(["labs", "google-ads"]),
+}).annotate({ identifier: "ServedMarket" })
+export interface ServedMarket extends Schema.Schema.Type<typeof ServedMarket> {}
+
+// A Site's Market as the settings surface reports it, next to every Market it
+// could be changed to.
+export const MarketSettings = Schema.Struct({
+  market: Market,
+  // Whether the Site settings name a Market, or this is only the default. The
+  // resolved Market cannot say: an absent setting resolves to a real country,
+  // so a Market nobody chose reads exactly like a chosen one.
+  configured: Schema.Boolean,
+  // What a Site with no Market is measured in, so a reader can compare the two
+  // without holding the rule in its head.
+  default: Market,
+  served: Schema.Array(ServedMarket),
+}).annotate({ identifier: "MarketSettings" })
+export interface MarketSettings extends Schema.Schema.Type<typeof MarketSettings> {}
+
+// What a Market write did to a Site.
+export const MarketSetResult = Schema.Struct({
+  market: Market,
+  // What the Site was measured in before, resolved the same way — the default
+  // when the settings named nothing, which shows that nobody had chosen it.
+  previous: Market,
+  // False when the write named the Market the Site already had. Then no stored
+  // number became unreachable and nothing must be asked again.
+  changed: Schema.Boolean,
+  demand: Schema.Struct({
+    // Whether the stored Keyword metrics still describe this Site. The store is
+    // keyed by location code and language code, so a changed Market does not
+    // make the old numbers wrong — it makes them unreachable.
+    stale: Schema.Boolean,
+    // What that costs, in words, because an empty report does not explain
+    // itself and the repair is billed.
+    note: Schema.String,
+  }),
+}).annotate({ identifier: "MarketSetResult" })
+export interface MarketSetResult extends Schema.Schema.Type<typeof MarketSetResult> {}
+
 // What DataForSEO says about one Keyword in one Market. `keyword` is stored as
 // DataForSEO returns it, which is lower-case and trimmed; that is also the form
 // this domain looks rows up by, so a Registry keyword is folded before it is
@@ -130,6 +183,23 @@ export const KeywordMetricsRefresh = Schema.Struct({
 }).annotate({ identifier: "KeywordMetricsRefresh" })
 export interface KeywordMetricsRefresh
   extends Schema.Schema.Type<typeof KeywordMetricsRefresh> {}
+
+// What an on-demand refresh of the plan's Keyword metrics did, and the Market
+// it did it in. The Market is named because that is the whole question a caller
+// asks this for: a Market change leaves the plan unmeasured, and this says
+// which Market the new numbers belong to.
+export const KeywordMetricsSync = Schema.Struct({
+  market: Market,
+  // Planned Keywords offered, after folding and de-duplication. Higher than
+  // `refreshed.asked`, which counts only the ones that got past the brand
+  // filter and the thirty-day rule — the rest cost nothing.
+  candidates: Schema.Number,
+  // Null when no DataForSEO key is configured, so a Site without one gets the
+  // shape rather than an error.
+  refreshed: Schema.NullOr(KeywordMetricsRefresh),
+}).annotate({ identifier: "KeywordMetricsSync" })
+export interface KeywordMetricsSync
+  extends Schema.Schema.Type<typeof KeywordMetricsSync> {}
 
 // Raised when DataForSEO cannot be reached, rejects the request, or answers
 // something this domain cannot read.

@@ -86,3 +86,117 @@ test("the default Market is the United States in English", () => {
     Market.marketProblem(Market.defaultLocationCode, Market.defaultLanguageCode),
   ).toBeNull()
 })
+
+test("an absent Market resolves to the United States in English", () => {
+  // The default nobody chooses, and the reason `configured` exists: this
+  // resolves to a real country, so it reads exactly like a chosen Market.
+  expect(Market.resolve(undefined)).toEqual({
+    locationCode: 2840,
+    languageCode: "en",
+    label: "United States",
+    provider: "labs",
+  })
+})
+
+test("an absent language resolves to the country's primary search language", () => {
+  // A caller that names only a country must get the language with the largest
+  // keyword corpus there, not the default's English.
+  expect(Market.resolve({ locationCode: 2528 })).toEqual({
+    locationCode: 2528,
+    languageCode: "nl",
+    label: "Netherlands",
+    provider: "labs",
+  })
+  expect(Market.setting(2528).languageCode).toBe("nl")
+  expect(Market.setting(2528).problem).toBeNull()
+  // Belgium is served in three languages and its primary is Dutch, so the
+  // filled-in language must be the table's own default and not the first of
+  // the extra ones.
+  expect(Market.setting(2056).languageCode).toBe("nl")
+})
+
+test("a location DataForSEO does not serve keeps its own language", () => {
+  // An unknown code has no primary language to take, so the default's English
+  // stands in — and the pair is refused anyway, which is the point.
+  const chosen = Market.setting(9999)
+  expect(chosen.languageCode).toBe("en")
+  expect(chosen.problem).toContain("9999")
+})
+
+test("an unserved location and language pair is refused before it is stored", () => {
+  // The refusal that pays for itself: DataForSEO bills for a task it rejects,
+  // so a pair it does not serve must never reach the Catalog or the wire.
+  const chosen = Market.setting(2528, "de")
+  expect(chosen.problem).toContain("Netherlands")
+  expect(chosen.problem).toContain("nl")
+  // And the named language is the one checked, not the country's primary — a
+  // check on the primary would pass every pair a caller could send.
+  expect(chosen.languageCode).toBe("de")
+})
+
+test("the served Markets carry every language of the table they come from", () => {
+  const all = Market.served()
+  expect(all.length).toBe(Market.locations.length)
+
+  const belgium = all.find((entry) => entry.locationCode === 2056)
+  expect(belgium).toEqual({
+    locationCode: 2056,
+    label: "Belgium",
+    shortLabel: "BE",
+    languageCodes: ["nl", "de", "fr"],
+    provider: "labs",
+  })
+
+  // Every served pair the list offers must be one `marketProblem` accepts, or
+  // the answer to "what may I set" would name pairs that cost money to try.
+  for (const entry of all)
+    for (const languageCode of entry.languageCodes)
+      expect(Market.marketProblem(entry.locationCode, languageCode)).toBeNull()
+})
+
+test("a search narrows the served Markets by name or two-letter code", () => {
+  expect(Market.served("nether").map((entry) => entry.locationCode)).toEqual([2528])
+  expect(Market.served("NL").map((entry) => entry.locationCode)).toEqual([2528])
+  // A two-letter code wins over the name match, so "nl" finds the Netherlands
+  // and not Finland, and "de" finds Germany and not Bangladesh.
+  expect(Market.served("de").map((entry) => entry.label)).toEqual(["Germany"])
+  expect(Market.served("nowhere")).toEqual([])
+})
+
+test("the settings answer says whether anybody chose the Market", () => {
+  const unset = Market.settingsFor(undefined)
+  expect(unset.configured).toBe(false)
+  expect(unset.market).toEqual(unset.default)
+
+  const set = Market.settingsFor({ locationCode: 2528 }, "nether")
+  expect(set.configured).toBe(true)
+  expect(set.market.label).toBe("Netherlands")
+  expect(set.market.languageCode).toBe("nl")
+  // The default is still reported, so a reader can compare the two without
+  // holding the rule in its head.
+  expect(set.default.locationCode).toBe(2840)
+  expect(set.served.map((entry) => entry.locationCode)).toEqual([2528])
+})
+
+test("a Market change reports the stored Keyword metrics as stale", () => {
+  const result = Market.setResult(undefined, { locationCode: 2528, languageCode: "nl" })
+  expect(result.previous.label).toBe("United States")
+  expect(result.market.label).toBe("Netherlands")
+  expect(result.changed).toBe(true)
+  expect(result.demand.stale).toBe(true)
+  // The note has to name both Markets: the reader is about to see every
+  // planned Keyword read as unmeasured, and nothing else explains why.
+  expect(result.demand.note).toContain("United States")
+  expect(result.demand.note).toContain("Netherlands")
+})
+
+test("a write that names the Market a Site already has loses nothing", () => {
+  // Writing the same pair again must not tell a reader to pay for a refresh it
+  // does not need.
+  const result = Market.setResult(
+    { locationCode: 2528 },
+    { locationCode: 2528, languageCode: "nl" },
+  )
+  expect(result.changed).toBe(false)
+  expect(result.demand.stale).toBe(false)
+})
