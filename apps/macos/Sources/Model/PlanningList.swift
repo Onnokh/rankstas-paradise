@@ -94,21 +94,6 @@ enum PlanningList {
     /// Not narrowed by the reach slider, for the same reason the plan is not: a difficulty
     /// above the threshold is shown and coloured, never hidden. Hiding it would answer
     /// "what is within reach" with a list that cannot be checked against anything.
-    /// How many proposals the screen draws before the reader asks for more.
-    ///
-    /// The plan is not capped and this is: a registry is maintained by hand and stays a
-    /// page or two, while one discovery run adds hundreds of proposals at once — 544 for
-    /// shadertown. A plain `VStack` builds and lays out every row it is handed, and the
-    /// sub-screen push animates whatever it holds, so an uncapped list makes opening the
-    /// screen cost the whole run.
-    static let proposalPage = 50
-
-    /// The window of `rows` to draw. Never smaller than one page, so a nonsense count
-    /// cannot leave the reader with an empty card and no way back.
-    static func page<Element>(_ rows: [Element], shown: Int) -> ArraySlice<Element> {
-        rows.prefix(max(shown, proposalPage))
-    }
-
     static func proposals(
         _ proposals: [KeywordProposal],
         search: String = ""
