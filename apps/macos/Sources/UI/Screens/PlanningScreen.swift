@@ -19,6 +19,8 @@ struct PlanningScreen: View {
     let onRefresh: () -> Void
 
     @Environment(\.isTabPreview) private var isPreview
+    /// PROTOTYPE: an outer shell owns the header and the section controls.
+    @Environment(\.siteSectionsHosted) private var hosted
 
     private var report: RegistryHealthReport? { rankings.health[overview.id] }
     private var keywords: [KeywordHealth] { report?.keywords ?? [] }
@@ -104,23 +106,25 @@ struct PlanningScreen: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Button(overview.site.name, systemImage: "chevron.left", action: onBack)
-                    .keyboardShortcut(isPreview ? nil : KeyboardShortcut("[", modifiers: .command))
-                Spacer()
-                if loading {
-                    ProgressView().controlSize(.small)
+            if !hosted {
+                HStack {
+                    Button(overview.site.name, systemImage: "chevron.left", action: onBack)
+                        .keyboardShortcut(isPreview ? nil : KeyboardShortcut("[", modifiers: .command))
+                    Spacer()
+                    if loading {
+                        ProgressView().controlSize(.small)
+                    }
+                    Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .disabled(loading)
+                        .help("Refresh (⌘R)")
                 }
-                Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .disabled(loading)
-                    .help("Refresh (⌘R)")
-            }
 
-            Text("Planning")
-                .font(.largeTitle)
+                Text("Planning")
+                    .font(.largeTitle)
+            }
 
             Text(summary)
                 .foregroundStyle(.secondary)

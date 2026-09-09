@@ -18,6 +18,8 @@ struct RootView: View {
     /// instance serves every tab and the peek previews.
     @State private var preferences = PlanningPreferences()
     @State private var live = LiveStore()
+    /// PROTOTYPE: which navigation shell the site tabs are drawn in. See `SiteNavigationPrototype`.
+    @State private var prototype = NavigationPrototype()
     @State private var drag: DragSession?
 
     /// One live three-finger gesture.
@@ -61,6 +63,43 @@ struct RootView: View {
     }
 
     var body: some View {
+        Group {
+            #if DEBUG
+            // PROTOTYPE: the whole-window variants replace the tab bar and the peek.
+            if prototype.variant.isWholeWindow {
+                wholeWindow
+            } else {
+                tabbed
+            }
+            #else
+            tabbed
+            #endif
+        }
+        .environment(prototype)
+        // Extend under the title bar so the tab bar can take its place.
+        .ignoresSafeArea(.container, edges: .top)
+        // View > Refresh (⌘R) acts on this window's active tab. See `ViewCommands`.
+        .focusedSceneValue(\.refresh) { refresh(workspace.activeTabID) }
+        .task {
+            await model.start()
+        }
+        // A site added, changed, or removed in Settings shows up here without a manual refresh.
+        .onReceive(NotificationCenter.default.publisher(for: .settingsDidChangeSites)) { _ in
+            Task { await model.refresh() }
+        }
+        .onChange(of: model.sites.map(\.id), initial: true) { _, siteIDs in
+            workspace.reconcile(siteIDs: siteIDs)
+            #if DEBUG
+            prototype.openStartTab(in: workspace, siteIDs: siteIDs)  // PROTOTYPE
+            #endif
+        }
+        .task(id: model.sites.map(\.id)) {
+            await favicons.load(model.sites)
+        }
+    }
+
+    /// The shipped shell: tab bar, mounted screens, peek.
+    private var tabbed: some View {
         GeometryReader { proxy in
             let layout = PeekLayout(
                 size: proxy.size,
@@ -69,9 +108,26 @@ struct RootView: View {
                 chrome: chrome
             )
             let pane = layout.contentFrame
+            // PROTOTYPE variant P: a strip off the pane's leading edge for the page rail.
+            let railSiteID: Site.ID? = {
+                #if DEBUG
+                if prototype.variant == .pageRailVoid, case .site(let siteID) = workspace.activeTabID { return siteID }
+                #endif
+                return nil
+            }()
+            let railWidth: CGFloat = railSiteID == nil ? 0 : PrototypeVoidPageRail.width
 
             ZStack(alignment: .topLeading) {
                 Palette.void
+
+                #if DEBUG
+                if let railSiteID {
+                    PrototypeVoidPageRail(state: workspace.state(for: railSiteID), rankings: rankings, siteID: railSiteID)
+                        .frame(width: railWidth, height: pane.height, alignment: .top)
+                        .offset(x: pane.minX, y: pane.minY + layout.contentOffset)
+                        .allowsHitTesting(!workspace.isPeeking)
+                }
+                #endif
 
                 TabContentStack(
                     workspace: workspace,
@@ -84,7 +140,7 @@ struct RootView: View {
                     actions: actions,
                     height: pane.height
                 )
-                    .frame(width: pane.width, height: pane.height)
+                    .frame(width: pane.width - railWidth, height: pane.height)
                     .allowsHitTesting(!workspace.isPeeking)
                     .overlay {
                         if workspace.isPeeking {
@@ -95,9 +151,20 @@ struct RootView: View {
                                 .accessibilityHidden(true)
                         }
                     }
-                    .offset(x: pane.minX, y: pane.minY + layout.contentOffset)
+                    .offset(x: pane.minX + railWidth, y: pane.minY + layout.contentOffset)
 
                 TabBar(layout: layout, onPeek: advancePeek)
+
+                #if DEBUG
+                // PROTOTYPE variant C: the active site's pages at the trailing end of the title bar.
+                if prototype.variant == .titleBar, case .site(let siteID) = workspace.activeTabID {
+                    PrototypeTitleBarSections(state: workspace.state(for: siteID))
+                        .frame(width: layout.size.width, height: chrome.buttonsCenterY * 2, alignment: .trailing)
+                        .padding(.trailing, 18)
+                        .opacity(layout.tabBarOpacity)
+                        .allowsHitTesting(layout.tabBarOpacity > 0.5)
+                }
+                #endif
 
                 // The tabs themselves. Always present: a closed peek is just pills.
                 PeekOverlay(
@@ -123,27 +190,51 @@ struct RootView: View {
                     .frame(width: 0, height: 0)
 
                 keyboardShortcuts
+
+                #if DEBUG
+                // PROTOTYPE: the floating variant switcher. Debug builds only.
+                PrototypeSwitcher(prototype: prototype)
+                    .frame(width: layout.size.width, height: layout.size.height, alignment: .bottom)
+                    .padding(.bottom, 28)
+                #endif
             }
             .clipped()
         }
-        // Extend under the title bar so the tab bar can take its place.
-        .ignoresSafeArea(.container, edges: .top)
-        // View > Refresh (⌘R) acts on this window's active tab. See `ViewCommands`.
-        .focusedSceneValue(\.refresh) { refresh(workspace.activeTabID) }
-        .task {
-            await model.start()
-        }
-        // A site added, changed, or removed in Settings shows up here without a manual refresh.
-        .onReceive(NotificationCenter.default.publisher(for: .settingsDidChangeSites)) { _ in
-            Task { await model.refresh() }
-        }
-        .onChange(of: model.sites.map(\.id), initial: true) { _, siteIDs in
-            workspace.reconcile(siteIDs: siteIDs)
-        }
-        .task(id: model.sites.map(\.id)) {
-            await favicons.load(model.sites)
+    }
+
+    #if DEBUG
+    /// PROTOTYPE: a shell that owns the window. See `PrototypeWholeWindowShell`.
+    private var wholeWindow: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                PrototypeWholeWindowShell(
+                    variant: prototype.variant,
+                    size: proxy.size,
+                    chrome: chrome,
+                    workspace: workspace,
+                    model: model,
+                    history: history,
+                    rankings: rankings,
+                    preferences: preferences,
+                    live: live,
+                    favicons: favicons,
+                    actions: actions,
+                    onSelect: select
+                )
+
+                WindowChromeReader { chrome = $0 }
+                    .frame(width: 0, height: 0)
+
+                keyboardShortcuts
+
+                PrototypeSwitcher(prototype: prototype)
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .bottom)
+                    .padding(.bottom, 28)
+            }
+            .clipped()
         }
     }
+    #endif
 
     // MARK: Gesture
 

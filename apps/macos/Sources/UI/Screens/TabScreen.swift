@@ -51,7 +51,8 @@ struct TabScreen: View {
             )
         case .site(let siteID):
             if let overview = model.overviews.first(where: { $0.id == siteID }) {
-                SiteTabScreen(
+                // PROTOTYPE: the host is `SiteTabScreen` unless a navigation variant is chosen.
+                SiteNavigationHost(
                     overview: overview,
                     state: workspace.state(for: siteID),
                     history: history,

@@ -15,6 +15,8 @@ struct RegistryScreen: View {
     let onRefresh: () -> Void
 
     @Environment(\.isTabPreview) private var isPreview
+    /// PROTOTYPE: an outer shell owns the header and the section controls.
+    @Environment(\.siteSectionsHosted) private var hosted
 
     /// The registry as it is held for this site, in the server's order.
     private var targets: [RegistryTarget] {
@@ -60,24 +62,26 @@ struct RegistryScreen: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Button(overview.site.name, systemImage: "chevron.left", action: onBack)
-                    .keyboardShortcut(isPreview ? nil : KeyboardShortcut("[", modifiers: .command))
-                Spacer()
-                if loading {
-                    ProgressView()
-                        .controlSize(.small)
+            if !hosted {
+                HStack {
+                    Button(overview.site.name, systemImage: "chevron.left", action: onBack)
+                        .keyboardShortcut(isPreview ? nil : KeyboardShortcut("[", modifiers: .command))
+                    Spacer()
+                    if loading {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .disabled(loading)
+                        .help("Refresh (⌘R)")
                 }
-                Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .disabled(loading)
-                    .help("Refresh (⌘R)")
-            }
 
-            Text("Registry")
-                .font(.largeTitle)
+                Text("Registry")
+                    .font(.largeTitle)
+            }
 
             Text(summary)
                 .foregroundStyle(.secondary)

@@ -13,6 +13,8 @@ struct SiteTabScreen: View {
     let onRefresh: () -> Void
 
     @Environment(\.isTabPreview) private var isPreview
+    /// PROTOTYPE: an outer shell owns the header and the section controls.
+    @Environment(\.siteSectionsHosted) private var hosted
 
     var body: some View {
         // The path lives in the tab state, so the screen you were on survives a switch.
@@ -51,14 +53,14 @@ struct SiteTabScreen: View {
                         )
                     }
                 }
-                .transition(.move(edge: .trailing))
+                .transition(hosted ? .identity : .move(edge: .trailing))
             } else {
                 root
-                    .transition(.move(edge: .leading))
+                    .transition(hosted ? .identity : .move(edge: .leading))
             }
         }
         .clipped()
-        .animation(.snappy(duration: 0.3), value: state.path)
+        .animation(hosted ? nil : .snappy(duration: 0.3), value: state.path)
         // The live count polls only while the real screen is shown: a preview is a still.
         .task(id: overview.id) {
             guard !isPreview else { return }
@@ -139,10 +141,15 @@ struct SiteTabScreen: View {
         // The screen scrolls: the two ranked lists under the chart can outgrow the pane.
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                header
-                    .column()
-                    .padding(.top, Self.columnInset)
-                    .padding(.bottom, 40)
+                if hosted {
+                    // PROTOTYPE: the shell drew the header; keep the figures off the hairline.
+                    Color.clear.frame(height: 32)
+                } else {
+                    header
+                        .column()
+                        .padding(.top, Self.columnInset)
+                        .padding(.bottom, 40)
+                }
 
                 if state.period == .today {
                     todayBody
@@ -1522,17 +1529,20 @@ private struct OpportunitiesScreen: View {
     let onBack: () -> Void
 
     @Environment(\.isTabPreview) private var isPreview
+    @Environment(\.siteSectionsHosted) private var hosted
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                Button(overview.site.name, systemImage: "chevron.left", action: onBack)
-                    .keyboardShortcut(isPreview ? nil : KeyboardShortcut("[", modifiers: .command))
-                Spacer()
-            }
+            if !hosted {
+                HStack {
+                    Button(overview.site.name, systemImage: "chevron.left", action: onBack)
+                        .keyboardShortcut(isPreview ? nil : KeyboardShortcut("[", modifiers: .command))
+                    Spacer()
+                }
 
-            Text("Opportunities")
-                .font(.largeTitle)
+                Text("Opportunities")
+                    .font(.largeTitle)
+            }
 
             let signals = overview.dashboard?.digest.signals ?? []
             if signals.isEmpty {
@@ -1565,16 +1575,19 @@ private struct PlaceholderScreen: View {
     let onBack: () -> Void
 
     @Environment(\.isTabPreview) private var isPreview
+    @Environment(\.siteSectionsHosted) private var hosted
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                Button(backTitle, systemImage: "chevron.left", action: onBack)
-                    .keyboardShortcut(isPreview ? nil : KeyboardShortcut("[", modifiers: .command))
-                Spacer()
+            if !hosted {
+                HStack {
+                    Button(backTitle, systemImage: "chevron.left", action: onBack)
+                        .keyboardShortcut(isPreview ? nil : KeyboardShortcut("[", modifiers: .command))
+                    Spacer()
+                }
+                Text(title)
+                    .font(.largeTitle)
             }
-            Text(title)
-                .font(.largeTitle)
             ContentUnavailableView(title, systemImage: systemImage, description: Text(message))
             Spacer()
         }
