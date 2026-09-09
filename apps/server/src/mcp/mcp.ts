@@ -585,8 +585,9 @@ export const buildMcpServer = (run: RunTool, market: MarketTool): McpServer => {
         "than no data: the numbers arrive, they look right, and they are about another " +
         "country — where no data at least reads as no data. printfeest.nl is a Dutch " +
         "site that had never set one; its 31 planned keywords reported 10 searches a " +
-        "month in total with 29 \"too rare for the vendor to report\", and the same plan " +
-        "in the Netherlands reports 2,920. READ THIS FIRST whenever `registry_health` " +
+        "month between them, and 29 of the 31 read \"too rare for the vendor to " +
+        "report\". The same plan in the Netherlands reports demand in the thousands. " +
+        "READ THIS FIRST whenever `registry_health` " +
         "says a plan has almost no demand and the keywords are not in English. " +
         "`served` names all 143 countries with the languages each one is served in, " +
         "its primary search language first — pass `search` to narrow it to a country " +
