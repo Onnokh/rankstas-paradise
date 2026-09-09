@@ -203,12 +203,21 @@ memo, so poll it every few seconds and never fold it into another read.
 sync stops at yesterday, so the server re-fetches the day in progress from the
 provider every five minutes (`Sync.syncToday`) and writes it into the same
 daily tables plus `analytics_site_hourly`. It answers `{ analytics, today: {
-date, timeZone, hoursElapsed, site, hours, pages, events, syncedAt } | null }`:
-the provider's calendar day in the site's zone, its totals so far (`site`,
-null before the first sync), exactly 24 hourly rows (`hour`, `pageviews`,
-`visits`, `visitors`; zeros for hours to come, `hoursElapsed` says how many
-have begun), the day's pages and events, and when the rows were last written
-(`syncedAt`, null before the first sync).
+date, timeZone, hoursElapsed, site, hours, pages, events, syncedAt } | null,
+revenue, sales: { date, timeZone, orders, revenue, net, currency, syncedAt }
+| null }`: the provider's calendar day in the site's zone, its totals so far
+(`site`, null before the first sync), exactly 24 hourly rows (`hour`,
+`pageviews`, `visits`, `visitors`; zeros for hours to come, `hoursElapsed` says
+how many have begun), the day's pages and events, and when the rows were last
+written (`syncedAt`, null before the first sync).
+
+`sales` is the same day from the site's commerce provider, in **that**
+provider's zone, with `revenue` carrying its status: the one place a partial
+day of sales is reported, since `/api/revenue` ends on the last whole day. A
+day with no orders is a zero row once synced, so read `syncedAt` to tell "no
+sales" from "not fetched yet". The two halves are independent — a site with a
+commerce provider and no analytics gets `today: null` with `sales` filled, and
+the other way round.
 
 `GET /api/events` ends its window on the newest finished day of visits
 (yesterday once today has synced), not on the Search Console latest date, so
@@ -235,7 +244,8 @@ today's row every five minutes.
   totals of the window and the one before with their deltas. Amounts are in
   the currency's minor unit (cents); `net` is the provider's own net, after
   refunds and its fees. The window ends on the newest whole day,
-  as `/api/events` does. `revenue` is `null` for a site without a provider;
+  as `/api/events` does — today's sales are left to `/api/today`, which
+  carries them as `sales`. `revenue` is `null` for a site without a provider;
   then `days` is empty and every total zero.
 
 All site-scoped endpoints accept `?site=<id>`. The default is the first configured site. For example:

@@ -204,13 +204,43 @@ test("queries: options map to the wire query params", async () => {
   expect(params.get("site")).toBe("sleevy")
 })
 
-test("today: decodes a site without a provider", async () => {
-  const http = fakeHttp(() => ({ status: 200, body: { analytics: null, today: null } }))
+test("today: decodes a site without providers", async () => {
+  const http = fakeHttp(() => ({
+    status: 200,
+    body: { analytics: null, today: null, revenue: null, sales: null },
+  }))
   const result = await ApiClient.use
     .today(siteId)
     .pipe(Effect.provide(buildLayer(http.layer)), Effect.runPromise)
   expect(result.today).toBeNull()
+  expect(result.sales).toBeNull()
   expect(http.calls[0]!.url.pathname).toBe("/api/today")
+})
+
+test("today: decodes the sales half a commerce provider fills", async () => {
+  const http = fakeHttp(() => ({
+    status: 200,
+    body: {
+      analytics: null,
+      today: null,
+      revenue: { provider: "polar", accountId: null, ready: true, reason: null },
+      sales: {
+        date: "2026-09-09",
+        timeZone: "Europe/Amsterdam",
+        orders: 1,
+        revenue: 1999,
+        net: 1786,
+        currency: "USD",
+        syncedAt: "2026-09-09T09:45:02Z",
+      },
+    },
+  }))
+  const result = await ApiClient.use
+    .today(siteId)
+    .pipe(Effect.provide(buildLayer(http.layer)), Effect.runPromise)
+  expect(result.sales?.orders).toBe(1)
+  expect(result.sales?.revenue).toBe(1999)
+  expect(result.revenue?.provider).toBe("polar")
 })
 
 test("events: window maps to the wire query param", async () => {

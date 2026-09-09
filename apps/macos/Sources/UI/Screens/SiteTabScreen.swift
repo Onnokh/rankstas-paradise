@@ -323,10 +323,13 @@ private struct MetricStrip: View {
 
 // MARK: - Today
 
-/// Today's numbers in the metric strip's place: the provider's four, then the Domain Rating
-/// beyond the hairline as on every other period. No moves: there is no "previous today".
+/// Today's numbers in the metric strip's place: the analytics provider's four, then today's
+/// takings and the Domain Rating beyond the hairline as on every other period. No moves:
+/// there is no "previous today".
 private struct TodayStrip: View {
     let today: TodayVisits
+    /// Today's sales, or nil for a site with no commerce provider.
+    let sales: TodaySales?
     let rating: RatingMove?
 
     var body: some View {
@@ -344,12 +347,30 @@ private struct TodayStrip: View {
                 .fill(Palette.line)
                 .frame(width: 1, height: 48)
             gap
+            Metric(title: "Revenue", value: revenueValue, footnote: revenueFootnote)
+            gap
             Metric(
                 title: "Domain Rating",
                 value: rating.map { $0.current.formatted(.number.precision(.fractionLength(1))) } ?? "—",
                 footnote: rating == nil ? "No reading yet" : nil
             )
         }
+    }
+
+    /// Today's takings, or a dash while there is no measurement to show: a site with no
+    /// commerce provider, or a day the server has not written yet — its zeros would read as
+    /// "no sales today", which is not what they mean.
+    private var revenueValue: String {
+        guard let sales, sales.syncedAt != nil else { return "—" }
+        return Money.format(sales.revenue, currency: sales.currency)
+    }
+
+    /// What the figure rests on: how many orders made it, or why there is none.
+    private var revenueFootnote: String? {
+        guard let sales else { return "No provider" }
+        guard sales.syncedAt != nil else { return "Not synced yet" }
+        let orders = Int(sales.orders)
+        return orders == 1 ? "1 order" : "\(orders) orders"
     }
 
     private var gap: some View {
@@ -1503,7 +1524,7 @@ private struct SiteDashboard: View {
     @ViewBuilder
     private var todayBody: some View {
         if let today = todayVisits {
-            TodayStrip(today: today, rating: ratingMove)
+            TodayStrip(today: today, sales: live.todays[overview.id]?.sales, rating: ratingMove)
                 .column()
 
             HoursChart(today: today)

@@ -531,6 +531,10 @@ test("revenue rows read back as written, quiet fetched days as zeros, unsynced d
     source: "fake",
   })
   expect(await run(Storage.use.latestRevenueSyncedAt())).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+  // Per day, as the visits twin does: a fetched quiet day has an instant, a
+  // day never fetched has none.
+  expect(await run(Storage.use.revenueSyncedAt("2024-02-03"))).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+  expect(await run(Storage.use.revenueSyncedAt("2024-02-04"))).toBeNull()
 
   // A refund lands days later: the reconcile overwrites the row.
   await run(

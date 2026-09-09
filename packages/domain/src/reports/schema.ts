@@ -11,7 +11,7 @@ import {
   SiteVisitsDay,
 } from "../analytics/schema.ts"
 import { DomainRating, DomainRatingDay } from "../domain-rating/schema.ts"
-import { RevenueDay, RevenueStatus } from "../revenue/schema.ts"
+import { RevenueDay, RevenueStatus, TodaySales } from "../revenue/schema.ts"
 
 import {
   EventWindowRow,
@@ -768,11 +768,20 @@ export interface LiveEventsReport
   extends Schema.Schema.Type<typeof LiveEventsReport> {}
 
 // Today so far, the other report that reaches the provider (cached a minute).
-// `today` is null when the site has no provider; `analytics` says why when a
-// provider is configured but not ready.
+// The day in progress from both ports, and the ONE place a partial day is
+// reported: the windowed reports (history, events, revenue) all end on the
+// last whole day, so a sale made today is here and nowhere else until
+// midnight passes in the provider's zone.
+//
+// The two halves are independent — a site with a commerce provider and no
+// analytics still gets its `sales`. `today` is null when the site has no
+// analytics provider and `analytics` says why when one is configured but not
+// ready; `sales` and `revenue` are the same pair for the commerce provider.
 export const TodayReport = Schema.Struct({
   analytics: Schema.NullOr(AnalyticsStatus),
   today: Schema.NullOr(TodayVisits),
+  revenue: Schema.NullOr(RevenueStatus),
+  sales: Schema.NullOr(TodaySales),
 }).annotate({ identifier: "TodayReport" })
 export interface TodayReport extends Schema.Schema.Type<typeof TodayReport> {}
 

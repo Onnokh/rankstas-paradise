@@ -1056,29 +1056,58 @@ export const layer = Layer.effect(
       todayReport: () =>
         wrap(
           Effect.gen(function* () {
-            const analyticsStatus = yield* analytics.status()
-            const local = yield* analytics.localDay()
-            if (!analyticsStatus || !local)
-              return { analytics: analyticsStatus, today: null }
-            // Served from the ledger, as every other read is; the today sync
-            // keeps these rows a few minutes old. Before its first run the day
-            // reads as zeros with a null syncedAt, not as an error.
-            const day = yield* storage.visitsOfDay(local.date)
-            const hours = yield* storage.hoursOfDay(local.date)
-            const syncedAt = yield* storage.visitsSyncedAt(local.date)
-            return {
-              analytics: analyticsStatus,
-              today: {
-                date: local.date,
-                timeZone: local.timeZone,
-                hoursElapsed: local.hour + 1,
-                site: day.site.find((row) => row.date === local.date) ?? null,
-                hours: normaliseHours(hours),
-                pages: day.pages,
-                events: day.events,
-                syncedAt,
-              },
-            }
+            // Both halves are served from the ledger, as every other read is;
+            // the today sync keeps their rows a few minutes old. Before its
+            // first run of the day each reads as zeros with a null syncedAt,
+            // not as an error. The two ports are asked apart: each has its own
+            // zone and its own absence, and a site with one of them still
+            // gets that one.
+            const visits = yield* Effect.gen(function* () {
+              const status = yield* analytics.status()
+              const local = yield* analytics.localDay()
+              if (!status || !local) return { analytics: status, today: null }
+              const day = yield* storage.visitsOfDay(local.date)
+              const hours = yield* storage.hoursOfDay(local.date)
+              const syncedAt = yield* storage.visitsSyncedAt(local.date)
+              return {
+                analytics: status,
+                today: {
+                  date: local.date,
+                  timeZone: local.timeZone,
+                  hoursElapsed: local.hour + 1,
+                  site: day.site.find((row) => row.date === local.date) ?? null,
+                  hours: normaliseHours(hours),
+                  pages: day.pages,
+                  events: day.events,
+                  syncedAt,
+                },
+              }
+            })
+            // The sales the windowed revenue report leaves out on purpose:
+            // today, in the commerce provider's zone, as the today sync last
+            // wrote it. A day with no orders is a zero row once synced, so
+            // `syncedAt` is what tells that from a day not yet fetched.
+            const sales = yield* Effect.gen(function* () {
+              const status = yield* revenue.status()
+              const local = yield* revenue.localDay()
+              if (!status || !local) return { revenue: status, sales: null }
+              const rows = yield* storage.revenueDays(local.date, local.date)
+              const row = rows.find((day) => day.date === local.date) ?? null
+              const syncedAt = yield* storage.revenueSyncedAt(local.date)
+              return {
+                revenue: status,
+                sales: {
+                  date: local.date,
+                  timeZone: local.timeZone,
+                  orders: row?.orders ?? 0,
+                  revenue: row?.revenue ?? 0,
+                  net: row?.net ?? 0,
+                  currency: row?.currency ?? null,
+                  syncedAt,
+                },
+              }
+            })
+            return { ...visits, ...sales }
           }),
         ),
 

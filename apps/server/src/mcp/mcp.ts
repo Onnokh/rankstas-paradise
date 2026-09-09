@@ -426,10 +426,15 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     {
       description:
         "Today so far in the site's time zone, from the ledger: totals (pageviews, " +
-        "visits, visitors), 24 hourly rows, pages and events, re-fetched from the " +
-        "analytics provider every few minutes (syncedAt says when). today is null " +
-        "when the site has no provider; analytics.ready false with a reason means " +
-        "the provider cannot be read, and the day stays at its last synced state.",
+        "visits, visitors), 24 hourly rows, pages and events, plus sales (orders, " +
+        "revenue, net in the currency's minor unit) from the commerce provider. " +
+        "Both halves are re-fetched every few minutes (each syncedAt says when), " +
+        "and this is the ONLY report that carries the day in progress: history, " +
+        "events and revenue all end on the last whole day, so a sale made today " +
+        "shows up here and in none of them. today is null when the site has no " +
+        "analytics provider and sales is null when it has no commerce provider; " +
+        "ready false with a reason on either status means that provider cannot be " +
+        "read, and its half stays at its last synced state.",
       inputSchema: { site },
     },
     async ({ site }) => {
