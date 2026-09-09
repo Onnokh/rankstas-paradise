@@ -704,7 +704,13 @@ export const buildMcpServer = (run: RunTool): McpServer => {
     "registry_set",
     {
       description:
-        "Patch existing registry rows for a target (optionally a single keyword).",
+        "Patch existing registry rows for a target (optionally a single " +
+        "keyword). Free. `status`, `whyOpportunity`, `priority`, `publishedAt` " +
+        "and `baselineDate` are reported ONCE PER TARGET rather than per " +
+        "keyword, so passing `keyword` alongside any of them is refused: the " +
+        "change would either not show at all or relabel the whole target. " +
+        "Patch those without a `keyword`. `cluster` and `intent` are carried " +
+        "per keyword and can be patched either way.",
       inputSchema: {
         site,
         target: z.string().describe("Target page path to update."),
@@ -730,6 +736,33 @@ export const buildMcpServer = (run: RunTool): McpServer => {
       const decoded = Schema.decodeUnknownSync(RegistryPatch)(patch)
       const id = toSiteId(site)
       return run(id, scoped(Reports.use.registrySet(target, keyword, decoded), id))
+    },
+  )
+
+  server.registerTool(
+    "registry_remove",
+    {
+      description:
+        "Delete registry rows for a target, or one keyword of it. Free. Naming " +
+        "a target with no `keyword` retires the whole page from the plan, which " +
+        "is allowed — a page can stop being a target without being deleted from " +
+        "the site. Refuses rather than answers zero when nothing matches, so a " +
+        "cleanup that names the wrong row says so instead of reporting work it " +
+        "did not do. Removing a keyword does NOT dismiss it: it goes back to " +
+        "being un-planned, and a later `keywords_discover` run may offer it " +
+        "again as a proposal.",
+      inputSchema: {
+        site,
+        target: z.string().describe('Target page path starting with "/".'),
+        keyword: z
+          .string()
+          .optional()
+          .describe("Remove only this keyword's row; omit to remove every row of the target."),
+      },
+    },
+    async ({ site, target, keyword }) => {
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.registryRemove(target, keyword), id))
     },
   )
 
