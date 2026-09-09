@@ -39,19 +39,13 @@ final class ProposalsListTests: XCTestCase {
         (0..<3).map { _ in layoutCost(count) }.min()!
     }
 
-    /// Hosts the list in a real window and lays it out, which is what forces SwiftUI to
-    /// build the rows. Without the window nothing is realized and every count is free.
+    /// Hosts the list at a fixed size and lays it out, which is what forces SwiftUI to
+    /// build the rows. No window: laying out the hosting view is enough, checked by
+    /// neutering — an eager stack is still caught without one.
     private func layoutCost(_ count: Int) -> TimeInterval {
         let list = ProposalsList(proposals: proposals(count), reach: 10, onDismiss: { _ in })
         let host = NSHostingView(rootView: ScrollView { list })
         host.frame = CGRect(x: 0, y: 0, width: 700, height: 400)
-        let window = NSWindow(
-            contentRect: host.frame,
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = host
 
         let start = Date()
         host.layoutSubtreeIfNeeded()
