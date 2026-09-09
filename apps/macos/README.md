@@ -76,7 +76,7 @@ xcodegen generate
 - `Sources/Workspace` — `Workspace` (tabs, active tab, bounded mounted set), per-tab state, `PeekProgress` (0 closed, 1 strip, 2 grid).
 - `Sources/Gesture` — three-finger trackpad drag recogniser streaming travel and velocity.
 - `Sources/UI` — `RootView`, `TabBar`, `PeekOverlay`, `TabContentStack`, `ScreenRail`, and `PeekLayout`, the pure struct that turns window size plus peek progress into every frame.
-- `Sources/UI/Screens` — one screen per tab kind, rendered from tab state so previews match the live screen.
+- `Sources/UI/Screens` — one screen per tab kind, rendered from tab state. A site's peek preview always shows its dashboard.
   A site tab has four screens, peers chosen from the rail beside the pane: Dashboard, Registry (every target
   page with its window, phase and keywords; pages Google reports as not indexed are dimmed there and in the
   ranking card), Planning, and Log. One header row — favicon, name, origin, people online, the period on the

@@ -1,6 +1,6 @@
 import Foundation
 
-struct Site: Codable, Identifiable, Sendable {
+struct Site: Codable, Identifiable, Sendable, Equatable {
     let id: String
     let name: String
     let origin: String

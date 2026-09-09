@@ -25,8 +25,9 @@ struct TabActions {
 
 /// Renders one tab's current screen from its state.
 ///
-/// The same view backs the mounted screen and the peek previews, so a preview shows the
-/// sub-screen the tab is actually on.
+/// The same view backs the mounted screen and the peek previews. A site's preview always
+/// shows its dashboard: a card is for picking a site, and following the live screen made
+/// every rail click build the chosen screen a second time inside a card nobody had open.
 struct TabScreen: View {
     let tab: TabID
     let workspace: Workspace
