@@ -10,8 +10,8 @@ struct RemoteTarget: Codable, Sendable, Equatable {
 }
 
 /// Resolves where the app talks to and with which token: `RP_API_URL` and `RP_TOKEN` from the
-/// process environment, else `client.json` in the app home, the same file the TUI and Electron
-/// client read. No Keychain: every fresh build of an unsigned app would prompt for it.
+/// process environment, else `client.json` in the app home, the same file the TUI reads.
+/// No Keychain: every fresh build of an unsigned app would prompt for it.
 enum ClientConfiguration {
     static func load() throws -> RemoteTarget {
         let environment = ProcessInfo.processInfo.environment

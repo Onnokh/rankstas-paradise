@@ -6,7 +6,6 @@
     { "path": "packages/mascot" },
     { "path": "apps/server" },
     { "path": "apps/tui" },
-    { "path": "apps/desktop" },
     { "path": "apps/mascot-playground" }
   ]
 }

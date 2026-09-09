@@ -41,6 +41,11 @@ The TS reference graph is `domain → (none)`, `api-client → domain`,
 `server → domain`, `tui → api-client`. Build with `bun run check` (`tsc --build`)
 from the repo root.
 
+> **Superseded in part, 2026-09-09.** The `apps/desktop` slot is gone. The
+> placeholder became an Electron client, which is now deleted; `apps/macos` is
+> the native client and speaks the same HTTP contract in Swift, outside the TS
+> build graph. The rest of the reference graph is unchanged.
+
 ### Effect v3 → v4-beta, in lockstep
 
 `effect`, `@effect/platform-bun`, and `@effect/sql-sqlite-bun` are all pinned to
@@ -111,5 +116,10 @@ the committed contract byte-for-byte.
 - `apps/desktop` is intentionally outside the TypeScript build graph; it consumes
   the server's plain-text feed surface (see
   [../native-app-contract.md](../native-app-contract.md)).
+
+  > **No longer applies, 2026-09-09.** `apps/desktop` is deleted. The Electron
+  > client that filled the slot did join the build graph and read
+  > `/api/dashboard` rather than the plain-text feed, so this bullet described
+  > only the placeholder.
 - The single-job lock and the per-site runtime cache are in-process, so they
   still assume **one** server instance (as ADR 0001 already noted for sync).

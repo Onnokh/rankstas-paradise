@@ -12,7 +12,7 @@ it in the background, so the full overview is not gated on network latency.
 
 The app resolves the server and its bearer token from `RP_API_URL` and `RP_TOKEN` in the
 process environment, else from `$XDG_CONFIG_HOME/rankstas-paradise/client.json` (`~/.config`
-by default), the convention the TUI and Electron client share. Prefer a per-client token from
+by default), the same convention the TUI uses. Prefer a per-client token from
 `POST /api/clients` over the shared `RP_TOKEN` (see [docs/http-api.md](../../docs/http-api.md)).
 The file is JSON:
 
