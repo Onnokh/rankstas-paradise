@@ -479,19 +479,35 @@ export const buildMcpServer = (run: RunTool): McpServer => {
   server.registerTool(
     "keywords_discover",
     {
-      // The description carries the price and the filters because an agent
-      // reads only this before deciding how to call it, and both are things it
-      // would otherwise get wrong: it would run a seed it has already run, and
-      // it would ask for the maximum limit because more looks better.
+      // The description carries the price, the filters, and the relevance trap,
+      // because an agent reads only this before deciding how to call it and all
+      // three are things it would otherwise get wrong: it would run a seed it
+      // has already run, it would ask for the maximum limit because more looks
+      // better, and — the expensive one — it would treat a high search volume
+      // as evidence that a keyword is worth having.
       description:
-        "Expand one seed keyword at DataForSEO and store what survives filtering as " +
-        "proposals for review. COSTS MONEY: the Labs expansions bill about $0.0001 " +
-        "per row returned plus $0.01 for the task, so `limit` is the price of the " +
-        "call — leave it at the default of 200 unless a narrower run came back " +
-        "almost empty. Filters out, and counts separately: keywords already in the " +
-        "registry or already proposed or dismissed, brand and site: queries, " +
-        "anything under `minVolume`, and optionally anything over `maxDifficulty` " +
-        "or outside `intents`. Read the drop counts before re-running: an empty " +
+        "Expand one seed keyword at DataForSEO and return what survives filtering. " +
+        "STORES NOTHING: you are the relevance judge, and `keywords_propose` stores " +
+        "the rows you keep (free, no second vendor call). COSTS MONEY: the Labs " +
+        "expansions bill about $0.0001 per row returned plus $0.01 for the task, so " +
+        "`limit` is the price of the call — leave it at the default of 200 unless a " +
+        "narrower run came back almost empty. " +
+        "READ EVERY ROW AND KEEP ONLY WHAT IS ABOUT THIS SITE'S SUBJECT. Every " +
+        "filter here is numeric or structural, so none of them knows what the site " +
+        "is about. A WebGPU animated-background library seeded \"hero background\" " +
+        "and \"hero animation\" and got `big hero animation` (201,000/mo, the Disney " +
+        "film), `my hero academia background` (anime), `clone hero background` (a " +
+        "rhythm game), `folk hero background 5e` (Dungeons & Dragons) and `hero arts " +
+        "background stamp` (craft supplies): 96.6% of the volume was about something " +
+        "else, and the biggest numbers were the worst rows — a word with a second " +
+        "meaning is a word two audiences search. Check the seed's words for other " +
+        "meanings before you believe a volume. `source: \"related\"` is the noisiest " +
+        "for exactly the reason it is useful: its answers need not contain the seed. " +
+        "Filters out, and counts separately: rows answered twice, keywords already in " +
+        "the registry or already proposed or dismissed, brand and site: queries, " +
+        "anything under `minVolume`, and optionally anything over `maxDifficulty` or " +
+        "outside `intents`. Those counts plus the returned keywords add up to " +
+        "`returned`, which is what was charged. Read them before re-running: an empty " +
         "result with a high droppedKnown means the seed is exhausted, not that the " +
         "subject has no demand. Proposals are NOT registry rows — they wait for a " +
         "person, or for a `registry_add` call once one is agreed.",
@@ -543,19 +559,80 @@ export const buildMcpServer = (run: RunTool): McpServer => {
   )
 
   server.registerTool(
+    "keywords_propose",
+    {
+      // The second half of a discovery run, and the only place a proposal is
+      // written. The description has to say "unchanged", because the numbers on
+      // a proposal are the vendor's as they read at the run and there is no
+      // second call that could fetch them again.
+      description:
+        "Store keywords from a `keywords_discover` run as proposals for a person to " +
+        "review. FREE: it writes this site's own store and asks the vendor nothing, " +
+        "so the run is paid for once however many rows you keep. Pass back the rows " +
+        "you judged to be about this site's subject, UNCHANGED from the discover " +
+        "result — the numbers on a proposal are the vendor's, frozen as they read at " +
+        "the run. Name only the relevant ones: a list with hundreds of off-subject " +
+        "rows in it is worse than no list, because a person then has to dismiss every " +
+        "one by hand. Skips, and counts separately: keywords already in the registry " +
+        "or already proposed or dismissed, brand and site: queries, and rows named " +
+        "twice. The volume floor is NOT re-applied — a term you know the subject for " +
+        "is yours to keep. Proposals are NOT registry rows; `registry_add` is how one " +
+        "is accepted.",
+      inputSchema: {
+        site,
+        keywords: z
+          .array(
+            z.object({
+              keyword: z.string(),
+              seed: z.string().describe("The seed the run expanded."),
+              source: z.enum(["suggestions", "related", "google-ads"]),
+              searchVolume: z.number().nullable(),
+              difficulty: z.number().nullable(),
+              costPerClick: z.number().nullable(),
+              competition: z.number().nullable(),
+              intent: z.string().nullable(),
+            }),
+          )
+          .describe(
+            "The rows to keep, copied from `keywords_discover`'s `keywords` array. " +
+              "The market, the status and the instant are the server's to set, so " +
+              "they are ignored if you send them.",
+          ),
+      },
+    },
+    // No second decode over the zod one, unlike `registry_add`: there the zod
+    // schema is loose (every field an optional string) and `RegistryAddInput`
+    // is what validates. Here the zod object names exactly the fields
+    // `ProposalInput` holds, so it both validates them and strips the market,
+    // the status and the instant a caller pasted along — and a
+    // `Schema.decodeUnknownSync` after it could not fail, which is a guard no
+    // test can reach.
+    async ({ site, keywords }) => {
+      const id = toSiteId(site)
+      return run(id, scopedDiscovery(KeywordDiscovery.use.propose(keywords), id))
+    },
+  )
+
+  server.registerTool(
     "keywords_proposed",
     {
       description:
         "The stored keyword proposals still waiting on a decision, strongest demand " +
-        "first. Free — reads nothing but this site's own store. Excludes dismissed " +
-        "proposals and any keyword the registry has since taken. Each row carries " +
-        "the vendor's numbers as they read when it was proposed, which is why a row " +
-        "may disagree with `registry_health`: that reports the current metric.",
+        "first, with the market they were found in and the demand they add up to. " +
+        "The same document as `GET /api/keywords/proposed`. Free — reads nothing but " +
+        "this site's own store. Excludes dismissed proposals and any keyword the " +
+        "registry has since taken. Each row carries the vendor's numbers as they " +
+        "read when it was proposed, which is why a row may disagree with " +
+        "`registry_health`: that reports the current metric.",
       inputSchema: { site },
     },
     async ({ site }) => {
       const id = toSiteId(site)
-      return run(id, scopedDiscovery(KeywordDiscovery.use.proposed(), id))
+      // Through `Reports`, not `KeywordDiscovery`, so this tool and the HTTP
+      // route answer with one shape. `KeywordDiscovery.proposed()` returns a
+      // bare array; the report adds the Market and the totals, and a client
+      // reading both surfaces should not have to know which one it is on.
+      return run(id, scoped(Reports.use.proposedKeywords(), id))
     },
   )
 
@@ -565,7 +642,10 @@ export const buildMcpServer = (run: RunTool): McpServer => {
       description:
         "Set proposals aside by keyword; returns how many changed. Free. A dismissed " +
         "keyword stays dismissed: a later `keywords_discover` run that finds it again " +
-        "will not propose it, which is what makes repeated runs on one seed useful.",
+        "drops it as known rather than offering it, which is what makes repeated runs " +
+        "on one seed useful. Only a stored proposal can be dismissed — a row you read " +
+        "in a discover result and never proposed was never offered to anybody, and " +
+        "naming it here changes nothing.",
       inputSchema: {
         site,
         keywords: z.array(z.string()).describe("The keywords to dismiss."),

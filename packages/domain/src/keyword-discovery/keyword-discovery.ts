@@ -22,6 +22,19 @@
 // whether the caller is the MCP server or a screen. What is *not* here is a
 // difficulty ceiling by default: see ./schema.ts for why that one belongs on a
 // screen with a slider, not in a service.
+//
+// What is also not here, and cannot be, is relevance. Every filter below is
+// numeric or structural, so none of them knows what the Site is about: a run of
+// `hero animation` for a WebGPU background library returns `big hero animation`
+// at 201,000 searches a month, and it passes the volume floor, the difficulty
+// ceiling, the intent filter and the brand test — it is about a Disney film.
+// Judging that needs to know the subject, and this layer has no language model
+// and no business growing one. So `discover` writes nothing. It answers with
+// the rows, the caller judges them against the Site's subject, and `propose`
+// stores the ones it kept. The vendor is asked once either way: `propose` is a
+// local write over rows the caller already holds, so the second step is free.
+// That is the whole reason it is two steps rather than an `exclude` list — a
+// caller cannot exclude a trap it has not met yet, and `hero` has five.
 import { Config as EffectConfig, Context, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 
@@ -34,19 +47,33 @@ import { CurrentSite } from "../sites/current-site.ts"
 import { isOperatorQuery, Storage } from "../storage/storage.ts"
 import {
   KeywordDiscoveryError,
+  type DiscoveredKeyword,
   type DiscoveryRequest,
   type DiscoveryResult,
   type DiscoverySource,
   type KeywordProposal,
+  type ProposalInput,
+  type ProposalStoreResult,
 } from "./schema.ts"
 
 export interface Interface {
-  // Expand one seed at DataForSEO, keep what passes every filter, and store it
-  // as Proposals. Costs money on every call — there is no cache to hit, because
-  // the question is "what is out there now", not "what is this worth".
+  // Expand one seed at DataForSEO and answer with what passes every filter.
+  // Costs money on every call — there is no cache to hit, because the question
+  // is "what is out there now", not "what is this worth".
+  //
+  // Stores nothing. The rows are an offer, and the caller is the only judge of
+  // whether any of them is about this Site's subject; see the note at the top
+  // of this file. `propose` stores the ones it keeps, and costs nothing.
   readonly discover: (
     request: DiscoveryRequest,
   ) => Effect.Effect<DiscoveryResult, KeywordDiscoveryError | UnservedMarketError>
+  // Store the rows a caller judged relevant as Proposals. Free: it asks the
+  // vendor nothing and can ask it nothing — the numbers come from the rows
+  // handed over, which is why they are the rows a run returned rather than bare
+  // keywords. No path in this service can be billed twice for the same rows.
+  readonly propose: (
+    keywords: ReadonlyArray<ProposalInput>,
+  ) => Effect.Effect<ProposalStoreResult, KeywordDiscoveryError | UnservedMarketError>
   // The Proposals still waiting on a decision, strongest demand first. Excludes
   // the dismissed ones, and also any keyword the Registry has since taken —
   // whether it was taken from this list or typed in by hand.
@@ -210,6 +237,7 @@ export const layer = Layer.effect(
         const intents = request.intents?.map((intent) => intent.trim().toLowerCase())
 
         const drops = {
+          unusable: 0,
           known: 0,
           brandOrOperator: 0,
           belowVolume: 0,
@@ -220,11 +248,18 @@ export const layer = Layer.effect(
         // keyword twice across the branches of a related-searches walk, and a
         // duplicate would otherwise overwrite its own row and be counted twice.
         const seen = new Set<string>()
-        const proposals: Array<KeywordProposal> = []
+        const keywords: Array<DiscoveredKeyword> = []
 
         for (const row of rows) {
           const keyword = fold(row.keyword)
-          if (keyword === "" || seen.has(keyword)) continue
+          // Counted, not skipped in silence: the row was charged for, and every
+          // charged row has to land in exactly one of these numbers or the
+          // counts stop being readable. Two ways a row cannot be offered at
+          // all — the same keyword a second time, and a row with no keyword.
+          if (keyword === "" || seen.has(keyword)) {
+            drops.unusable += 1
+            continue
+          }
           seen.add(keyword)
 
           // The order is the order the counts are read in: a row is charged to
@@ -262,7 +297,7 @@ export const layer = Layer.effect(
             }
           }
 
-          proposals.push({
+          keywords.push({
             keyword,
             seed: fold(seed),
             source,
@@ -273,8 +308,6 @@ export const layer = Layer.effect(
             costPerClick: row.costPerClick,
             competition: row.competition,
             intent: row.intent,
-            status: "proposed",
-            discoveredAt,
             // The monthly series is not carried. It is on the wire and paid
             // for, but a Proposal is read as a list of one-line judgements, and
             // the seasonality it would answer is a question for a keyword that
@@ -283,8 +316,87 @@ export const layer = Layer.effect(
         }
 
         // Strongest demand first, so a reader who stops after ten rows has read
-        // the ten that matter.
-        proposals.sort((left, right) => (right.searchVolume ?? 0) - (left.searchVolume ?? 0))
+        // the ten that matter. Worth knowing while reading them: on an
+        // ambiguous seed the strongest rows are usually the irrelevant ones,
+        // because a word with another meaning is a word two audiences search.
+        keywords.sort((left, right) => (right.searchVolume ?? 0) - (left.searchVolume ?? 0))
+
+        // Nothing is written. See the note at the top of this file: a row here
+        // has passed every filter this layer can apply and still has not been
+        // judged to be about the Site at all.
+        return {
+          seed,
+          source,
+          returned: rows.length,
+          droppedUnusable: drops.unusable,
+          droppedKnown: drops.known,
+          droppedBrandOrOperator: drops.brandOrOperator,
+          droppedBelowVolume: drops.belowVolume,
+          droppedAboveDifficulty: drops.aboveDifficulty,
+          droppedByIntent: drops.byIntent,
+          keywords,
+        } satisfies DiscoveryResult
+      }),
+
+      propose: Effect.fn("KeywordDiscovery.propose")(function* (
+        rows: ReadonlyArray<ProposalInput>,
+      ) {
+        // An empty call is a caller mistake worth naming rather than a store of
+        // nothing: it means the judging step ran and kept nothing, or the rows
+        // were lost between the two calls, and both want the reader to look.
+        if (rows.length === 0)
+          return yield* fail("A proposal store needs at least one keyword.")
+
+        // No API key check and no expansion: this method cannot reach the
+        // vendor, which is what makes the second step free.
+        const { site, market: resolved } = yield* market
+        const alreadyKnown = yield* known(resolved.locationCode, resolved.languageCode)
+
+        const discoveredAt = new Date().toISOString()
+        const skips = { known: 0, brandOrOperator: 0, duplicate: 0 }
+        const seen = new Set<string>()
+        const proposals: Array<KeywordProposal> = []
+
+        for (const row of rows) {
+          const keyword = fold(row.keyword)
+          if (keyword === "") return yield* fail("A proposal needs a keyword.")
+          if (seen.has(keyword)) {
+            skips.duplicate += 1
+            continue
+          }
+          seen.add(keyword)
+
+          // The two the caller could not have judged for itself. The volume
+          // floor and the difficulty ceiling are NOT re-applied: the run
+          // already applied them, and a caller that deliberately keeps a
+          // low-volume term it knows the subject for is making a decision this
+          // layer has no standing to overrule.
+          if (alreadyKnown.has(keyword)) {
+            skips.known += 1
+            continue
+          }
+          if (isBrandQuery(keyword, site.brandTerms) || isOperatorQuery(keyword)) {
+            skips.brandOrOperator += 1
+            continue
+          }
+
+          proposals.push({
+            keyword,
+            seed: fold(row.seed),
+            source: row.source,
+            // The Site's own Market, not the caller's word for it: a Proposal
+            // keyed by another Market would be read as this Site's demand.
+            locationCode: resolved.locationCode,
+            languageCode: resolved.languageCode,
+            searchVolume: row.searchVolume,
+            difficulty: row.difficulty,
+            costPerClick: row.costPerClick,
+            competition: row.competition,
+            intent: row.intent,
+            status: "proposed",
+            discoveredAt,
+          })
+        }
 
         yield* storage
           .saveKeywordProposals(proposals)
@@ -295,16 +407,12 @@ export const layer = Layer.effect(
           )
 
         return {
-          seed,
-          source,
-          returned: rows.length,
-          droppedKnown: drops.known,
-          droppedBrandOrOperator: drops.brandOrOperator,
-          droppedBelowVolume: drops.belowVolume,
-          droppedAboveDifficulty: drops.aboveDifficulty,
-          droppedByIntent: drops.byIntent,
-          proposals,
-        } satisfies DiscoveryResult
+          named: rows.length,
+          stored: proposals.length,
+          skippedKnown: skips.known,
+          skippedBrandOrOperator: skips.brandOrOperator,
+          skippedDuplicate: skips.duplicate,
+        } satisfies ProposalStoreResult
       }),
 
       proposed: Effect.fn("KeywordDiscovery.proposed")(function* () {

@@ -145,6 +145,19 @@ proposal is `POST /api/registry` — the same call whether a person or an agent
 makes it, which is why a keyword the Registry holds simply stops being proposed
 and there is no "accepted" state to write.
 
+A run over MCP is **two calls, and stores nothing on the first**. Every filter a
+run applies is numeric or structural — a volume floor, a difficulty ceiling, an
+intent, the brand test, the already-known test — so none of them can tell whether
+a keyword is about the Site's subject at all. `keywords_discover` therefore
+answers with the rows and writes nothing, and `keywords_propose` stores the ones
+the caller judged relevant. The second call is free: it hands back rows the
+caller already holds, so the vendor is asked once however many rows survive. That
+is why a proposal on this route is a keyword *something* judged relevant, and not
+just one that cleared a volume floor.
+
+`keywords_proposed` over MCP answers with this same document, minus the HTTP
+envelope's `generatedAt`/`mode`, which every MCP tool leaves to its transport.
+
 `difficultyGap` is a keyword's difficulty minus the site's Domain Rating, so a
 positive number means the keyword scores harder than the site rates. The two are
 different scales from different vendors measuring related but distinct things,
