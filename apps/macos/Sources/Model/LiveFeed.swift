@@ -80,19 +80,20 @@ struct LiveFeedRow: Identifiable, Equatable, Sendable {
             .joined(separator: " · ")
     }
 
-    /// Every site's feed as one stream, newest first, kept to one site when `only` names it and
-    /// without the kinds in `hiding`. At most `limit` rows: the screen's, not the window's. The
-    /// screen draws every row it is given, so the cap is what keeps a busy site cheap.
+    /// Every site's feed as one stream, newest first, kept to the sites `only` names when it
+    /// names any, and without the kinds in `hiding`. At most `limit` rows: the screen's, not
+    /// the window's. The screen draws every row it is given, so the cap is what keeps a busy
+    /// site cheap.
     static func rows(
         feeds: [Site.ID: LiveFeed],
         sites: [Site],
-        only siteID: Site.ID? = nil,
+        only chosen: Set<Site.ID> = [],
         hiding hidden: Set<LiveEvent.Kind> = [],
         limit: Int = 100
     ) -> [LiveFeedRow] {
         // Each instant is parsed once, beside its row, not once per comparison.
         var dated: [(row: LiveFeedRow, date: Date)] = []
-        for site in sites where siteID == nil || site.id == siteID {
+        for site in sites where chosen.isEmpty || chosen.contains(site.id) {
             for event in feeds[site.id]?.events ?? [] where !hidden.contains(event.kind) {
                 let row = LiveFeedRow(siteID: site.id, siteName: site.name, event: event)
                 dated.append((row: row, date: event.date ?? .distantPast))
@@ -104,14 +105,14 @@ struct LiveFeedRow: Identifiable, Equatable, Sendable {
         return dated.prefix(limit).map { $0.row }
     }
 
-    /// How many rows of each kind the stream has before the kind filter, for the chips.
+    /// How many rows of each kind the stream has before the kind filter, for a filter's rows.
     static func kindCounts(
         feeds: [Site.ID: LiveFeed],
         sites: [Site],
-        only siteID: Site.ID? = nil
+        only chosen: Set<Site.ID> = []
     ) -> [LiveEvent.Kind: Int] {
         var counts: [LiveEvent.Kind: Int] = [:]
-        for site in sites where siteID == nil || site.id == siteID {
+        for site in sites where chosen.isEmpty || chosen.contains(site.id) {
             for event in feeds[site.id]?.events ?? [] {
                 counts[event.kind, default: 0] += 1
             }

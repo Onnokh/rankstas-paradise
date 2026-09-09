@@ -105,7 +105,8 @@ struct LogScreen: View {
     }
 
     private var controls: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let counts = LogList.kindCounts(entries)
+        return HStack(spacing: 12) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
@@ -118,33 +119,25 @@ struct LogScreen: View {
             .background(Palette.raised, in: .rect(cornerRadius: 6))
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Palette.line))
 
-            // The kinds as filters. Nothing selected means every entry, which is the honest
-            // default: the reader has not said what they are looking for yet. A kind the
-            // record holds none of is shown, disabled, so the reader can see it exists —
-            // "no title changes at all" is itself worth reading off this screen.
-            let counts = LogList.kindCounts(entries)
-            FlowRow(spacing: 6) {
-                ForEach(LogKind.allCases) { kind in
-                    FilterChip(
+            // The kinds to keep, each under the badge's own symbol and colour so the pill
+            // reads the same as the rows it narrows.
+            FilterMenu(
+                options: LogKind.allCases.map { kind in
+                    FilterOption(
+                        id: kind,
                         label: kind.label,
+                        icon: .symbol(kind.symbol, tint: kind.tint),
                         count: counts[kind] ?? 0,
-                        symbol: kind.symbol,
-                        isOn: state.logKinds.contains(kind),
-                        action: { toggle(kind) }
+                        help: kind.meaning
                     )
-                    .help(kind.meaning)
-                }
-            }
+                },
+                selection: $state.logKinds,
+                allLabel: "All kinds",
+                severalLabel: { "\($0) kinds" }
+            )
+            .accessibilityLabel("Kinds")
         }
         .disabled(isPreview)
-    }
-
-    private func toggle(_ kind: LogKind) {
-        if state.logKinds.contains(kind) {
-            state.logKinds.remove(kind)
-        } else {
-            state.logKinds.insert(kind)
-        }
     }
 
     // MARK: Timeline

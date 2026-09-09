@@ -144,7 +144,7 @@ final class LiveFeedTests: XCTestCase {
         XCTAssertEqual(all.map(\.siteName), ["Sleevy", "Missing Mounts", "Sleevy"])
         XCTAssertEqual(all.first?.id, "sleevy|s2")
 
-        let oneSite = LiveFeedRow.rows(feeds: feeds, sites: [sleevy, mounts], only: mounts.id)
+        let oneSite = LiveFeedRow.rows(feeds: feeds, sites: [sleevy, mounts], only: [mounts.id])
         XCTAssertEqual(oneSite.map(\.event.id), ["m1"])
 
         let noPageviews = LiveFeedRow.rows(feeds: feeds, sites: [sleevy, mounts], hiding: [.pageview])
@@ -155,7 +155,7 @@ final class LiveFeedTests: XCTestCase {
 
         // Chip counts ignore the kind filter and follow the site filter.
         XCTAssertEqual(LiveFeedRow.kindCounts(feeds: feeds, sites: [sleevy, mounts]), [.pageview: 2, .event: 1])
-        XCTAssertEqual(LiveFeedRow.kindCounts(feeds: feeds, sites: [sleevy, mounts], only: sleevy.id), [.pageview: 1, .event: 1])
+        XCTAssertEqual(LiveFeedRow.kindCounts(feeds: feeds, sites: [sleevy, mounts], only: [sleevy.id]), [.pageview: 1, .event: 1])
     }
 }
 

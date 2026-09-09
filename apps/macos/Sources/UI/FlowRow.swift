@@ -1,10 +1,7 @@
 import SwiftUI
 
 /// A row of items that wraps to the next line when the width runs out: the keyword chips
-/// on the registry detail, and the peak-month chips on the planning screen.
-///
-/// Lives here rather than beside either of them because both need it. It was private to
-/// RegistryScreen until the second caller appeared.
+/// on the registry detail.
 struct FlowRow: Layout {
     var spacing: CGFloat = 6
 

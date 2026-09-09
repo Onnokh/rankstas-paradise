@@ -49,61 +49,6 @@ struct WordSwitch<Option: Hashable & Identifiable>: View {
     }
 }
 
-// MARK: - Filter chip
-
-/// One filter as a chip carrying its own count: what it would keep, and how many rows it
-/// holds. The chosen ones take the accent; the rest wait inside a hairline, so the row reads
-/// as a set of choices rather than a row of filled buttons.
-///
-/// Shared by every screen that narrows a list by kind, so those screens cannot drift into
-/// two looks for one control. A chip whose count is zero is shown, disabled, rather than
-/// dropped: "no title changes at all" and "nothing aimed at nothing" are both worth reading
-/// off a screen, and a chip that left would ask the reader to notice an absence.
-struct FilterChip: View {
-    let label: String
-    /// How many rows this chip holds. Nil for a chip that is not a tally of one kind.
-    var count: Int? = nil
-    /// An SF Symbol before the label, for a kind that carries one.
-    var symbol: String? = nil
-    let isOn: Bool
-    let action: () -> Void
-
-    /// A kind the list holds none of. Still drawn, and not clickable: selecting it would
-    /// leave an empty list, which is not a question anybody is asking.
-    private var isEmpty: Bool { count == 0 }
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 5) {
-                if let symbol {
-                    Image(systemName: symbol)
-                        .font(.caption2)
-                }
-                Text(label)
-                    .font(.caption.weight(isOn ? .semibold : .regular))
-                if let count {
-                    Text(count.formatted())
-                        .font(.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(isOn ? .secondary : .tertiary)
-                }
-            }
-            .foregroundStyle(isOn ? .primary : .secondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(isOn ? Palette.acid.opacity(0.16) : .clear, in: .capsule)
-            .overlay(
-                Capsule().strokeBorder(isOn ? Palette.acid.opacity(0.55) : Palette.line)
-            )
-        }
-        .buttonStyle(.plain)
-        .disabled(isEmpty)
-        .opacity(isEmpty ? 0.4 : 1)
-        .animation(.snappy(duration: 0.15), value: isOn)
-        .accessibilityAddTraits(isOn ? .isSelected : [])
-    }
-}
-
 // MARK: - Metric
 
 struct Metric: View {

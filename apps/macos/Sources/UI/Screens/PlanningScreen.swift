@@ -235,44 +235,34 @@ struct PlanningScreen: View {
 
     // MARK: Controls
 
-    /// One control bar over the list: what to look for on the left, where the bar for
-    /// "within reach" sits on the right, and the verdicts as chips under both. The two
-    /// fields share a surface so the row reads as one strip of controls and not as a text
-    /// field with a loose slider beside it.
+    /// One control bar over the list: what to look for on the left, the verdicts to keep
+    /// beside it, and where the bar for "within reach" sits on the right. The fields share
+    /// a surface so the row reads as one strip of controls and not as a text field with a
+    /// loose slider beside it.
     private var controls: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 16) {
-                search
-                Spacer()
-                reachControl
-            }
+        HStack(spacing: 12) {
+            search
 
-            // The verdicts worth filtering on, with All in front of them. Nothing selected
-            // means every row — the honest default, because the reader has not said what
-            // they are looking for yet — and the All chip is that default made visible, so
-            // there is one lit chip to come back to rather than three to unpick.
-            //
             // Not every verdict: see PlanningList.verdictFilters for the two that are left
-            // out, and why a chip that can only read 0 is worse than no chip.
-            FlowRow(spacing: 6) {
-                FilterChip(
-                    label: "All",
-                    count: keywords.count,
-                    isOn: state.planningVerdicts.isEmpty,
-                    action: { state.planningVerdicts.removeAll() }
-                )
-                .help("Every planned keyword, whatever the vendor said about it.")
-
-                ForEach(PlanningList.verdictFilters, id: \.self) { verdict in
-                    FilterChip(
+            // out, and why a row that can only read 0 is worse than no row.
+            FilterMenu(
+                options: PlanningList.verdictFilters.map { verdict in
+                    FilterOption(
+                        id: verdict,
                         label: verdict.label,
+                        icon: .symbol(verdict.symbol, tint: verdict.tint),
                         count: keywords.filter { $0.verdictKind == verdict }.count,
-                        isOn: state.planningVerdicts.contains(verdict),
-                        action: { toggle(verdict) }
+                        help: helpFor(verdict)
                     )
-                    .help(helpFor(verdict))
-                }
-            }
+                },
+                selection: $state.planningVerdicts,
+                allLabel: "All verdicts",
+                severalLabel: { "\($0) verdicts" }
+            )
+            .accessibilityLabel("Verdicts")
+
+            Spacer()
+            reachControl
         }
         .disabled(isPreview)
     }
@@ -355,14 +345,6 @@ struct PlanningScreen: View {
             + "\(reach.formatted(.number.precision(.fractionLength(0)))), and are coloured mint below. "
             + "Keyword difficulty and domain rating come from different vendors on unrelated "
             + "scales, so this is a guide and not a rule."
-    }
-
-    private func toggle(_ verdict: KeywordVerdict) {
-        if state.planningVerdicts.contains(verdict) {
-            state.planningVerdicts.remove(verdict)
-        } else {
-            state.planningVerdicts.insert(verdict)
-        }
     }
 
     /// Each verdict says a different thing, and the one that matters most is that "not
@@ -719,6 +701,31 @@ struct ProposalRow: View, Equatable {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .help("No difficulty. Either the vendor scored none, or this market is served by Google Ads, which does not measure it.")
+        }
+    }
+}
+
+extension KeywordVerdict {
+    /// The verdict's mark in the filter menu. Demand found is the healthy reading; a term
+    /// too rare to report is a question the vendor could not answer; the brand is a label
+    /// of the site's own, set apart from the keywords that are measured.
+    var symbol: String {
+        switch self {
+        case .hasDemand: "chart.bar.fill"
+        case .noDemand: "xmark"
+        case .unreported: "questionmark"
+        case .unmeasured: "circle.dashed"
+        case .brand: "tag.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .hasDemand: Palette.mint
+        case .noDemand: Palette.coral
+        case .unreported: Palette.amber
+        case .unmeasured: .secondary
+        case .brand: Palette.lilac
         }
     }
 }
