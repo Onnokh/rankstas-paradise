@@ -7,6 +7,7 @@ struct SiteTabScreen: View {
     let history: HistoryStore
     let rankings: RankingStore
     let live: LiveStore
+    let log: LogStore
     let icon: Image?
     let isRefreshing: Bool
     let onRefresh: () -> Void
@@ -40,12 +41,12 @@ struct SiteTabScreen: View {
                             onRefresh: onRefresh
                         )
                     case .log:
-                        PlaceholderScreen(
-                            title: "Log",
-                            message: "The action log for \(overview.site.name) is not in the macOS app yet.",
-                            systemImage: "clock",
-                            backTitle: overview.site.name,
-                            onBack: pop
+                        LogScreen(
+                            overview: overview,
+                            state: state,
+                            log: log,
+                            onBack: pop,
+                            onRefresh: onRefresh
                         )
                     }
                 }
@@ -1555,31 +1556,6 @@ private struct OpportunitiesScreen: View {
     }
 }
 
-private struct PlaceholderScreen: View {
-    let title: String
-    let message: String
-    let systemImage: String
-    let backTitle: String
-    let onBack: () -> Void
-
-    @Environment(\.isTabPreview) private var isPreview
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                Button(backTitle, systemImage: "chevron.left", action: onBack)
-                    .keyboardShortcut(isPreview ? nil : KeyboardShortcut("[", modifiers: .command))
-                Spacer()
-            }
-            Text(title)
-                .font(.largeTitle)
-            ContentUnavailableView(title, systemImage: systemImage, description: Text(message))
-            Spacer()
-        }
-        .padding(24)
-    }
-}
-
 #Preview("Site tab") {
     SiteTabScreen(
         overview: OverviewModel.preview.overviews[0],
@@ -1587,6 +1563,7 @@ private struct PlaceholderScreen: View {
         history: HistoryStore(),
         rankings: RankingStore(),
         live: LiveStore(),
+        log: LogStore(),
         icon: nil,
         isRefreshing: false,
         onRefresh: {}

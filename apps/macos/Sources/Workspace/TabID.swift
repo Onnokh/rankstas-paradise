@@ -38,6 +38,11 @@ final class SiteTabState {
     var planningSearch = ""
     var planningVerdicts: Set<KeywordVerdict> = []
     var planningReach: Double?
+    /// The Log sub-screen: what its timeline is narrowed to. Selections like the ones above,
+    /// so they survive a tab switch. No open entry to remember — a Log row shows everything
+    /// it holds where it stands.
+    var logSearch = ""
+    var logKinds: Set<LogKind> = []
 
     init(siteID: Site.ID) {
         self.siteID = siteID

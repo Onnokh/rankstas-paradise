@@ -552,6 +552,37 @@ enum KeywordVerdict: String, Sendable, CaseIterable {
     }
 }
 
+/// `/api/log`: the site's work record, newest first — every Action taken on a page and
+/// every Note written beside one.
+///
+/// The server calls the array `actions` even though it holds Notes too; the name is the
+/// wire's, not this app's, so the store reads it into `entries`.
+struct LogListReport: Codable, Sendable {
+    let actions: [LogEntry]
+}
+
+/// One entry of a site's Log: a change made to a page, or a note written about one.
+///
+/// Attached to a Page by its path, never to a keyword, so many keyword rows sharing one
+/// target share one entry.
+struct LogEntry: Codable, Sendable, Equatable, Identifiable {
+    /// The store's own row id, and the only stable identity an entry has: two notes can
+    /// share a date, a path and a kind.
+    let id: Int
+    /// The day the work was done, "YYYY-MM-DD". Not the day it was recorded — that is
+    /// `createdAt`, and the two differ whenever an entry is written up afterwards.
+    let date: String
+    /// A site-relative path, "/foo".
+    let path: String
+    /// The server's word for what was done: see `LogKind`.
+    let kind: String
+    /// The free text beside it. Empty is normal for an Action.
+    let note: String
+    /// When the entry was written, an ISO 8601 instant. Optional so a snapshot written
+    /// before the field, and an older server, still decode.
+    var createdAt: String? = nil
+}
+
 /// `/api/registry`: every target page the site tracks, with its metrics for the server's
 /// own reporting window.
 struct RegistryListReport: Codable, Sendable {

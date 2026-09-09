@@ -15,6 +15,7 @@ struct RootView: View {
     @State private var history = HistoryStore()
     @State private var rankings = RankingStore()
     @State private var live = LiveStore()
+    @State private var log = LogStore()
     @State private var drag: DragSession?
 
     /// One live three-finger gesture.
@@ -76,6 +77,7 @@ struct RootView: View {
                     history: history,
                     rankings: rankings,
                     live: live,
+                    log: log,
                     favicons: favicons,
                     actions: actions,
                     height: pane.height
@@ -103,6 +105,7 @@ struct RootView: View {
                     history: history,
                     rankings: rankings,
                     live: live,
+                    log: log,
                     favicons: favicons,
                     showsShortcuts: isCommandHeld,
                     onSelect: select
@@ -225,6 +228,12 @@ struct RootView: View {
         let period = workspace.state(for: siteID).period
         Task { await history.refresh(siteID) }
         Task { await live.refresh(siteID) }
+        // Only when the tab is on the Log: elsewhere nothing shows the record, and a
+        // refresh should not fetch what is not on screen. A tab arriving at the Log loads
+        // it itself; see `LogScreen`.
+        if workspace.state(for: siteID).path.last == .log {
+            Task { await log.refresh(siteID) }
+        }
         // Today has no Search Console window to rank by; its lists come with the live poll.
         if period != .today {
             Task { await rankings.refresh(siteID, period: period) }

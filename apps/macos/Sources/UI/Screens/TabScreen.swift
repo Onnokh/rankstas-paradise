@@ -34,6 +34,7 @@ struct TabScreen: View {
     let history: HistoryStore
     let rankings: RankingStore
     let live: LiveStore
+    let log: LogStore
     let favicons: FaviconStore
     let actions: TabActions
 
@@ -56,6 +57,7 @@ struct TabScreen: View {
                     history: history,
                     rankings: rankings,
                     live: live,
+                    log: log,
                     icon: favicons.image(for: siteID),
                     isRefreshing: model.isRefreshing,
                     onRefresh: { actions.refresh(tab) }
