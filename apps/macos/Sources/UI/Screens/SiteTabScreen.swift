@@ -8,6 +8,7 @@ struct SiteTabScreen: View {
     let rankings: RankingStore
     let preferences: PlanningPreferences
     let live: LiveStore
+    let log: LogStore
     let icon: Image?
     let isRefreshing: Bool
     let onRefresh: () -> Void
@@ -82,10 +83,15 @@ struct SiteTabScreen: View {
                         rankings: rankings,
                         preferences: preferences,
                         live: live,
+                        log: log,
                         isRefreshing: isRefreshing,
                         onRefresh: onRefresh
                     )
                     .equatable()
+                    // Read by the Log screen, which fetches its record only once it is in
+                    // front. An environment value rather than a slot field, so the slot
+                    // stays equal across a click and the screens behind it stay untouched.
+                    .environment(\.isScreenShown, isActive)
                     .opacity(isActive ? 1 : 0)
                     .allowsHitTesting(isActive)
                     .accessibilityHidden(!isActive)
@@ -1601,6 +1607,7 @@ private struct ScreenSlot: View, Equatable {
     let rankings: RankingStore
     let preferences: PlanningPreferences
     let live: LiveStore
+    let log: LogStore
     let isRefreshing: Bool
     let onRefresh: () -> Void
 
@@ -1614,6 +1621,7 @@ private struct ScreenSlot: View, Equatable {
             && lhs.rankings === rhs.rankings
             && lhs.preferences === rhs.preferences
             && lhs.live === rhs.live
+            && lhs.log === rhs.log
             && lhs.isRefreshing == rhs.isRefreshing
     }
 
@@ -1626,26 +1634,8 @@ private struct ScreenSlot: View, Equatable {
         case .planning:
             PlanningScreen(overview: overview, state: state, rankings: rankings, preferences: preferences, onRefresh: onRefresh)
         case .log:
-            PlaceholderScreen(
-                title: "Log",
-                message: "The action log for \(overview.site.name) is not in the macOS app yet.",
-                systemImage: "clock"
-            )
+            LogScreen(overview: overview, state: state, log: log, onRefresh: onRefresh)
         }
-    }
-}
-
-// MARK: - Placeholder
-
-/// A screen that is not in the Mac app yet, in the same frame the real one will take.
-private struct PlaceholderScreen: View {
-    let title: String
-    let message: String
-    let systemImage: String
-
-    var body: some View {
-        ContentUnavailableView(title, systemImage: systemImage, description: Text(message))
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -1657,6 +1647,7 @@ private struct PlaceholderScreen: View {
         rankings: RankingStore(),
         preferences: PlanningPreferences(),
         live: LiveStore(),
+        log: LogStore(),
         icon: nil,
         isRefreshing: false,
         onRefresh: {}

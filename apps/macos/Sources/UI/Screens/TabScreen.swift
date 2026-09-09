@@ -13,6 +13,19 @@ extension EnvironmentValues {
     }
 }
 
+/// True for the screen a site tab has in front. The tab keeps its other screens mounted
+/// behind it, so a screen that fetches for itself waits for this before it asks.
+private struct IsScreenShownKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var isScreenShown: Bool {
+        get { self[IsScreenShownKey.self] }
+        set { self[IsScreenShownKey.self] = newValue }
+    }
+}
+
 /// What a screen can ask the workspace to do. Previews get no-ops.
 struct TabActions {
     var activate: (TabID) -> Void
@@ -36,6 +49,7 @@ struct TabScreen: View {
     let rankings: RankingStore
     let preferences: PlanningPreferences
     let live: LiveStore
+    let log: LogStore
     let favicons: FaviconStore
     let actions: TabActions
 
@@ -59,6 +73,7 @@ struct TabScreen: View {
                     rankings: rankings,
                     preferences: preferences,
                     live: live,
+                    log: log,
                     icon: favicons.image(for: siteID),
                     isRefreshing: model.isRefreshing,
                     onRefresh: { actions.refresh(tab) }
