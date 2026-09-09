@@ -305,6 +305,12 @@ export interface Interface {
     start: string,
     end: string,
   ) => Effect.Effect<ReadonlyArray<RevenueDay>, StorageError>
+  // When the sync last wrote that one day's revenue rows, as an ISO 8601
+  // instant; null for a day never fetched. The revenue twin of visitsSyncedAt,
+  // and how a caller tells "no sales" from "not synced yet".
+  readonly revenueSyncedAt: (
+    date: string,
+  ) => Effect.Effect<string | null, StorageError>
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -1957,6 +1963,14 @@ export const layer = Layer.effect(
       return rows[0]?.fetched_at ?? null
     })
 
+    const revenueSyncedAtI = (date: string) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{ fetched_at: string | null }>`
+          select strftime('%Y-%m-%dT%H:%M:%SZ', fetched_at) as fetched_at
+          from revenue_synced_day where date = ${date}`
+        return rows[0]?.fetched_at ?? null
+      })
+
     const revenueSummaryI = Effect.gen(function* () {
       const rows = yield* sql<RevenueSummary>`
         select count(*) as days, min(date) as firstDate, max(date) as lastDate,
@@ -2194,6 +2208,8 @@ export const layer = Layer.effect(
       revenueSummary: () => revenueSummaryI.pipe(mapErr("revenueSummary")),
       revenueDays: (start, end) =>
         revenueDaysI(start, end).pipe(mapErr("revenueDays")),
+      revenueSyncedAt: (date) =>
+        revenueSyncedAtI(date).pipe(mapErr("revenueSyncedAt")),
     } satisfies Interface
   }),
 )

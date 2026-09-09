@@ -148,18 +148,38 @@ final class LiveTests: XCTestCase {
                   "hours":[{"hour":0,"pageviews":1,"visits":1,"visitors":1}],
                   "pages":[{"date":"2026-09-07","page":"/","pageviews":60,"visits":30}],
                   "events":[{"date":"2026-09-07","name":"purchase","count":2},{"date":"2026-09-07","name":"login","count":5}],
-                  "syncedAt":null}}
+                  "syncedAt":null},
+         "revenue":{"provider":"polar","accountId":null,"ready":true,"reason":null},
+         "sales":{"date":"2026-09-07","timeZone":"Europe/Amsterdam","orders":2,"revenue":2665,
+                  "net":2370,"currency":"USD","syncedAt":"2026-09-07T19:45:02Z"}}
         """, as: TodayReport.self)
 
         XCTAssertEqual(report.today?.site?.visits, 40)
         XCTAssertEqual(report.today?.hoursElapsed, 22)
         XCTAssertEqual(report.today?.pages.first?.page, "/")
         XCTAssertEqual(report.today?.eventCount, 7)
+        XCTAssertEqual(report.sales?.orders, 2)
+        XCTAssertEqual(report.sales?.revenue, 2665)
+        XCTAssertEqual(report.sales?.currency, "USD")
+        XCTAssertEqual(report.revenue?.provider, "polar")
 
         let none = try decode("""
-        {"generatedAt":"2026-09-07T19:51:20.381Z","mode":"debug","analytics":null,"today":null}
+        {"generatedAt":"2026-09-07T19:51:20.381Z","mode":"debug","analytics":null,"today":null,
+         "revenue":null,"sales":null}
         """, as: TodayReport.self)
         XCTAssertNil(none.today)
+        XCTAssertNil(none.sales)
+
+        // A day the server has not written yet: the totals are zeros, and only the null
+        // syncedAt says they are not a measurement.
+        let unsynced = try decode("""
+        {"generatedAt":"2026-09-07T19:51:20.381Z","mode":"live","analytics":null,"today":null,
+         "revenue":{"provider":"polar","accountId":null,"ready":true,"reason":null},
+         "sales":{"date":"2026-09-07","timeZone":"Europe/Amsterdam","orders":0,"revenue":0,
+                  "net":0,"currency":null,"syncedAt":null}}
+        """, as: TodayReport.self)
+        XCTAssertNil(unsynced.sales?.syncedAt)
+        XCTAssertNil(unsynced.sales?.currency)
     }
 
     func testEventsReportDecodes() throws {

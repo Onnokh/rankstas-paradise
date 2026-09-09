@@ -1258,6 +1258,14 @@ test("todayReport reads the day in progress from the ledger", async () => {
   expect(before.today?.site).toBeNull()
   expect(before.today?.hours).toHaveLength(24)
   expect(before.today?.syncedAt).toBeNull()
+  // The sales half is there on the same terms: zeros with a null syncedAt, so
+  // a reader can tell a day with no orders from a day never fetched.
+  expect(before.revenue?.provider).toBe("fake")
+  expect(before.sales?.date).toBe("2026-07-13")
+  expect(before.sales?.orders).toBe(0)
+  expect(before.sales?.revenue).toBe(0)
+  expect(before.sales?.currency).toBeNull()
+  expect(before.sales?.syncedAt).toBeNull()
 
   // What the today sync writes, as it writes it.
   await runtime.runPromise(
@@ -1347,6 +1355,25 @@ test("revenueReport sums the window and the one before from the ledger, ending o
   expect(status.revenue?.provider).toBe("fake")
   expect(status.revenue?.days).toBe(dates.length)
   expect(status.revenue?.lastDate).toBe("2026-07-13")
+})
+
+test("todayReport carries the sales the revenue window leaves out", async () => {
+  // The revenue test above seeded every day up to and including today, as the
+  // two syncs together would: two orders of $19.99, today's row included.
+  const report = await run(Reports.use.todayReport())
+  expect(report.sales?.date).toBe("2026-07-13")
+  expect(report.sales?.timeZone).toBe("UTC")
+  expect(report.sales?.orders).toBe(2)
+  expect(report.sales?.revenue).toBe(3998)
+  expect(report.sales?.net).toBe(3998)
+  expect(report.sales?.currency).toBe("USD")
+  expect(report.sales?.syncedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+
+  // Which is the point: the same day is in no window. The 28-day report ends
+  // on the last whole day, so today's sales are here and nowhere else.
+  const window = await run(Reports.use.revenueReport())
+  expect(window.window.currentEnd).toBe("2026-07-12")
+  expect(window.days.some((day) => day.date === "2026-07-13")).toBe(false)
 })
 
 test("liveReport carries the provider status and the live count", async () => {

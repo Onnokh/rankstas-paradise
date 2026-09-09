@@ -75,6 +75,23 @@ export const RevenueStatus = Schema.Struct({
 }).annotate({ identifier: "RevenueStatus" })
 export interface RevenueStatus extends Schema.Schema.Type<typeof RevenueStatus> {}
 
+// Today's sales so far, in the provider's zone: the one partial day the
+// windowed reports leave out. The today sync rewrites the row every few
+// minutes, so this is the day as the vendor knew it at `syncedAt` — null
+// before the first write of the day, when the totals are zeros rather than a
+// measurement. Amounts in the currency's minor unit, as every row is;
+// `currency` is null until a row exists.
+export const TodaySales = Schema.Struct({
+  date: Schema.String,
+  timeZone: Schema.String,
+  orders: Schema.Number,
+  revenue: Schema.Number,
+  net: Schema.Number,
+  currency: Schema.NullOr(Schema.String),
+  syncedAt: Schema.NullOr(Schema.String),
+}).annotate({ identifier: "TodaySales" })
+export interface TodaySales extends Schema.Schema.Type<typeof TodaySales> {}
+
 // Raised when a provider cannot be used or a fetch fails. One class for the
 // whole boundary, so no vendor error type ever crosses into Sync.
 export class RevenueError extends Schema.TaggedErrorClass<RevenueError>()(

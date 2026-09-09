@@ -218,6 +218,28 @@ struct TodayReport: Codable, Sendable {
     let analytics: AnalyticsStatus?
     /// Nil when the site has no provider, or its provider is not ready.
     let today: TodayVisits?
+    /// Nil when the site has no commerce provider.
+    let revenue: RevenueStatus?
+    /// Today's sales so far. Nil when the site has no commerce provider; the two halves of
+    /// the report are independent, so this can be filled where `today` is not.
+    let sales: TodaySales?
+}
+
+/// Today's sales so far, in the commerce provider's zone: the one partial day the windowed
+/// revenue report leaves out, rewritten by the server every few minutes.
+struct TodaySales: Codable, Sendable, Equatable {
+    let date: String
+    let timeZone: String
+    let orders: Double
+    /// What customers have paid so far, in minor units.
+    let revenue: Double
+    /// Revenue less refunds and the provider's fees, in minor units.
+    let net: Double
+    /// Nil until the day has a row.
+    let currency: String?
+    /// When the server last wrote today's sales; nil before its first sync of the day, when
+    /// the totals above are zeros rather than a measurement.
+    let syncedAt: String?
 }
 
 struct TodayVisits: Codable, Sendable, Equatable {
