@@ -563,13 +563,17 @@ enum KeywordVerdict: String, Sendable, CaseIterable {
     /// two ask opposite things of the reader: measure that one, and leave this one alone.
     case brand = "brand"
 
+    /// The word the screen shows. `hasDemand` is named for what the vendor found and not
+    /// for what to do about it: every keyword in the registry is already allocated to a
+    /// target page, so "worth writing" described work that is mostly done and read as a
+    /// to-do list the plan is not.
     var label: String {
         switch self {
-        case .hasDemand: "Worth writing"
+        case .hasDemand: "Has demand"
         case .noDemand: "Aimed at nothing"
         case .unreported: "Too rare to measure"
         case .unmeasured: "Not measured"
-        case .brand: "Your own brand"
+        case .brand: "Brand"
         }
     }
 }

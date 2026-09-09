@@ -124,9 +124,11 @@ final class RankingStoreTests: XCTestCase {
         XCTAssertNil(store.errors["site"])
     }
 
-    func testDismissingDropsTheRowAndRecountsTheDemandOnOffer() async {
-        // The total has to follow the list. A sum left at 570 beside one row reading 480
-        // would be a claim about demand that no row supports.
+    func testDismissingDropsTheRowAndTakesTheNewTotalFromTheServer() async {
+        // The total has to follow the list: a sum left at 570 beside one row reading 480
+        // would be a claim about demand that no row supports. It is the SERVER's new total,
+        // though, not a sum of the rows left here — one query comes back in several word
+        // orders and only the server folds them into one — so this covers the re-read.
         let store = makeStore()
         await store.load("site", period: .d28)
 
@@ -226,6 +228,11 @@ private enum StubServer {
     nonisolated(unsafe) static var healthOK = true
     /// Set false to stand in for a server that does not serve /api/keywords/proposed yet.
     nonisolated(unsafe) static var proposalsOK = true
+    /// Set by a POST to the dismiss endpoint: from then on the proposals answer leaves the
+    /// dismissed row out, as a server that holds the decision does. Which keyword it was is
+    /// not checked — the body does not reach a URLProtocol stub — so the two-row list
+    /// answers with its second row gone.
+    nonisolated(unsafe) static var dismissalHeld = false
 
     /// The most requests that were open at the same time. This is what tells reads sent
     /// together from reads awaited one after another: awaited in turn they peak at one,
@@ -256,6 +263,7 @@ private enum StubServer {
         requests = []
         healthOK = true
         proposalsOK = true
+        dismissalHeld = false
         counter.withLock {
             openRequests = 0
             peak = 0
@@ -269,6 +277,37 @@ private enum StubServer {
             target: RemoteTarget(apiUrl: "https://stub.test", token: "token"),
             session: URLSession(configuration: configuration)
         )
+    }
+
+    /// The proposals report. Its volume is the server's own figure and not the sum of the
+    /// rows below it: a discovery run answers one query in several word orders, the report
+    /// folds them and counts the query once, so 480 + 90 is not what the two rows are worth
+    /// together. That is the whole reason the app re-reads this after a dismissal instead
+    /// of adding its rows up.
+    static func proposalsBody() -> String {
+        let addon = """
+        {"keyword":"mount tracker addon","seed":"mount tracker",
+         "source":"suggestions","searchVolume":480,"difficulty":18,
+         "costPerClick":0.8,"competition":0.3,"intent":"informational",
+         "status":"proposed","discoveredAt":"2026-09-08T00:00:00Z"}
+        """
+        let app = """
+        {"keyword":"mount tracker app","seed":"mount tracker",
+         "source":"related","searchVolume":90,"difficulty":null,
+         "costPerClick":null,"competition":null,"intent":null,
+         "status":"proposed","discoveredAt":"2026-09-08T00:00:00Z"}
+        """
+        return dismissalHeld
+            ? """
+            {"generatedAt":"2026-09-08T07:00:00Z",
+             "totals":{"proposals":1,"monthlyVolume":480},
+             "proposals":[\(addon)]}
+            """
+            : """
+            {"generatedAt":"2026-09-08T07:00:00Z",
+             "totals":{"proposals":2,"monthlyVolume":570},
+             "proposals":[\(addon),\(app)]}
+            """
     }
 
     static func body(for url: URL) -> Data {
@@ -304,22 +343,9 @@ private enum StubServer {
             // `proposalsOK = false` stands in for a server that predates this endpoint.
             // Unlike the health report, its absence is not reported: there is nothing to
             // say about keywords nobody has discovered.
-            json = proposalsOK
-                ? """
-                {"generatedAt":"2026-09-08T07:00:00Z",
-                 "totals":{"proposals":2,"monthlyVolume":570},
-                 "proposals":[
-                   {"keyword":"mount tracker addon","seed":"mount tracker",
-                    "source":"suggestions","searchVolume":480,"difficulty":18,
-                    "costPerClick":0.8,"competition":0.3,"intent":"informational",
-                    "status":"proposed","discoveredAt":"2026-09-08T00:00:00Z"},
-                   {"keyword":"mount tracker app","seed":"mount tracker",
-                    "source":"related","searchVolume":90,"difficulty":null,
-                    "costPerClick":null,"competition":null,"intent":null,
-                    "status":"proposed","discoveredAt":"2026-09-08T00:00:00Z"}]}
-                """
-                : "{}"
+            json = proposalsOK ? proposalsBody() : "{}"
         case "/api/keywords/dismiss":
+            dismissalHeld = true
             json = """
             {"dismissed":1}
             """

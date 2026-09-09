@@ -61,21 +61,19 @@ struct PlanningScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                header
-                    .padding(.top, SiteTabScreen.screenInset)
-                    .padding(.bottom, 24)
-
-                // No tiles without a report. Three zeros are a statement about the plan,
-                // and an unanswered request is not entitled to make one.
-                if planningState == .plan {
-                    tiles
-                        .padding(.bottom, 20)
+                // The plan's numbers lead the screen, the way the dashboard's do. No strip
+                // without a report: zeros are a statement about the plan, and an
+                // unanswered request is not entitled to make one — so the screens with
+                // nothing to count say so in a line of prose instead.
+                Group {
+                    if planningState == .plan {
+                        numbers
+                    } else {
+                        header
+                    }
                 }
-
-                if !upcoming.isEmpty {
-                    season
-                        .padding(.bottom, 20)
-                }
+                .padding(.top, SiteTabScreen.screenInset)
+                .padding(.bottom, 24)
 
                 controls
                     .padding(.bottom, 20)
@@ -101,220 +99,262 @@ struct PlanningScreen: View {
 
     // MARK: Header
 
-    /// What the screen holds, in one line, under the tab's header row.
+    /// What the screen holds, in one line, under the tab's header row — and only when there
+    /// is no report to count. With one in hand the strip below says all of this and says it
+    /// as figures, so a line repeating it would be a second, older copy of the same claim.
     private var header: some View {
         Text(summary)
             .foregroundStyle(.secondary)
     }
 
-    /// What the plan is, in one line. The market is named because a search volume without it
-    /// is ambiguous — the same keyword has a different number in every country.
     private var summary: String {
-        guard let report else {
-            if loading { return "Loading…" }
-            // Nothing is claimed about the plan here, because nothing is known about it.
-            return unavailable == nil
-                ? "No plan to judge yet."
-                : "This report did not arrive, so the plan below is not shown — not empty."
-        }
-        var parts = ["\(report.totals.keywords) \(report.totals.keywords == 1 ? "keyword" : "keywords")"]
-        if report.totals.unmeasured < report.totals.keywords {
-            parts.append("\(report.totals.keywords - report.totals.unmeasured) measured")
-        }
-        if let market = report.market { parts.append(market.summary) }
-        if let rating = report.domainRating {
-            parts.append("domain rating \(rating.formatted(.number.precision(.fractionLength(0))))")
-        }
-        return parts.joined(separator: " · ")
+        if loading { return "Loading…" }
+        // Nothing is claimed about the plan here, because nothing is known about it.
+        return unavailable == nil
+            ? "No plan to judge yet."
+            : "This report did not arrive, so the plan below is not shown — not empty."
     }
 
-    // MARK: Tiles
+    // MARK: Numbers
 
-    private var tiles: some View {
-        HStack(spacing: 10) {
-            tile(
-                "Addressable",
+    /// The plan's figures in one row, plain on the panel, read like the dashboard's: a label
+    /// over a large number. The demand the registry already aims at, the demand on offer
+    /// beside it, then how much of the plan the vendor has answered for at all.
+    ///
+    /// A hairline separates those three from the market and the domain rating, as on the
+    /// dashboard where it separates Search Console from the sources beside it: those two
+    /// describe the SITE, not this plan — and they are what the numbers to their left mean,
+    /// because a search volume is only comparable inside one market.
+    private var numbers: some View {
+        HStack(alignment: .top, spacing: 0) {
+            Metric(
+                title: "Total volume",
                 value: (report?.totals.monthlyVolume ?? 0)
                     .formatted(.number.precision(.fractionLength(0))),
-                note: "searches / month",
-                // Not a traffic forecast: it counts every search behind the plan, not the
-                // share a first-page ranking would win.
-                help: "Every search a month behind the keywords the vendor found demand for. The size of the market, not a forecast of your traffic."
+                footnote: "searches / month"
             )
-            tile(
-                "Within reach",
-                value: "\(PlanningList.withinReach(keywords, reach: reach).count) of \(PlanningList.measured(keywords).count)",
-                note: "difficulty at or under \(reach.formatted(.number.precision(.fractionLength(0))))",
-                help: "Counted against the threshold below, which you set. Keyword difficulty and domain rating come from different vendors on unrelated scales, so this is a guide and not a rule."
+            // Not a traffic forecast: it counts every search behind the plan, not the
+            // share a first-page ranking would win.
+            .help("Every search a month behind the keywords the registry already aims at. The size of the market, not a forecast of your traffic.")
+            gap
+            Metric(
+                title: "Total proposed",
+                value: proposedVolume,
+                footnote: proposedFootnote
             )
-            tile(
-                "Aimed at nothing",
-                value: "\(report?.totals.noDemand ?? 0)",
-                note: "measured, no demand",
-                help: "The vendor looked and found no searches. These are the rows to act on — a page aimed here will not be found.",
-                tint: (report?.totals.noDemand ?? 0) > 0 ? Palette.coral : nil
+            .help("The demand behind the keywords that are NOT in the registry — the proposals listed below. Nothing on the site aims at any of it yet.")
+            gap
+            Metric(
+                title: "Measured",
+                value: "\(PlanningList.measured(keywords).count)",
+                footnote: measuredFootnote
             )
+            .help("How much of the plan the vendor has answered for, and the denominator of every figure here. The rest were never asked about — that is a missing DataForSEO key and a sync, not a verdict on the keyword.")
+            gap
+            Rectangle()
+                .fill(Palette.line)
+                .frame(width: 1, height: 48)
+            gap
+            Metric(
+                title: "Market",
+                value: marketValue,
+                footnote: marketFootnote
+            )
+            .help(marketHelp)
+            gap
+            Metric(
+                title: "Domain Rating",
+                value: ratingValue ?? "—",
+                footnote: ratingValue == nil ? "No reading yet" : nil
+            )
+            .help("This site's Ahrefs domain rating. The reach threshold below starts from it, which is the only place the two vendors' scales are held against each other.")
         }
     }
 
-    private func tile(
-        _ label: String,
-        value: String,
-        note: String,
-        help: String,
-        tint: Color? = nil
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.title2)
-                .foregroundStyle(tint ?? .primary)
-                .monospacedDigit()
-            Text(note)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    /// One flexible gap, as on the dashboard's strip: the figures sit at the two ends of the
+    /// column and the room between them is shared, so the row reads as one line across the
+    /// page rather than a cluster on its left.
+    private var gap: some View {
+        Spacer(minLength: 20)
+    }
+
+    /// The demand on offer. A dash rather than a zero while no discovery has run: a run
+    /// that found nothing and no run at all are different things, and only the first is a
+    /// zero the reader can act on.
+    private var proposedVolume: String {
+        guard let totals = rankings.proposals[overview.id]?.totals else { return "—" }
+        return totals.monthlyVolume.formatted(.number.precision(.fractionLength(0)))
+    }
+
+    private var proposedFootnote: String {
+        rankings.proposals[overview.id] == nil ? "None proposed" : "searches / month"
+    }
+
+    /// The denominator, in the footnote rather than the figure: "31" over "of 31 keywords"
+    /// keeps the large number a count and not a ratio to be read twice.
+    private var measuredFootnote: String {
+        let planned = report?.totals.keywords ?? keywords.count
+        return "of \(planned) \(planned == 1 ? "keyword" : "keywords")"
+    }
+
+    /// The language, large, with the country under it: language is the axis that matters —
+    /// a German visitor to an English site searches in English.
+    private var marketValue: String {
+        guard let market = report?.market else { return "—" }
+        return market.languageCode.uppercased()
+    }
+
+    private var marketFootnote: String {
+        guard let market = report?.market else { return "No market set" }
+        return market.label
+    }
+
+    private var marketHelp: String {
+        guard let market = report?.market else {
+            return "This site names no market, so its keywords are measured in the United States in English."
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .cardSurface(cornerRadius: 10)
-        .help(help)
+        var help = "Every search volume on this screen is measured in \(market.summary). The same keyword has a different number in every market."
+        if !market.hasDifficulty {
+            help += " This market is served by Google Ads, which reports no keyword difficulty."
+        }
+        return help
     }
 
-    // MARK: Season
-
-    /// Keywords whose demand peaks soon, soonest first. The planning part of the screen: a
-    /// term that peaks every October needs its page to exist before then, so the useful
-    /// order here is "next", not "biggest".
-    private var upcoming: [KeywordHealth] {
-        PlanningList.upcoming(
-            keywords,
-            from: Calendar.current.component(.month, from: Date()),
-            seasonalAbove: PlanningScreen.seasonalThreshold
-        )
+    private var ratingValue: String? {
+        guard let report, let rating = report.domainRating else { return nil }
+        return rating.formatted(.number.precision(.fractionLength(1)))
     }
+
+    // MARK: Seasons
 
     /// How far above an even month a peak has to run before it is called a season. Every
-    /// term has a highest month; this is where one becomes worth planning around.
+    /// term has a highest month; this is where one becomes worth planning around. Read by
+    /// the rows' Peaks column, which is where a season is shown — beside the keyword it
+    /// belongs to, and the volume that says whether the season is worth aiming at.
     static let seasonalThreshold = 1.25
-
-    private var season: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Peaks next")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            FlowRow(spacing: 6) {
-                ForEach(upcoming.prefix(6)) { keyword in
-                    HStack(spacing: 5) {
-                        Text(keyword.keyword)
-                        if let month = keyword.peakLabel(seasonalAbove: PlanningScreen.seasonalThreshold) {
-                            Text(month)
-                                .foregroundStyle(Palette.amber)
-                        }
-                    }
-                    .font(.caption)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(Palette.line.opacity(0.7), in: .capsule)
-                    .help(seasonHelp(keyword))
-                }
-            }
-        }
-    }
-
-    private func seasonHelp(_ keyword: KeywordHealth) -> String {
-        guard let seasonality = keyword.seasonality else { return keyword.keyword }
-        let times = seasonality.formatted(.number.precision(.fractionLength(1)))
-        return "Its peak month runs \(times)× an average month, over the years the vendor holds."
-    }
 
     // MARK: Controls
 
+    /// One control bar over the list: what to look for on the left, where the bar for
+    /// "within reach" sits on the right, and the verdicts as chips under both. The two
+    /// fields share a surface so the row reads as one strip of controls and not as a text
+    /// field with a loose slider beside it.
     private var controls: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 20) {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                    TextField("Filter by keyword, cluster or page", text: $state.planningSearch)
-                        .textFieldStyle(.plain)
-                        .frame(maxWidth: 260)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Palette.raised, in: .rect(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Palette.line))
-
+            HStack(spacing: 16) {
+                search
                 Spacer()
-
-                HStack(spacing: 8) {
-                    Text("Within reach at")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Slider(
-                        value: Binding(
-                            get: { reach },
-                            // Saved per site as it moves, so the judgement is made once.
-                            set: { preferences.setReach($0, for: overview.id) }
-                        ),
-                        in: 0...100,
-                        step: 1
-                    )
-                    .frame(width: 140)
-                    Text(reach.formatted(.number.precision(.fractionLength(0))))
-                        .font(.subheadline)
-                        .monospacedDigit()
-                        .frame(width: 22, alignment: .trailing)
-                    // Only offered once there is something to undo. Clearing hands the
-                    // threshold back to the default, which then follows the site's domain
-                    // rating as that moves — something a pinned number cannot do.
-                    if preferences.reach(for: overview.id) != nil {
-                        Button("Reset", systemImage: "arrow.uturn.backward") {
-                            preferences.clearReach(for: overview.id)
-                        }
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                        .help("Back to this site's domain rating.")
-                    }
-                }
+                reachControl
             }
 
-            // The four verdicts, as filters. Nothing selected means every row, which is the
-            // honest default: the reader has not said what they are looking for yet.
-            HStack(spacing: 6) {
-                ForEach(KeywordVerdict.allCases, id: \.self) { verdict in
-                    let count = keywords.filter { $0.verdictKind == verdict }.count
-                    Button {
-                        toggle(verdict)
-                    } label: {
-                        Text("\(verdict.label) \(count)")
-                            .font(.caption)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 4)
-                            .background(
-                                state.planningVerdicts.contains(verdict)
-                                    ? Palette.acid.opacity(0.18)
-                                    : Palette.line.opacity(0.5),
-                                in: .capsule
-                            )
-                            .overlay(
-                                Capsule().strokeBorder(
-                                    state.planningVerdicts.contains(verdict)
-                                        ? Palette.acid.opacity(0.6)
-                                        : .clear
-                                )
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(count == 0)
-                    .opacity(count == 0 ? 0.4 : 1)
+            // The verdicts worth filtering on, with All in front of them. Nothing selected
+            // means every row — the honest default, because the reader has not said what
+            // they are looking for yet — and the All chip is that default made visible, so
+            // there is one lit chip to come back to rather than three to unpick.
+            //
+            // Not every verdict: see PlanningList.verdictFilters for the two that are left
+            // out, and why a chip that can only read 0 is worse than no chip.
+            FlowRow(spacing: 6) {
+                FilterChip(
+                    label: "All",
+                    count: keywords.count,
+                    isOn: state.planningVerdicts.isEmpty,
+                    action: { state.planningVerdicts.removeAll() }
+                )
+                .help("Every planned keyword, whatever the vendor said about it.")
+
+                ForEach(PlanningList.verdictFilters, id: \.self) { verdict in
+                    FilterChip(
+                        label: verdict.label,
+                        count: keywords.filter { $0.verdictKind == verdict }.count,
+                        isOn: state.planningVerdicts.contains(verdict),
+                        action: { toggle(verdict) }
+                    )
                     .help(helpFor(verdict))
                 }
             }
         }
         .disabled(isPreview)
+    }
+
+    private var search: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Filter by keyword, cluster or page", text: $state.planningSearch)
+                .textFieldStyle(.plain)
+                .frame(maxWidth: 220)
+            // Offered only once there is something to clear. One box narrows both lists,
+            // so the way out of a filter has to be in reach of the box that set it.
+            if !state.planningSearch.isEmpty {
+                Button("Clear", systemImage: "xmark.circle.fill") {
+                    state.planningSearch = ""
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Palette.raised, in: .rect(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Palette.line))
+    }
+
+    /// The threshold that decides which difficulties below are coloured as reachable, in
+    /// the search field's surface so the two read as one bar.
+    ///
+    /// No `step:` on the slider: a stepped slider draws a tick for every step on macOS, and
+    /// 101 ticks under a 120-point track is a smear under the knob. The value is rounded on
+    /// the way in instead, which is where whole numbers were wanted in the first place.
+    private var reachControl: some View {
+        HStack(spacing: 8) {
+            Text("Within reach at")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Slider(
+                value: Binding(
+                    get: { reach },
+                    // Saved per site as it moves, so the judgement is made once.
+                    set: { preferences.setReach($0.rounded(), for: overview.id) }
+                ),
+                in: 0...100
+            )
+            .controlSize(.small)
+            .frame(width: 120)
+            Text(reach.formatted(.number.precision(.fractionLength(0))))
+                .font(.caption.weight(.medium))
+                .monospacedDigit()
+                .frame(width: 24, alignment: .trailing)
+            // Only offered once there is something to undo. Clearing hands the threshold
+            // back to the default, which then follows the site's domain rating as that
+            // moves — something a pinned number cannot do.
+            if preferences.reach(for: overview.id) != nil {
+                Button("Reset", systemImage: "arrow.uturn.backward") {
+                    preferences.clearReach(for: overview.id)
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Back to this site's domain rating.")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Palette.raised, in: .rect(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Palette.line))
+        .help(reachHelp)
+    }
+
+    /// What moving the slider did, counted: the tiles used to carry this figure and the
+    /// number belongs beside the control that sets it, not in a card three rows up.
+    private var reachHelp: String {
+        let within = PlanningList.withinReach(keywords, reach: reach).count
+        let measured = PlanningList.measured(keywords).count
+        return "\(within) of \(measured) measured keywords score at or under "
+            + "\(reach.formatted(.number.precision(.fractionLength(0)))), and are coloured mint below. "
+            + "Keyword difficulty and domain rating come from different vendors on unrelated "
+            + "scales, so this is a guide and not a rule."
     }
 
     private func toggle(_ verdict: KeywordVerdict) {

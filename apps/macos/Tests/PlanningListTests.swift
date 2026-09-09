@@ -107,46 +107,12 @@ final class PlanningListTests: XCTestCase {
 
     // MARK: Seasons
 
-    func testMonthsAheadWrapsTheYear() {
-        // A peak that has just passed is eleven months away, not one behind — otherwise
-        // last month's season would sort ahead of next month's.
-        XCTAssertEqual(PlanningList.monthsAhead(9, from: 9), 0)
-        XCTAssertEqual(PlanningList.monthsAhead(10, from: 9), 1)
-        XCTAssertEqual(PlanningList.monthsAhead(8, from: 9), 11)
-        XCTAssertEqual(PlanningList.monthsAhead(1, from: 11), 2)
-    }
-
-    func testUpcomingOrdersBySoonestNotBiggest() {
-        // The planning part: a term peaking next month needs its page now, whatever a term
-        // peaking in eight months is worth.
-        let all = [
-            keyword("big but far", volume: 90_000, peakMonth: 5, seasonality: 2),
-            keyword("small but soon", volume: 200, peakMonth: 10, seasonality: 2),
-        ]
-        XCTAssertEqual(
-            PlanningList.upcoming(all, from: 9, seasonalAbove: 1.25).map(\.keyword),
-            ["small but soon", "big but far"]
-        )
-    }
-
-    func testUpcomingBreaksATieOnTheBiggerTerm() {
-        let all = [
-            keyword("smaller", volume: 200, peakMonth: 11, seasonality: 2),
-            keyword("bigger", volume: 5_000, peakMonth: 11, seasonality: 2),
-        ]
-        XCTAssertEqual(
-            PlanningList.upcoming(all, from: 9, seasonalAbove: 1.25).map(\.keyword),
-            ["bigger", "smaller"]
-        )
-    }
-
-    func testAFlatTermHasNoSeasonToPlanAround() {
+    func testAFlatTermHasNoSeasonToShow() {
         // Every term has a highest month. Only some have a season, and below the threshold
-        // a peak is noise the screen must not present as a publishing date.
+        // a peak is noise the rows must not present as a publishing date.
         let flat = keyword("flat", peakMonth: 3, seasonality: 1.02)
-        XCTAssertTrue(PlanningList.upcoming([flat], from: 9, seasonalAbove: 1.25).isEmpty)
         XCTAssertNil(flat.peakLabel(seasonalAbove: 1.25))
-        // The same row does have a label when the reader lowers the bar.
+        // The same row does have a label when the bar is lowered.
         XCTAssertNotNil(flat.peakLabel(seasonalAbove: 1.0))
     }
 
@@ -154,7 +120,6 @@ final class PlanningListTests: XCTestCase {
         // Under two complete years the server sends nulls, and nothing may be invented.
         let cold = keyword("cold", peakMonth: nil, seasonality: nil)
         XCTAssertNil(cold.peakLabel(seasonalAbove: 1.25))
-        XCTAssertTrue(PlanningList.upcoming([cold], from: 9, seasonalAbove: 1.25).isEmpty)
     }
 
     func testAnUnknownVerdictReadsAsNotMeasured() {
@@ -333,11 +298,23 @@ extension PlanningListTests {
         // whose help text tells the reader to configure a DataForSEO key and sync. That
         // would change nothing — a brand query is never asked about, key or no key.
         XCTAssertEqual(KeywordVerdict(rawValue: "brand"), .brand)
-        XCTAssertEqual(KeywordVerdict.brand.label, "Your own brand")
+        XCTAssertEqual(KeywordVerdict.brand.label, "Brand")
         XCTAssertTrue(
-            KeywordVerdict.allCases.contains(.brand),
-            "The chips are built from allCases, so a verdict missing here cannot be filtered on."
+            PlanningList.verdictFilters.contains(.brand),
+            "The chips are built from verdictFilters, so a verdict missing there cannot be filtered on."
         )
+    }
+
+    func testTheFiltersLeaveOutTheVerdictsThatCannotBeActedOn() {
+        // A chip that can only ever read 0 is worse than no chip. The vendor answers a term
+        // nobody searches for with no volume at all — `unreported` — so `no-demand` needs a
+        // literal zero it does not send; and `unmeasured` is our missing key, not a verdict
+        // on a keyword, which is what the Measured figure above the list reports.
+        XCTAssertFalse(PlanningList.verdictFilters.contains(.noDemand))
+        XCTAssertFalse(PlanningList.verdictFilters.contains(.unmeasured))
+        // Both are still verdicts a row can carry and name for itself.
+        XCTAssertEqual(KeywordVerdict(rawValue: "no-demand"), .noDemand)
+        XCTAssertEqual(KeywordVerdict(rawValue: "unmeasured"), .unmeasured)
     }
 
     func testAVerdictThisBuildDoesNotKnowStillReadsAsUnmeasured() {

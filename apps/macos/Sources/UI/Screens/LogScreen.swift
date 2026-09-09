@@ -125,34 +125,13 @@ struct LogScreen: View {
             let counts = LogList.kindCounts(entries)
             FlowRow(spacing: 6) {
                 ForEach(LogKind.allCases) { kind in
-                    let count = counts[kind] ?? 0
-                    Button {
-                        toggle(kind)
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: kind.symbol)
-                                .font(.caption2)
-                            Text("\(kind.label) \(count)")
-                                .font(.caption)
-                                .monospacedDigit()
-                        }
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .background(
-                            state.logKinds.contains(kind)
-                                ? Palette.acid.opacity(0.18)
-                                : Palette.line.opacity(0.5),
-                            in: .capsule
-                        )
-                        .overlay(
-                            Capsule().strokeBorder(
-                                state.logKinds.contains(kind) ? Palette.acid.opacity(0.6) : .clear
-                            )
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(count == 0)
-                    .opacity(count == 0 ? 0.4 : 1)
+                    FilterChip(
+                        label: kind.label,
+                        count: counts[kind] ?? 0,
+                        symbol: kind.symbol,
+                        isOn: state.logKinds.contains(kind),
+                        action: { toggle(kind) }
+                    )
                     .help(kind.meaning)
                 }
             }
