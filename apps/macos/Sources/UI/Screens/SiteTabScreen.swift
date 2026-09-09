@@ -13,6 +13,9 @@ struct SiteTabScreen: View {
     let onRefresh: () -> Void
 
     @Environment(\.isTabPreview) private var isPreview
+    /// The screens this tab has shown. A screen stays mounted once visited, so going back to
+    /// it is a visibility flip, not a rebuild of its charts and lists.
+    @State private var mounted: Set<SiteScreen> = []
 
     var body: some View {
         // One header row for every screen, pinned above the content, so the site's name,
@@ -27,7 +30,7 @@ struct SiteTabScreen: View {
             Rectangle()
                 .fill(Palette.line)
                 .frame(height: 1)
-            screen
+            screens
         }
         // The live count polls only while the real screen is shown: a preview is a still.
         .task(id: overview.id) {
@@ -46,9 +49,31 @@ struct SiteTabScreen: View {
         }
     }
 
+    /// The chosen screen in front, the ones visited before kept behind it, hidden. The swap
+    /// is instant the way a tab's is: nothing is built or torn down, only shown. Each hidden
+    /// screen keeps its scroll position and its open page. A preview is a still of one
+    /// screen and mounts only that.
+    private var screens: some View {
+        ZStack {
+            ForEach(SiteScreen.allCases) { screen in
+                let isActive = screen == state.screen
+                if isActive || (!isPreview && mounted.contains(screen)) {
+                    view(for: screen)
+                        .opacity(isActive ? 1 : 0)
+                        .allowsHitTesting(isActive)
+                        .accessibilityHidden(!isActive)
+                        .zIndex(isActive ? 1 : 0)
+                }
+            }
+        }
+        .onChange(of: state.screen, initial: true) { _, screen in
+            mounted.insert(screen)
+        }
+    }
+
     @ViewBuilder
-    private var screen: some View {
-        switch state.screen {
+    private func view(for screen: SiteScreen) -> some View {
+        switch screen {
         case .dashboard:
             dashboard
         case .registry:
