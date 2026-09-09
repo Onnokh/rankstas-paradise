@@ -21,6 +21,62 @@ import { Schema } from "effect"
 export const foldKeyword = (keyword: string): string =>
   keyword.trim().toLowerCase().replace(/\s+/g, " ")
 
+// Words that carry no meaning of their own in a search phrase. Kept short on
+// purpose: every word dropped here merges two keywords that a reader can still
+// tell apart, so the list holds only articles and prepositions.
+const QUERY_STOPWORDS: ReadonlySet<string> = new Set([
+  "a",
+  "an",
+  "the",
+  "for",
+  "in",
+  "on",
+  "of",
+  "to",
+  "is",
+  "and",
+  "with",
+  "your",
+])
+
+/**
+ * The shape of a query, for adding volumes up — NEVER for storing or matching.
+ *
+ * DataForSEO answers a seed with every word order it has a number for, and
+ * bills for each: `background design for website`, `design background website`
+ * and `website design background` come back as three rows of 210 a month. They
+ * are one query. Google ranks one page for all three, so summing the rows
+ * reports 630 a month of demand that a page can only win once.
+ *
+ * That mattered more than it sounds. On 2026-09-09 shadertown's plan claimed
+ * 1,470 a month behind `/3d-background` for a query worth 390, and its total
+ * addressable demand read 28,880 against a true 22,290 — a fifth of the number
+ * a decision would be made on. So volume totals group on this shape and count
+ * each group once.
+ *
+ * Word order goes, articles and prepositions go, and a trailing plural `s`
+ * goes. It is deliberately blunt: it exists to stop a total being wrong by a
+ * fifth, not to model English. Anything it merges wrongly costs one row in a
+ * sum; anything it fails to merge leaves the old over-count, which is the
+ * safer direction to be wrong in.
+ *
+ * Not a storage key. `foldKeyword` is what a keyword is stored, matched and
+ * paid for under — two different queries can share a shape, and joining on
+ * this would hand one keyword's metrics to another.
+ */
+export const queryShape = (keyword: string): string =>
+  foldKeyword(keyword)
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .split(/\s+/)
+    .filter((word) => word !== "" && !QUERY_STOPWORDS.has(word))
+    .map((word) =>
+      word.length > 3 && word.endsWith("s") && !word.endsWith("ss")
+        ? word.slice(0, -1)
+        : word,
+    )
+    .sort()
+    .join(" ")
+
 // One month of a keyword's volume history, as DataForSEO reports it.
 //
 // The series is long: a live call on 2026-09-08 returned 94 months per keyword,

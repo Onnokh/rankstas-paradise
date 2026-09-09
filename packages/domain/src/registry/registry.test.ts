@@ -224,20 +224,71 @@ test("append rejects a targetUrl that is not a path", async () => {
   })
 })
 
-test("append rejects fields with commas and bad dates", async () => {
+test("append rejects a newline and a bad date, but not a comma", async () => {
   await withTemp(async (path) => {
+    // A rationale is prose, and prose has commas in it. Refusing them pushed
+    // the CSV out through the API at every caller that wrote a readable one.
+    await run(
+      path,
+      Registry.use.appendRegistryEntry(
+        entry({ whyOpportunity: "Low difficulty, and the SERP is thin" }),
+      ),
+    )
+    const [row] = await run(path, Registry.use.loadRegistry())
+    expect(row?.whyOpportunity).toBe("Low difficulty, and the SERP is thin")
+
+    // Still refused: the reader splits the file on newlines before it looks at
+    // a field, so one inside a field would need a parser that reads across
+    // lines.
     expectRegistryError(
       await runExit(
         path,
-        Registry.use.appendRegistryEntry(entry({ cluster: "a,b" })),
+        Registry.use.appendRegistryEntry(
+          entry({ keyword: "two", whyOpportunity: "one\ntwo" }),
+        ),
       ),
     )
     expectRegistryError(
       await runExit(
         path,
-        Registry.use.appendRegistryEntry(entry({ publishedAt: "2026/01/01" })),
+        Registry.use.appendRegistryEntry(
+          entry({ keyword: "three", publishedAt: "2026/01/01" }),
+        ),
       ),
     )
+  })
+})
+
+test("a quoted field survives the round trip, quote marks and all", async () => {
+  await withTemp(async (path) => {
+    // Every case the codec has to get right in one row: a comma, a doubled
+    // quote, and a field that is only a quoted empty string.
+    const why = 'He said "yes, ship it" and left'
+    await run(
+      path,
+      Registry.use.appendRegistryEntry(
+        entry({ cluster: "a,b", whyOpportunity: why, intent: 'say "hi"' }),
+      ),
+    )
+
+    const raw = await Bun.file(path).text()
+    expect(raw).toContain('"a,b"')
+    expect(raw).toContain('"He said ""yes, ship it"" and left"')
+
+    const [row] = await run(path, Registry.use.loadRegistry())
+    expect(row?.cluster).toBe("a,b")
+    expect(row?.whyOpportunity).toBe(why)
+    expect(row?.intent).toBe('say "hi"')
+  })
+})
+
+test("a row whose quote is never closed is refused, not guessed at", async () => {
+  await withTemp(async (path) => {
+    await writeFile(
+      path,
+      `${registryHeaderV2}\ncluster,keyword,/p,intent,1,,,planned,"never closed\n`,
+    )
+    expectRegistryError(await runExit(path, Registry.use.loadRegistry()))
   })
 })
 
@@ -335,3 +386,146 @@ test("debugMode overrides publishedAt, baselineDate, and status on load", async 
     expect(rows[0]?.status).toBe("Debug: measuring")
   })
 })
+
+// --- what the reports can and cannot show -----------------------------------
+
+test("a per-keyword patch of a target-level field is refused", async () => {
+  await withTemp(async (path) => {
+    await run(path, Registry.use.appendRegistryEntry(entry({ keyword: "one" })))
+    await run(path, Registry.use.appendRegistryEntry(entry({ keyword: "two" })))
+
+    // The reports read status, rationale, priority and the dates off the
+    // target's first row and present them as the target's own. Setting one for
+    // a single keyword therefore either shows nothing or relabels the whole
+    // target — which is what happened to /3d-background on 2026-09-09.
+    for (const patch of [
+      { status: "Duplicate" },
+      { whyOpportunity: "a permutation" },
+      { priority: "P3" },
+      { publishedAt: "2026-01-01" },
+      { baselineDate: "2026-01-01" },
+    ]) {
+      const exit = await runExit(
+        path,
+        Registry.use.updateRegistryRows("/widgets", "one", patch),
+      )
+      expectRegistryError(exit)
+    }
+
+    // Nothing was written: the guard runs before the file is touched.
+    const rows = await run(path, Registry.use.loadRegistry())
+    expect(rows.map((row) => row.status)).toEqual(["planned", "planned"])
+  })
+})
+
+test("the same patch is allowed for the whole target, and for a keyword's own fields", async () => {
+  await withTemp(async (path) => {
+    await run(path, Registry.use.appendRegistryEntry(entry({ keyword: "one" })))
+    await run(path, Registry.use.appendRegistryEntry(entry({ keyword: "two" })))
+
+    // Target-wide: every row moves together, so the target reads consistently.
+    expect(
+      await run(
+        path,
+        Registry.use.updateRegistryRows("/widgets", undefined, {
+          status: "Duplicate",
+        }),
+      ),
+    ).toBe(2)
+
+    // Per-keyword is still the right tool for the fields the reports DO carry
+    // per keyword — its cluster and its intent.
+    expect(
+      await run(
+        path,
+        Registry.use.updateRegistryRows("/widgets", "one", {
+          cluster: "cluster-b",
+        }),
+      ),
+    ).toBe(1)
+
+    const rows = await run(path, Registry.use.loadRegistry())
+    expect(rows.map((row) => [row.keyword, row.status, row.cluster])).toEqual([
+      ["one", "Duplicate", "cluster-b"],
+      ["two", "Duplicate", "cluster-a"],
+    ])
+  })
+})
+
+// --- removal ----------------------------------------------------------------
+
+test("remove takes out one keyword and leaves the rest of the target", async () => {
+  await withTemp(async (path) => {
+    await run(path, Registry.use.appendRegistryEntry(entry({ keyword: "one" })))
+    await run(path, Registry.use.appendRegistryEntry(entry({ keyword: "two" })))
+    await run(
+      path,
+      Registry.use.appendRegistryEntry(
+        entry({ keyword: "elsewhere", targetUrl: "/other" }),
+      ),
+    )
+
+    // Case-insensitive, like the duplicate check and the patch matcher.
+    expect(
+      await run(path, Registry.use.removeRegistryRows("/widgets", "ONE")),
+    ).toBe(1)
+
+    const rows = await run(path, Registry.use.loadRegistry())
+    expect(rows.map((row) => row.keyword)).toEqual(["two", "elsewhere"])
+  })
+})
+
+test("remove without a keyword retires the whole target", async () => {
+  await withTemp(async (path) => {
+    await run(path, Registry.use.appendRegistryEntry(entry({ keyword: "one" })))
+    await run(path, Registry.use.appendRegistryEntry(entry({ keyword: "two" })))
+    await run(
+      path,
+      Registry.use.appendRegistryEntry(
+        entry({ keyword: "elsewhere", targetUrl: "/other" }),
+      ),
+    )
+
+    expect(
+      await run(path, Registry.use.removeRegistryRows("/widgets", undefined)),
+    ).toBe(2)
+
+    const rows = await run(path, Registry.use.loadRegistry())
+    expect(rows.map((row) => row.targetUrl)).toEqual(["/other"])
+  })
+})
+
+test("remove refuses rather than answering zero", async () => {
+  await withTemp(async (path) => {
+    // No file at all.
+    expectRegistryError(
+      await runExit(path, Registry.use.removeRegistryRows("/widgets", undefined)),
+    )
+
+    await run(path, Registry.use.appendRegistryEntry(entry()))
+    // A target that is not there, and a keyword that is not on the target it
+    // names. Both are a caller with the wrong row, and a silent success would
+    // let a cleanup report work it never did.
+    expectRegistryError(
+      await runExit(path, Registry.use.removeRegistryRows("/nope", undefined)),
+    )
+    expectRegistryError(
+      await runExit(path, Registry.use.removeRegistryRows("/widgets", "nope")),
+    )
+
+    // Nothing was lost while it refused.
+    expect(await run(path, Registry.use.loadRegistry())).toHaveLength(1)
+  })
+})
+
+test("a removed keyword can be added again", async () => {
+  await withTemp(async (path) => {
+    // Removal is not dismissal: the keyword goes back to being un-planned, so
+    // the duplicate guard must not still be holding it.
+    await run(path, Registry.use.appendRegistryEntry(entry()))
+    await run(path, Registry.use.removeRegistryRows("/widgets", "best widgets"))
+    await run(path, Registry.use.appendRegistryEntry(entry()))
+    expect(await run(path, Registry.use.loadRegistry())).toHaveLength(1)
+  })
+})
+

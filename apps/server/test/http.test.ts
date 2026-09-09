@@ -226,7 +226,11 @@ describe("JSON routes", () => {
     expect(status).toBe(200)
     const envelope = body as Record<string, unknown>
     expect(typeof envelope.generatedAt).toBe("string")
-    expect(envelope.totals).toEqual({ proposals: 0, monthlyVolume: 0 })
+    expect(envelope.totals).toEqual({
+      proposals: 0,
+      distinctQueries: 0,
+      monthlyVolume: 0,
+    })
     expect(envelope.proposals).toEqual([])
   })
 

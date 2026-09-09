@@ -115,7 +115,7 @@ const fakeProposalsReport: KeywordProposalsReport = {
     label: "United States",
     provider: "labs",
   },
-  totals: { proposals: 1, monthlyVolume: 320 },
+  totals: { proposals: 1, distinctQueries: 1, monthlyVolume: 320 },
   proposals: [fakeProposal],
 }
 
@@ -287,7 +287,11 @@ test("keywords_proposed answers with the report envelope, not a bare array", asy
     expect(result.isError).toBeFalsy()
     const payload = JSON.parse(textOf(result))
     expect(payload).toEqual(fakeProposalsReport)
-    expect(payload.totals).toEqual({ proposals: 1, monthlyVolume: 320 })
+    expect(payload.totals).toEqual({
+      proposals: 1,
+      distinctQueries: 1,
+      monthlyVolume: 320,
+    })
     expect(Array.isArray(payload)).toBe(false)
   })
 })

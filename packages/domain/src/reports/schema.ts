@@ -551,10 +551,16 @@ export const RegistryHealthReport = Schema.Struct({
     unreported: Schema.Number,
     noDemand: Schema.Number,
     hasDemand: Schema.Number,
-    // Monthly searches summed over the keywords that have demand — the size of
-    // the plan's addressable market, as far as it has been measured. Not a
-    // traffic forecast: it is every search, not the share a first-page ranking
-    // would win.
+    // How many DISTINCT queries the rows with demand amount to. Lower than
+    // `hasDemand` whenever the plan holds one query in several word orders,
+    // which DataForSEO reports and bills separately. The gap is the answer to
+    // "why is the volume lower than the rows suggest".
+    distinctQueries: Schema.Number,
+    // Monthly searches over the keywords that have demand, counting each
+    // distinct query ONCE however many word orders of it the plan holds — a
+    // page wins them together, so adding the rows up would report demand it
+    // could only capture once. Not a traffic forecast either way: it is every
+    // search, not the share a first-page ranking would win.
     monthlyVolume: Schema.Number,
   }),
   // Keywords with demand first, strongest first, then everything the reader has
@@ -573,9 +579,14 @@ export const KeywordProposalsReport = Schema.Struct({
   market: Schema.optional(MarketReport),
   totals: Schema.Struct({
     proposals: Schema.Number,
-    // Monthly searches summed over every proposal, which is the demand on offer
-    // — the counterpart of RegistryHealthReport's `monthlyVolume` for the plan
-    // the Site does not have yet.
+    // How many DISTINCT queries those proposals amount to. A discovery run
+    // answers a seed in every word order it has a number for, so this is
+    // routinely far below `proposals` — and it is the count worth reading.
+    distinctQueries: Schema.Number,
+    // Monthly searches over the proposals, counting each distinct query once
+    // rather than once per word order — the counterpart of
+    // RegistryHealthReport's `monthlyVolume` for the plan the Site does not
+    // have yet.
     monthlyVolume: Schema.Number,
   }),
   proposals: Schema.Array(KeywordProposal),
@@ -650,6 +661,16 @@ export const RegistrySetResult = Schema.Struct({
 }).annotate({ identifier: "RegistrySetResult" })
 export interface RegistrySetResult
   extends Schema.Schema.Type<typeof RegistrySetResult> {}
+
+// What a removal took out. `keyword` is null when the whole target went, which
+// is how a page is retired from the plan.
+export const RegistryRemoveResult = Schema.Struct({
+  targetUrl: Schema.String,
+  keyword: Schema.NullOr(Schema.String),
+  removedRows: Schema.Number,
+}).annotate({ identifier: "RegistryRemoveResult" })
+export interface RegistryRemoveResult
+  extends Schema.Schema.Type<typeof RegistryRemoveResult> {}
 
 export const LogAddResult = Schema.Struct({
   logged: LogEntry,

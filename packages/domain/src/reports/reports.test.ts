@@ -367,6 +367,7 @@ beforeAll(async () => {
     loadRegistry: () => Effect.succeed(fixtureRegistry),
     appendRegistryEntry: () => Effect.void,
     updateRegistryRows: () => Effect.succeed(0),
+    removeRegistryRows: () => Effect.succeed(0),
     markMissingBaselines: () => Effect.succeed(0),
   } satisfies Registry.Interface)
 
@@ -803,6 +804,8 @@ test("registryHealth sorts the plan by demand and counts each verdict", async ()
     unreported: 1,
     noDemand: 1,
     hasDemand: 1,
+    // One keyword with demand is one distinct query.
+    distinctQueries: 1,
     // Only the keywords with demand count toward the plan's addressable
     // market; the empty ones would otherwise read as if they contributed.
     monthlyVolume: 1_900,
@@ -1383,3 +1386,46 @@ test("liveReport carries the provider status and the live count", async () => {
   expect(report.live?.windowMinutes).toBe(30)
   expect(report.live?.series).toHaveLength(30)
 })
+
+// --- one query, however many word orders the vendor billed for --------------
+
+test("distinctVolume counts a query once and takes its largest number", () => {
+  // The rows that started this, straight from a shadertown discovery run:
+  // four word orders of one query, 210 a month each. Summing them claims 840 a
+  // month of demand that one page can only win once.
+  const rows = [
+    { keyword: "background design for website", searchVolume: 210 },
+    { keyword: "design background website", searchVolume: 200 },
+    { keyword: "website design background", searchVolume: 210 },
+    { keyword: "background website design", searchVolume: 190 },
+  ]
+  expect(Reports.distinctVolume(rows)).toEqual({
+    distinctQueries: 1,
+    // Largest, not first and not the mean: the vendor's numbers for one query
+    // disagree by a little and the biggest reads as its demand.
+    monthlyVolume: 210,
+  })
+})
+
+test("distinctVolume keeps genuinely different queries apart", () => {
+  expect(
+    Reports.distinctVolume([
+      { keyword: "glassmorphism ui", searchVolume: 880 },
+      { keyword: "blob animation css", searchVolume: 2_400 },
+      { keyword: "css blob animation", searchVolume: 2_400 },
+    ]),
+  ).toEqual({ distinctQueries: 2, monthlyVolume: 3_280 })
+})
+
+test("distinctVolume counts an unmeasured query without adding volume", () => {
+  // A row the vendor reports nothing for is still something the plan aims at,
+  // so it counts as a query; treating its null as a zero volume would be the
+  // usual mistake in the other direction.
+  expect(
+    Reports.distinctVolume([
+      { keyword: "webgpu shader library", searchVolume: null },
+      { keyword: "webgpu shaders", searchVolume: 30 },
+    ]),
+  ).toEqual({ distinctQueries: 2, monthlyVolume: 30 })
+})
+
