@@ -202,11 +202,23 @@ final class RankingStore {
             guard var report = proposals[siteID] else { return }
             let gone = Set(keywords.map { $0.lowercased() })
             report.proposals.removeAll { gone.contains($0.keyword.lowercased()) }
+            // Only the count is recomputed here. The volume is not a sum of the rows:
+            // a discovery run returns one query in several word orders and the report
+            // counts it once, and that rule lives on the server. Adding the rows up
+            // again here is how the screen ends up showing a fifth more demand than
+            // the plan has.
             report.totals = ProposalTotals(
                 proposals: report.proposals.count,
-                monthlyVolume: report.proposals.reduce(0) { $0 + ($1.searchVolume ?? 0) }
+                monthlyVolume: report.totals.monthlyVolume
             )
             proposals[siteID] = report
+
+            // So the volume comes from a re-read instead. Best-effort: the rows are
+            // already gone for certain, and a failed read leaves the volume one
+            // dismissal stale rather than wrong by a rule this file does not own.
+            if let refreshed = try? await client.keywordProposals(siteID: siteID) {
+                proposals[siteID] = refreshed
+            }
             writeCache(siteID)
         } catch is CancellationError {
             return

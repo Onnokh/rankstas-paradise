@@ -18,6 +18,7 @@ import { KeywordDiscoveryError } from "../keyword-discovery/schema.ts"
 import { KeywordMetrics } from "../keyword-metrics/keyword-metrics.ts"
 import {
   foldKeyword,
+  queryShape,
   type KeywordMetricSummary,
   type MonthlySearch,
 } from "../keyword-metrics/schema.ts"
@@ -68,6 +69,7 @@ import {
   type RegistryHealthReport,
   type KeywordHealthVerdict,
   type RegistryListReport,
+  type RegistryRemoveResult,
   type RegistrySetResult,
   ReportsError,
   type SignalSummary,
@@ -122,6 +124,13 @@ export interface Interface {
     keyword: string | undefined,
     patch: RegistryPatch,
   ) => Effect.Effect<RegistrySetResult, ReportsError>
+  // Delete rows for a target, or one keyword of it. The counterpart of
+  // `registryAdd`: a plan you can only add to accumulates every mistake ever
+  // made in it.
+  readonly registryRemove: (
+    target: string,
+    keyword: string | undefined,
+  ) => Effect.Effect<RegistryRemoveResult, ReportsError>
   readonly logAdd: (
     input: LogAddInput,
   ) => Effect.Effect<LogAddResult, ReportsError>
@@ -744,10 +753,7 @@ export const layer = Layer.effect(
               ...(resolved.market ? { market: resolved.market } : {}),
               totals: {
                 proposals: proposals.length,
-                monthlyVolume: proposals.reduce(
-                  (total, proposal) => total + (proposal.searchVolume ?? 0),
-                  0,
-                ),
+                ...distinctVolume(proposals),
               },
               proposals,
             }
@@ -840,12 +846,8 @@ export const layer = Layer.effect(
                 unreported: count("unreported"),
                 noDemand: count("no-demand"),
                 hasDemand: count("has-demand"),
-                monthlyVolume: keywords.reduce(
-                  (total, row) =>
-                    row.verdict === "has-demand"
-                      ? total + (row.searchVolume ?? 0)
-                      : total,
-                  0,
+                ...distinctVolume(
+                  keywords.filter((row) => row.verdict === "has-demand"),
                 ),
               },
               keywords,
@@ -883,6 +885,27 @@ export const layer = Layer.effect(
             }
             yield* registry.appendRegistryEntry(entry)
             return { added: entrySummary(entry), targetUrl: input.target }
+          }),
+        ),
+
+      registryRemove: (target, keyword) =>
+        wrap(
+          Effect.gen(function* () {
+            if (!target)
+              return yield* Effect.fail(
+                new ReportsError({
+                  message: "registry remove requires a target path",
+                }),
+              )
+            const removedRows = yield* registry.removeRegistryRows(
+              target,
+              keyword,
+            )
+            return {
+              targetUrl: target,
+              keyword: keyword ?? null,
+              removedRows,
+            }
           }),
         ),
 
@@ -1490,6 +1513,32 @@ export const demandReport = (metric: KeywordMetricSummary): DemandReport => ({
   intent: metric.intent,
   fetchedAt: metric.fetchedAt,
 })
+
+/**
+ * Distinct-query count and volume for a set of keyword rows.
+ *
+ * Groups on `queryShape`, which folds word order, articles and trailing
+ * plurals together, and takes the LARGEST volume in each group rather than the
+ * sum. Largest, not first: DataForSEO's own numbers for one query in different
+ * word orders disagree by a little, and the biggest is the one that reads as
+ * the query's demand.
+ *
+ * A row the vendor reports no volume for contributes a group but no volume, so
+ * `distinctQueries` counts what is being planned for and `monthlyVolume`
+ * counts only what has been measured.
+ */
+export const distinctVolume = (
+  rows: ReadonlyArray<{ readonly keyword: string; readonly searchVolume: number | null }>,
+): { distinctQueries: number; monthlyVolume: number } => {
+  const largest = new Map<string, number>()
+  for (const row of rows) {
+    const shape = queryShape(row.keyword)
+    largest.set(shape, Math.max(largest.get(shape) ?? 0, row.searchVolume ?? 0))
+  }
+  let monthlyVolume = 0
+  for (const volume of largest.values()) monthlyVolume += volume
+  return { distinctQueries: largest.size, monthlyVolume }
+}
 
 export const signalSummary = (
   signal: OpportunitySignal,
