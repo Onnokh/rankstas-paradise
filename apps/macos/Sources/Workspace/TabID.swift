@@ -38,6 +38,10 @@ final class SiteTabState {
     /// and the launch. See `PlanningPreferences`.
     var planningSearch = ""
     var planningVerdicts: Set<KeywordVerdict> = []
+    /// How many proposals the Planning screen draws. Here rather than in
+    /// `PlanningPreferences` on purpose: this is how far down a list you have walked, not a
+    /// judgement about the site, and it should start at the top again next launch.
+    var planningProposalsShown = PlanningList.proposalPage
 
     init(siteID: Site.ID) {
         self.siteID = siteID

@@ -288,6 +288,51 @@ extension PlanningListTests {
         XCTAssertEqual(PlanningList.proposals(rows).count, 1)
     }
 
+    func testAProposalRowComparesEveryValueItDraws() {
+        // The row is drawn with `.equatable()`, so this `==` decides whether a changed
+        // number reaches the screen. It ignores the dismiss closure, which cannot be
+        // compared — everything else it draws has to be in here.
+        let row = ProposalRow(proposal: proposal("a", seed: "s", difficulty: 20), reach: 10, onDismiss: {})
+
+        XCTAssertEqual(row, ProposalRow(proposal: row.proposal, reach: 10, onDismiss: {}),
+                       "The closure is not part of it: two rows over the same values are equal.")
+        XCTAssertNotEqual(row, ProposalRow(proposal: row.proposal, reach: 40, onDismiss: {}),
+                          "Reach colours the difficulty, so moving it has to redraw the row.")
+        XCTAssertNotEqual(
+            row,
+            ProposalRow(proposal: proposal("a", seed: "s", difficulty: 90), reach: 10, onDismiss: {}),
+            "A re-sync that changed the difficulty has to reach the screen."
+        )
+    }
+
+    func testTheProposedListDrawsOnePageAtATime() {
+        // The cost this exists for: one discovery run left shadertown 544 proposals, and
+        // the screen drew every one of them.
+        let rows = (0..<544).map { proposal("keyword \($0)", seed: "seed") }
+
+        XCTAssertEqual(
+            PlanningList.page(rows, shown: PlanningList.proposalPage).count,
+            PlanningList.proposalPage
+        )
+        // The window moves, and it is a prefix: the reader reads down the list the server
+        // ranked, not a sample of it.
+        let second = PlanningList.page(rows, shown: PlanningList.proposalPage * 2)
+        XCTAssertEqual(second.count, PlanningList.proposalPage * 2)
+        XCTAssertEqual(second.first?.keyword, "keyword 0")
+        XCTAssertEqual(PlanningList.page(rows, shown: rows.count).count, 544,
+                       "Asking for all of them draws all of them.")
+    }
+
+    func testAShortListIsNotPaddedAndABadCountStillDrawsAPage() {
+        let three = (0..<3).map { proposal("keyword \($0)", seed: "seed") }
+        XCTAssertEqual(PlanningList.page(three, shown: PlanningList.proposalPage).count, 3,
+                       "A window wider than the list is just the list.")
+
+        let many = (0..<100).map { proposal("keyword \($0)", seed: "seed") }
+        XCTAssertEqual(PlanningList.page(many, shown: 0).count, PlanningList.proposalPage,
+                       "A count of zero would leave a card with no rows and no way back.")
+    }
+
     private func proposal(
         _ keyword: String,
         seed: String,

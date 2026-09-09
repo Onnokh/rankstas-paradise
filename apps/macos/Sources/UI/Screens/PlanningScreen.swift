@@ -392,6 +392,7 @@ struct PlanningScreen: View {
                 columnHeadings
                 ForEach(rows) { keyword in
                     PlanningRow(keyword: keyword, reach: reach)
+                        .equatable()
                     Divider().opacity(0.4)
                 }
             }
@@ -407,6 +408,13 @@ struct PlanningScreen: View {
             rankings.proposals[overview.id]?.proposals ?? [],
             search: state.planningSearch
         )
+    }
+
+    /// The proposals drawn right now: the first page of them, and one more page each time
+    /// the reader asks. The count in the heading stays the count of the whole list — a
+    /// drawn row is not a found keyword, and the heading is about what was found.
+    private var drawnProposals: ArraySlice<KeywordProposal> {
+        PlanningList.page(proposals, shown: state.planningProposalsShown)
     }
 
     /// Keywords the site does NOT have, offered for a decision. Below the plan rather than
@@ -447,7 +455,7 @@ struct PlanningScreen: View {
                     .foregroundStyle(.secondary)
 
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(proposals) { proposal in
+                    ForEach(drawnProposals) { proposal in
                         ProposalRow(
                             proposal: proposal,
                             reach: reach,
@@ -455,13 +463,47 @@ struct PlanningScreen: View {
                                 Task { await rankings.dismissProposals([proposal.keyword], siteID: overview.id) }
                             }
                         )
+                        .equatable()
                         Divider().opacity(0.4)
                     }
                 }
                 .padding(.vertical, 4)
                 .cardSurface(cornerRadius: 12)
+
+                if drawnProposals.count < proposals.count {
+                    more
+                }
             }
         }
+    }
+
+    /// What is held back, and the two ways to see it. The line comes before the buttons
+    /// because the number is the point: a reader who has just run a discovery needs to
+    /// know the card is a window onto it, not the whole of it.
+    private var more: some View {
+        HStack(spacing: 12) {
+            Text("Showing \(drawnProposals.count) of \(proposals.count).")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            Button("Show \(min(PlanningList.proposalPage, proposals.count - drawnProposals.count)) more") {
+                state.planningProposalsShown = drawnProposals.count + PlanningList.proposalPage
+            }
+            .buttonStyle(.plain)
+            .font(.caption)
+            .foregroundStyle(Palette.mint)
+            // Drawing hundreds of rows at once is what made this screen slow, so the way
+            // to do it is offered rather than assumed.
+            Button("Show all") {
+                state.planningProposalsShown = proposals.count
+            }
+            .buttonStyle(.plain)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .help("Slow with a long list: every row is drawn.")
+            Spacer()
+        }
+        .padding(.top, 4)
     }
 
     private var columnHeadings: some View {
@@ -484,7 +526,11 @@ struct PlanningScreen: View {
 }
 
 /// One planned keyword: what it is aimed at, what the vendor said, and when it peaks.
-private struct PlanningRow: View {
+///
+/// `Equatable`, and drawn with `.equatable()`: the screen's body is re-evaluated whenever
+/// anything the store publishes changes, and the rows do not have to be rebuilt for a
+/// spinner that appeared somewhere above them.
+private struct PlanningRow: View, Equatable {
     let keyword: KeywordHealth
     let reach: Double
 
@@ -578,12 +624,21 @@ private struct PlanningRow: View {
 /// One proposed keyword: what it is, which seed found it, and what the vendor said when it
 /// was proposed. The numbers are frozen at that moment, which is why they can disagree with
 /// the same keyword's current metric elsewhere.
-private struct ProposalRow: View {
+/// Not private, unlike the rows around it: its `==` is written by hand, so it can drift
+/// from the fields it has to compare, and a test pins it.
+struct ProposalRow: View, Equatable {
     let proposal: KeywordProposal
     let reach: Double
     let onDismiss: () -> Void
 
     @State private var dismissing = false
+
+    /// Compared on its values, ignoring the closure, which cannot be compared. Sound here
+    /// and not in general: the closure only ever dismisses `proposal.keyword` on the site
+    /// the screen is showing, so two rows equal by these fields do the same thing.
+    nonisolated static func == (lhs: ProposalRow, rhs: ProposalRow) -> Bool {
+        lhs.proposal == rhs.proposal && lhs.reach == rhs.reach
+    }
 
     var body: some View {
         HStack(spacing: PlanningRow.columnSpacing) {
