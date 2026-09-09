@@ -6,6 +6,11 @@
 // charged for every row it gets back, and the value of the service is entirely
 // in what it removes before a person reads it — so each filter is tested by the
 // count it reports, not only by the rows that survive.
+//
+// The first of those is now that a run removes nothing from the store because
+// it puts nothing there: relevance is the caller's judgement, `propose` is
+// where it lands, and a test that let `discover` write would let 830 rows about
+// a Disney film back into a reader's list.
 import { expect, test } from "bun:test"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/unstable/http"
@@ -16,7 +21,7 @@ import { CurrentSite } from "../sites/current-site.ts"
 import { Site } from "../sites/schema.ts"
 import { Storage } from "../storage/storage.ts"
 import { KeywordDiscovery } from "./keyword-discovery.ts"
-import { type KeywordProposal } from "./schema.ts"
+import { type KeywordProposal, type ProposalInput } from "./schema.ts"
 
 const siteIn = (locationCode: number, languageCode: string, provider: string) =>
   Schema.decodeUnknownSync(Site)({
@@ -148,6 +153,19 @@ const entry = (keyword: string): RegistryEntry => ({
   status: "live",
 })
 
+// A row as a caller hands it back: the vendor's numbers and nothing else. No
+// Market, no status, no instant — those are the service's to set.
+const row = (keyword: string, volume: number | null): ProposalInput => ({
+  keyword,
+  seed: "mount tracker",
+  source: "suggestions",
+  searchVolume: volume,
+  difficulty: 20,
+  costPerClick: 0.8,
+  competition: 0.3,
+  intent: "informational",
+})
+
 const registryStub = (entries: ReadonlyArray<RegistryEntry>) =>
   Layer.mock(Registry.Service)({ loadRegistry: () => Effect.succeed(entries) })
 
@@ -170,7 +188,7 @@ const buildLayer = (
     ),
   )
 
-test("a suggestions run asks Labs, proposes what it keeps, and reads back", async () => {
+test("a suggestions run asks Labs, offers what it keeps, and stores nothing", async () => {
   const store: Store = new Map()
   const calls: Array<Call> = []
   const http = fakeHttp(
@@ -199,26 +217,178 @@ test("a suggestions run asks Labs, proposes what it keeps, and reads back", asyn
   expect(result.source).toBe("suggestions")
   expect(result.returned).toBe(2)
   // Strongest demand first, so a reader who stops early stops on the good rows.
-  expect(result.proposals.map((proposal) => proposal.keyword)).toEqual([
+  expect(result.keywords.map((found) => found.keyword)).toEqual([
     "wow mount tracker addon",
     "wow mount tracker app",
   ])
-  expect(result.proposals[0]!.searchVolume).toBe(480)
-  expect(result.proposals[0]!.difficulty).toBe(20)
-  expect(result.proposals[0]!.intent).toBe("informational")
+  expect(result.keywords[0]!.searchVolume).toBe(480)
+  expect(result.keywords[0]!.difficulty).toBe(20)
+  expect(result.keywords[0]!.intent).toBe("informational")
   // The seed is folded on the row, so the same seed typed two ways groups.
-  expect(result.proposals[0]!.seed).toBe("wow mount tracker")
-  expect(result.proposals[0]!.status).toBe("proposed")
+  expect(result.keywords[0]!.seed).toBe("wow mount tracker")
+
+  // The point of the whole change: a run that nobody has judged writes nothing.
+  // These rows passed every filter this service has and could still be about a
+  // Disney film.
+  expect(store.size).toBe(0)
+  const proposed = await Effect.runPromise(
+    KeywordDiscovery.use
+      .proposed()
+      .pipe(Effect.provide(buildLayer(store, fakeHttp([], "", 500)))),
+  )
+  expect(proposed).toEqual([])
+})
+
+test("proposing stores the rows the caller kept, and only those", async () => {
+  const store: Store = new Map()
+  const calls: Array<Call> = []
+  const http = fakeHttp(
+    calls,
+    // The production shape of the problem: the biggest number is the wrong
+    // subject, and no filter here can tell.
+    labsBody([labsItem("big hero animation", 201_000), labsItem("hero background shader", 260)]),
+  )
+
+  const found = await Effect.runPromise(
+    KeywordDiscovery.use
+      .discover({ seed: "hero animation" })
+      .pipe(Effect.provide(buildLayer(store, http))),
+  )
+  expect(found.keywords.map((row) => row.keyword)).toEqual([
+    "big hero animation",
+    "hero background shader",
+  ])
+
+  const kept = found.keywords.filter((row) => row.keyword === "hero background shader")
+  const stored = await Effect.runPromise(
+    KeywordDiscovery.use.propose(kept).pipe(Effect.provide(buildLayer(store, http))),
+  )
+
+  expect(stored).toEqual({
+    named: 1,
+    stored: 1,
+    skippedKnown: 0,
+    skippedBrandOrOperator: 0,
+    skippedDuplicate: 0,
+  })
+  // Storing asks the vendor nothing: the one call is still the discover call.
+  expect(calls).toHaveLength(1)
 
   const proposed = await Effect.runPromise(
     KeywordDiscovery.use
       .proposed()
       .pipe(Effect.provide(buildLayer(store, fakeHttp([], "", 500)))),
   )
-  expect(proposed.map((proposal) => proposal.keyword)).toEqual([
-    "wow mount tracker addon",
-    "wow mount tracker app",
-  ])
+  expect(proposed.map((proposal) => proposal.keyword)).toEqual(["hero background shader"])
+  // The vendor's numbers, carried through the caller unchanged, plus the two
+  // fields storing adds.
+  expect(proposed[0]!.searchVolume).toBe(260)
+  expect(proposed[0]!.seed).toBe("hero animation")
+  expect(proposed[0]!.source).toBe("suggestions")
+  expect(proposed[0]!.status).toBe("proposed")
+  expect(proposed[0]!.locationCode).toBe(2840)
+  expect(proposed[0]!.languageCode).toBe("en")
+  // And the 201,000-a-month Disney film is nowhere in the store.
+  expect(store.size).toBe(1)
+})
+
+test("proposing counts every row it will not store, and the counts add up", async () => {
+  const store: Store = new Map()
+  const body = labsBody([labsItem("mount tracker addon", 480)])
+
+  // Dismissed first, so the skip that matters most has something to catch.
+  await Effect.runPromise(
+    KeywordDiscovery.use
+      .propose([row("mount tracker app", 90)])
+      .pipe(Effect.provide(buildLayer(store, fakeHttp([], body)))),
+  )
+  await Effect.runPromise(
+    KeywordDiscovery.use
+      .dismiss(["mount tracker app"])
+      .pipe(Effect.provide(buildLayer(store, fakeHttp([], body)))),
+  )
+
+  const calls: Array<Call> = []
+  const stored = await Effect.runPromise(
+    KeywordDiscovery.use
+      .propose([
+        row("mount tracker addon", 480),
+        // Already dismissed: a caller naming it again must not resurrect it.
+        row("mount tracker app", 90),
+        // Already in the plan.
+        row("mount tracker guide", 900),
+        // The Site's own name, and a search operator.
+        row("ranksta mount tracker", 400),
+        row("site:example.com mounts", 300),
+        // Named twice in one call.
+        row("Mount Tracker Addon", 480),
+      ])
+      .pipe(
+        Effect.provide(
+          buildLayer(store, fakeHttp(calls, body), {
+            entries: [entry("Mount Tracker Guide")],
+          }),
+        ),
+      ),
+  )
+
+  expect(stored.stored).toBe(1)
+  expect(stored.skippedKnown).toBe(2)
+  expect(stored.skippedBrandOrOperator).toBe(2)
+  expect(stored.skippedDuplicate).toBe(1)
+  expect(
+    stored.stored +
+      stored.skippedKnown +
+      stored.skippedBrandOrOperator +
+      stored.skippedDuplicate,
+  ).toBe(stored.named)
+  // Nothing here reached DataForSEO. Storing is free, which is the reason the
+  // judging step can be a second call at all.
+  expect(calls).toHaveLength(0)
+
+  const proposed = await Effect.runPromise(
+    KeywordDiscovery.use
+      .proposed()
+      .pipe(Effect.provide(buildLayer(store, fakeHttp([], body)))),
+  )
+  expect(proposed.map((proposal) => proposal.keyword)).toEqual(["mount tracker addon"])
+})
+
+test("proposing keeps a low-volume keyword the caller kept on purpose", async () => {
+  // The volume floor belongs to the run, which already applied it. A caller
+  // that knows the subject and keeps a quiet term is making a judgement this
+  // service has no standing to overrule — and re-applying the floor here would
+  // silently drop it.
+  const store: Store = new Map()
+  const stored = await Effect.runPromise(
+    KeywordDiscovery.use
+      .propose([row("webgpu background shader", 0)])
+      .pipe(Effect.provide(buildLayer(store, fakeHttp([], "", 500)))),
+  )
+
+  expect(stored.stored).toBe(1)
+})
+
+test("proposing nothing is an error, not a store of nothing", async () => {
+  // It means the judging step kept nothing, or the rows were lost between the
+  // two calls. Either way the reader should look rather than read a silent zero.
+  const error = await failureOf(
+    KeywordDiscovery.use
+      .propose([])
+      .pipe(Effect.provide(buildLayer(new Map(), fakeHttp([], "", 500)))),
+  )
+
+  expect(error.message).toContain("at least one keyword")
+})
+
+test("proposing a row with no keyword fails rather than storing a blank one", async () => {
+  const error = await failureOf(
+    KeywordDiscovery.use
+      .propose([row("   ", 400)])
+      .pipe(Effect.provide(buildLayer(new Map(), fakeHttp([], "", 500)))),
+  )
+
+  expect(error.message).toContain("needs a keyword")
 })
 
 test("a related run reads the deeper nesting and walks two levels", async () => {
@@ -240,7 +410,7 @@ test("a related run reads the deeper nesting and walks two levels", async () => 
   // The SERP for every keyword found is a much larger response, and unread.
   expect(calls[0]!.payload["include_serp_info"]).toBe(false)
   expect(result.source).toBe("related")
-  expect(result.proposals.map((proposal) => proposal.keyword)).toEqual(["mount farming guide"])
+  expect(result.keywords.map((found) => found.keyword)).toEqual(["mount farming guide"])
 })
 
 test("a Google Ads market ignores the requested source and reports the one that ran", async () => {
@@ -275,9 +445,9 @@ test("a Google Ads market ignores the requested source and reports the one that 
   expect(result.source).toBe("google-ads")
   // No difficulty and no intent, and the 0-100 competition index converts to
   // the 0-1 ratio Labs reports.
-  expect(result.proposals[0]!.difficulty).toBeNull()
-  expect(result.proposals[0]!.intent).toBeNull()
-  expect(result.proposals[0]!.competition).toBe(0.4)
+  expect(result.keywords[0]!.difficulty).toBeNull()
+  expect(result.keywords[0]!.intent).toBeNull()
+  expect(result.keywords[0]!.competition).toBe(0.4)
 })
 
 test("every filter is counted, and a dropped row is charged to one reason", async () => {
@@ -305,6 +475,9 @@ test("every filter is counted, and a dropped row is charged to one reason", asyn
                 labsItem("mount tracker pro", 5000, 74),
                 // The wrong intent.
                 labsItem("buy mount tracker", 600, 12, "transactional"),
+                // The same keyword a second time, which a related walk can
+                // reach down two branches. Charged for, and unofferable.
+                labsItem("Mount Tracker Addon", 480),
               ]),
             ),
             { entries: [entry("Mount Tracker Guide")] },
@@ -313,16 +486,20 @@ test("every filter is counted, and a dropped row is charged to one reason", asyn
       ),
   )
 
-  expect(result.returned).toBe(8)
+  expect(result.returned).toBe(9)
+  expect(result.droppedUnusable).toBe(1)
   expect(result.droppedKnown).toBe(1)
   expect(result.droppedBrandOrOperator).toBe(2)
   expect(result.droppedBelowVolume).toBe(2)
   expect(result.droppedAboveDifficulty).toBe(1)
   expect(result.droppedByIntent).toBe(1)
-  expect(result.proposals.map((proposal) => proposal.keyword)).toEqual(["mount tracker addon"])
-  // The counts account for every charged row.
+  expect(result.keywords.map((found) => found.keyword)).toEqual(["mount tracker addon"])
+  // The counts account for every charged row. This is the property that makes
+  // them worth printing: a row that fell out of the sum would mean a filter
+  // nobody can see.
   expect(
-    result.proposals.length +
+    result.keywords.length +
+      result.droppedUnusable +
       result.droppedKnown +
       result.droppedBrandOrOperator +
       result.droppedBelowVolume +
@@ -350,16 +527,21 @@ test("an intent filter keeps the rows that report no intent", async () => {
   )
 
   expect(result.droppedByIntent).toBe(0)
-  expect(result.proposals.map((proposal) => proposal.keyword)).toEqual(["escapada rural"])
+  expect(result.keywords.map((found) => found.keyword)).toEqual(["escapada rural"])
 })
 
-test("a dismissed keyword is not proposed again by a later run", async () => {
+test("a dismissed keyword is not offered again by a later run", async () => {
   const store: Store = new Map()
   const body = labsBody([labsItem("mount tracker addon", 480), labsItem("mount tracker app", 90)])
 
-  await Effect.runPromise(
+  const found = await Effect.runPromise(
     KeywordDiscovery.use
       .discover({ seed: "mount tracker" })
+      .pipe(Effect.provide(buildLayer(store, fakeHttp([], body)))),
+  )
+  await Effect.runPromise(
+    KeywordDiscovery.use
+      .propose(found.keywords)
       .pipe(Effect.provide(buildLayer(store, fakeHttp([], body)))),
   )
 
@@ -387,7 +569,7 @@ test("a dismissed keyword is not proposed again by a later run", async () => {
       .pipe(Effect.provide(buildLayer(store, fakeHttp([], body)))),
   )
   expect(again.droppedKnown).toBe(2)
-  expect(again.proposals).toEqual([])
+  expect(again.keywords).toEqual([])
 
   const proposed = await Effect.runPromise(
     KeywordDiscovery.use
@@ -401,9 +583,14 @@ test("a keyword the registry has taken stops being proposed", async () => {
   const store: Store = new Map()
   const body = labsBody([labsItem("mount tracker addon", 480)])
 
-  await Effect.runPromise(
+  const found = await Effect.runPromise(
     KeywordDiscovery.use
       .discover({ seed: "mount tracker" })
+      .pipe(Effect.provide(buildLayer(store, fakeHttp([], body)))),
+  )
+  await Effect.runPromise(
+    KeywordDiscovery.use
+      .propose(found.keywords)
       .pipe(Effect.provide(buildLayer(store, fakeHttp([], body)))),
   )
 
@@ -437,9 +624,9 @@ test("no API key is an error, not an empty result, and costs nothing", async () 
   expect(calls).toHaveLength(0)
 })
 
-test("the seed's own row is never proposed back to the caller", async () => {
+test("the seed's own row is never offered back to the caller", async () => {
   // The expansions are asked not to send it, and a Labs answer can hold it
-  // anyway. Proposing it would offer the reader the keyword they just typed.
+  // anyway. Offering it would hand the reader the keyword they just typed.
   const result = await Effect.runPromise(
     KeywordDiscovery.use
       .discover({ seed: "Mount Tracker" })
@@ -454,7 +641,7 @@ test("the seed's own row is never proposed back to the caller", async () => {
   )
 
   expect(result.returned).toBe(1)
-  expect(result.proposals.map((proposal) => proposal.keyword)).toEqual(["mount tracker addon"])
+  expect(result.keywords.map((found) => found.keyword)).toEqual(["mount tracker addon"])
 })
 
 test("an unserved market fails before anything is billed", async () => {
@@ -489,7 +676,7 @@ test("a limit above the vendor's own cap fails before anything is billed", async
   expect(calls).toHaveLength(0)
 })
 
-test("a keyword answered twice is proposed and counted once", async () => {
+test("a keyword answered twice is offered once and its second row counted", async () => {
   // A related-searches walk can reach the same keyword down two branches.
   const result = await Effect.runPromise(
     KeywordDiscovery.use
@@ -507,6 +694,9 @@ test("a keyword answered twice is proposed and counted once", async () => {
       ),
   )
 
-  expect(result.proposals).toHaveLength(1)
+  expect(result.keywords).toHaveLength(1)
   expect(result.droppedKnown).toBe(0)
+  // The row was charged for, so it is counted rather than silently dropped.
+  expect(result.droppedUnusable).toBe(1)
+  expect(result.keywords.length + result.droppedUnusable).toBe(result.returned)
 })

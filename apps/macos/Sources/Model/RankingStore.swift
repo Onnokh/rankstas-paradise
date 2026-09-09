@@ -81,41 +81,29 @@ final class RankingStore {
         do {
             let client = try makeClient()
             let key = KeywordsKey(siteID: siteID, period: period)
-            if lists {
-                let queries = try await client.queries(siteID: siteID, windowDays: period.days, limit: Self.keywordLimit)
-                let eventsReport = try await client.events(siteID: siteID, windowDays: period.days)
-                let revenueReport = try await client.revenue(siteID: siteID, windowDays: period.days)
-                keywords[key] = queries.queries
-                events[key] = eventsReport.events
-                revenue[key] = revenueReport
+            // The six reads are independent, so they go out together. Awaited one after
+            // another they cost six round trips end to end, and opening a site tab waited
+            // on the sum of them; now it waits on the slowest.
+            async let periodLists = lists
+                ? Self.periodLists(client, siteID: siteID, period: period, limit: Self.keywordLimit)
+                : nil
+            async let plan = wantRegistry ? Self.plan(client, siteID: siteID) : nil
+
+            if let fetched = try await periodLists {
+                keywords[key] = fetched.queries
+                events[key] = fetched.events
+                revenue[key] = fetched.revenue
                 freshPeriods.insert(key)
             }
-            if wantRegistry {
-                let report = try await client.registry(siteID: siteID)
-                registry[siteID] = report.targets
-                // The plan judged on demand rides along, and its failure does not fail
-                // the registry: this endpoint is newer than the registry, so a server
-                // that predates it answers a 404 — and losing the registry list over a
-                // screen the reader may not even be on would be the wrong trade.
-                //
-                // Two things the earlier `try?` got wrong. The reason is kept, because a
-                // screen with no report has to say so rather than describe the plan it
-                // cannot see. And a held report survives a failed refresh, because
-                // otherwise a server that regresses to a 404 blanks a screen that was
-                // reading correctly a second earlier — and takes the disk cache with it.
-                do {
-                    health[siteID] = try await client.registryHealth(siteID: siteID)
-                    healthErrors[siteID] = nil
-                } catch is CancellationError {
-                    throw CancellationError()
-                } catch {
-                    healthErrors[siteID] = error.localizedDescription
+            if let fetched = try await plan {
+                registry[siteID] = fetched.targets
+                // A held report survives a failed refresh, so only an answer replaces
+                // one. See `PlanRead` for why the report may be missing.
+                if let report = fetched.health {
+                    health[siteID] = report
                 }
-                // The proposals ride along on the same terms, and their failure is not
-                // reported: unlike the health report, an absent proposal list costs the
-                // reader nothing — there is nothing to say about keywords nobody has
-                // discovered yet, and "none" is what a working server sends too.
-                if let report = try? await client.keywordProposals(siteID: siteID) {
+                healthErrors[siteID] = fetched.healthError
+                if let report = fetched.proposals {
                     proposals[siteID] = report
                 }
                 freshRegistries.insert(siteID)
@@ -127,6 +115,78 @@ final class RankingStore {
         } catch {
             errors[siteID] = error.localizedDescription
         }
+    }
+
+    // MARK: Reads
+
+    /// One period's three lists, read together.
+    private struct PeriodRead: Sendable {
+        let queries: [QueryRow]
+        let events: [EventRow]
+        let revenue: RevenueReport
+    }
+
+    /// The registry and the two reports that read the same plan from other sides, together.
+    private struct PlanRead: Sendable {
+        let targets: [RegistryTarget]
+        /// Nil when the report did not arrive. The registry list is kept anyway: this
+        /// endpoint is newer than the registry, so a server that predates it answers a
+        /// 404 — and losing the registry over a screen the reader may not even be on
+        /// would be the wrong trade.
+        let health: RegistryHealthReport?
+        /// Why the report is missing, when it is. Kept rather than discarded, because a
+        /// screen with no report has to say so rather than describe a plan it cannot see.
+        let healthError: String?
+        /// Nil when the list could not be read, and no reason is carried: unlike the
+        /// health report, an absent proposal list costs the reader nothing — there is
+        /// nothing to say about keywords nobody has discovered yet, and "none" is what a
+        /// working server sends too.
+        let proposals: KeywordProposalsReport?
+    }
+
+    /// Off the main actor, so decoding the answers does not compete with drawing.
+    private nonisolated static func periodLists(
+        _ client: APIClient,
+        siteID: Site.ID,
+        period: Period,
+        limit: Int
+    ) async throws -> PeriodRead {
+        async let queries = client.queries(siteID: siteID, windowDays: period.days, limit: limit)
+        async let events = client.events(siteID: siteID, windowDays: period.days)
+        async let revenue = client.revenue(siteID: siteID, windowDays: period.days)
+        return PeriodRead(
+            queries: try await queries.queries,
+            events: try await events.events,
+            revenue: try await revenue
+        )
+    }
+
+    private nonisolated static func plan(
+        _ client: APIClient,
+        siteID: Site.ID
+    ) async throws -> PlanRead {
+        async let targets = client.registry(siteID: siteID)
+        async let health = client.registryHealth(siteID: siteID)
+        async let proposals = client.keywordProposals(siteID: siteID)
+
+        // The registry is the one that decides the read: without it the screens have no
+        // list at all. The other two are awaited after it, so a failure there cancels them.
+        let list = try await targets.targets
+        var report: RegistryHealthReport?
+        var reason: String?
+        do {
+            report = try await health
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            reason = error.localizedDescription
+        }
+        return PlanRead(
+            targets: list,
+            health: report,
+            healthError: reason,
+            proposals: try? await proposals
+        )
     }
 
     /// Sets proposals aside on the server, then drops them from the held list.

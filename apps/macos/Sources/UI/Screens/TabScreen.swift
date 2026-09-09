@@ -33,6 +33,7 @@ struct TabScreen: View {
     let model: OverviewModel
     let history: HistoryStore
     let rankings: RankingStore
+    let preferences: PlanningPreferences
     let live: LiveStore
     let log: LogStore
     let favicons: FaviconStore
@@ -56,6 +57,7 @@ struct TabScreen: View {
                     state: workspace.state(for: siteID),
                     history: history,
                     rankings: rankings,
+                    preferences: preferences,
                     live: live,
                     log: log,
                     icon: favicons.image(for: siteID),

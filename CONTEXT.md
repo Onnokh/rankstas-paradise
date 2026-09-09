@@ -124,12 +124,19 @@ _Avoid_: "query" (that is a term Google already showed the site for); "keyword" 
 One paid request that turns a Seed into keywords the Site does not have. Three exist, and which one runs is decided by the Market, not the caller: *suggestions* returns long-tail phrases that contain the seed, *related* returns terms Google itself relates to it (which need not contain it, and is the only one that can find a subject the Site does not cover), and the Google Ads expansion serves the 49 Markets Labs does not — reporting no difficulty and no intent, like every Google Ads answer.
 _Avoid_: "keyword research"; "suggestions" for the whole family. Unlike a Keyword metric, an expansion's cost is not knowable before the call: the vendor decides how many rows to return, so the row limit is the price.
 
+**Discovered keyword**:
+One row an Expansion answered with, kept because it passed every filter, and judged by nobody yet. Not a Proposal: the filters are all numeric or structural — a volume floor, a difficulty ceiling, an intent, the brand test, the already-known test — so not one of them knows what the Site is about. `big hero animation` reports 201,000 searches a month, clears every filter there is, and is about a Disney film. A run therefore stores nothing; it answers with these and waits to be told which of them are about the subject.
+_Avoid_: "candidate"; reading a large search volume as evidence a row is worth having — on an ambiguous Seed the strongest rows are usually the ones about the other meaning, because a word two audiences search is a word with two meanings.
+
+**Relevance**:
+Whether a Discovered keyword is about the Site's subject at all. The one judgement in keyword discovery that no number can make and that the domain cannot make either: it needs to know what the Site is for, so it belongs to whoever asked for the run — the agent on the MCP surface, which sees the rows and knows the Site. Judging it is not free of the vendor's price and not a second request either: the rows are already paid for and already in the caller's hands, so the judgement costs nothing but reading.
+
 **Proposal**:
-A Keyword an Expansion found, kept because it passed every filter, and waiting on a person. Carries the vendor's numbers as they read at the moment it was proposed, frozen: a Keyword metric is re-asked and overwritten, and a proposal is the record of why this term looked worth the work. A proposal is not a Registry row and never becomes one on its own.
-_Avoid_: "suggestion"; "candidate"; calling a proposal "planned" — the plan is the Registry.
+A Discovered keyword somebody judged relevant, stored, and waiting on a person. Carries the vendor's numbers as they read at the moment it was proposed, frozen: a Keyword metric is re-asked and overwritten, and a proposal is the record of why this term looked worth the work. A proposal is not a Registry row and never becomes one on its own.
+_Avoid_: "suggestion"; "candidate"; calling a proposal "planned" — the plan is the Registry; calling every row a run returns a proposal — a row nobody judged is a Discovered keyword, and the difference is the whole reason a reader's list is worth opening.
 
 **Dismissed**:
-A Proposal a person has set aside. Permanent in the one way that matters: a later run on the same Seed will find the same term and must not offer it again.
+A Proposal a person has set aside. Permanent in the one way that matters: a later run on the same Seed will find the same term and must not offer it again. Only a Proposal can be dismissed — a Discovered keyword nobody proposed was never offered to a person, so there is no decision to hold.
 _Avoid_: "rejected"; "deleted" — the row stays, which is what makes the decision hold.
 
 **Accepted**:

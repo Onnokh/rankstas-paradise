@@ -32,12 +32,12 @@ final class SiteTabState {
     var registryUnindexedOnly = false
     var registrySearch = ""
     var registryOpenPath: String?
-    /// The Planning sub-screen: what its list is narrowed to, and the difficulty the reader
-    /// counts as within reach. Nil means the site's own domain rating — a default the report
-    /// supplies, not one stored here, so it follows the rating as that moves.
+    /// The Planning sub-screen: what its list is narrowed to. The difficulty the reader
+    /// counts as within reach is NOT here — unlike a search box or a sort, it is a
+    /// judgement about the site rather than about where you are, so it outlives the tab
+    /// and the launch. See `PlanningPreferences`.
     var planningSearch = ""
     var planningVerdicts: Set<KeywordVerdict> = []
-    var planningReach: Double?
     /// The Log sub-screen: what its timeline is narrowed to. Selections like the ones above,
     /// so they survive a tab switch. No open entry to remember — a Log row shows everything
     /// it holds where it stands.

@@ -67,6 +67,23 @@ enum PlanningList {
         }
     }
 
+    /// The difficulty to count as within reach when the reader has not said. Their own
+    /// value wins; this is only the starting point.
+    ///
+    /// The site's domain rating, but never below `floor`. The rating alone is the obvious
+    /// default and it is wrong at the bottom of the scale: a rating of 0 does not mean the
+    /// site can only rank for keywords scored 0. Ahrefs difficulty is roughly how many
+    /// referring domains the first page demands, and the low end of it is winnable with
+    /// almost none — so a raw rating of 0 hides the entire long tail a new site can
+    /// actually take, which is the only thing it can take.
+    ///
+    /// A rule of thumb, and it lives here rather than in the report on purpose: the screen
+    /// shows the number beside a slider, so the reader can see the rule and move it. An API
+    /// verdict cannot be argued with.
+    static func defaultReach(domainRating: Double?, floor: Double = 10) -> Double {
+        max(domainRating ?? floor, floor)
+    }
+
     /// Proposals as the screen shows them: narrowed by the same search box as the plan.
     /// One box over both lists on purpose — the reader's question is about a subject, and
     /// asking it twice in two fields would be two questions.

@@ -48,6 +48,22 @@ final class RankingStoreTests: XCTestCase {
         await refresh.value
     }
 
+    func testTheSixReadsGoOutTogetherRatherThanOneAfterAnother() async {
+        // Held open long enough that overlapping requests are still open when the next
+        // one starts. Awaited in turn, six of these cost six delays end to end and the
+        // screens waited on the sum; sent together they cost one.
+        StubServer.delay = .milliseconds(200)
+        let store = makeStore()
+
+        await store.load("site", period: .d28)
+
+        XCTAssertEqual(StubServer.requests.count, 6)
+        XCTAssertGreaterThanOrEqual(
+            StubServer.peakOpenRequests, 4,
+            "Awaited one after another the peak is 1. Per-group concurrency alone is 3."
+        )
+    }
+
     func testRefreshReplacesTheListsAndMarksOtherPeriodsForAFetch() async {
         StubServer.queryLabel = "old"
         let store = makeStore()
@@ -211,12 +227,39 @@ private enum StubServer {
     /// Set false to stand in for a server that does not serve /api/keywords/proposed yet.
     nonisolated(unsafe) static var proposalsOK = true
 
+    /// The most requests that were open at the same time. This is what tells reads sent
+    /// together from reads awaited one after another: awaited in turn they peak at one,
+    /// whatever the wall clock says on a fast machine.
+    nonisolated(unsafe) private static var openRequests = 0
+    nonisolated(unsafe) private static var peak = 0
+    /// Both counters are touched from the loader's queue and the delivery queue.
+    private static let counter = NSLock()
+
+    static func began() {
+        counter.withLock {
+            openRequests += 1
+            peak = max(peak, openRequests)
+        }
+    }
+
+    static func ended() {
+        counter.withLock { openRequests -= 1 }
+    }
+
+    static var peakOpenRequests: Int {
+        counter.withLock { peak }
+    }
+
     static func reset() {
         queryLabel = "query"
         delay = .zero
         requests = []
         healthOK = true
         proposalsOK = true
+        counter.withLock {
+            openRequests = 0
+            peak = 0
+        }
     }
 
     static func client() -> APIClient {
@@ -300,13 +343,19 @@ private final class StubURLProtocol: URLProtocol {
     override func startLoading() {
         guard let url = request.url else { return }
         StubServer.requests.append(url)
+        StubServer.began()
         let data = StubServer.body(for: url)
         let delay = StubServer.delay
         // The protocol and its response are not Sendable; the test owns both, so handing
         // them to the delayed block is safe.
         nonisolated(unsafe) let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
         nonisolated(unsafe) let loader = self
-        DispatchQueue.global().asyncAfter(deadline: .now() + TimeInterval(delay.components.seconds)) {
+        // The whole duration, not only its whole seconds: a test that holds requests open
+        // to see whether they overlap needs a delay shorter than a second.
+        let held = TimeInterval(delay.components.seconds)
+            + TimeInterval(delay.components.attoseconds) / 1e18
+        DispatchQueue.global().asyncAfter(deadline: .now() + held) {
+            StubServer.ended()
             loader.client?.urlProtocol(loader, didReceive: response, cacheStoragePolicy: .notAllowed)
             loader.client?.urlProtocol(loader, didLoad: data)
             loader.client?.urlProtocolDidFinishLoading(loader)

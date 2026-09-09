@@ -288,6 +288,23 @@ extension PlanningListTests {
         XCTAssertEqual(PlanningList.proposals(rows).count, 1)
     }
 
+    func testAProposalRowComparesEveryValueItDraws() {
+        // The row is drawn with `.equatable()`, so this `==` decides whether a changed
+        // number reaches the screen. It ignores the dismiss closure, which cannot be
+        // compared — everything else it draws has to be in here.
+        let row = ProposalRow(proposal: proposal("a", seed: "s", difficulty: 20), reach: 10, onDismiss: {})
+
+        XCTAssertEqual(row, ProposalRow(proposal: row.proposal, reach: 10, onDismiss: {}),
+                       "The closure is not part of it: two rows over the same values are equal.")
+        XCTAssertNotEqual(row, ProposalRow(proposal: row.proposal, reach: 40, onDismiss: {}),
+                          "Reach colours the difficulty, so moving it has to redraw the row.")
+        XCTAssertNotEqual(
+            row,
+            ProposalRow(proposal: proposal("a", seed: "s", difficulty: 90), reach: 10, onDismiss: {}),
+            "A re-sync that changed the difficulty has to reach the screen."
+        )
+    }
+
     private func proposal(
         _ keyword: String,
         seed: String,
@@ -340,5 +357,25 @@ extension PlanningListTests {
             reportedIntent: nil
         )
         XCTAssertEqual(unknown.verdictKind, .unmeasured)
+    }
+}
+
+// MARK: - The default reach
+
+extension PlanningListTests {
+    func testTheDefaultReachNeverSitsBelowTheFloor() {
+        // A domain rating of 0 does not mean the site can only rank for keywords scored 0.
+        // Taking the rating literally at the bottom of the scale hides the entire long tail
+        // a new site can actually take — which, at DR 0, is the only thing it can take.
+        XCTAssertEqual(PlanningList.defaultReach(domainRating: 0), 10)
+        XCTAssertEqual(PlanningList.defaultReach(domainRating: 4.7), 10)
+        XCTAssertEqual(PlanningList.defaultReach(domainRating: nil), 10)
+    }
+
+    func testAboveTheFloorTheDefaultIsTheRatingItself() {
+        // No headroom added: above the floor the rating is the honest comparison, and the
+        // reader can move the slider if they disagree.
+        XCTAssertEqual(PlanningList.defaultReach(domainRating: 34), 34)
+        XCTAssertEqual(PlanningList.defaultReach(domainRating: 71.5), 71.5)
     }
 }

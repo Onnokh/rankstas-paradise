@@ -14,6 +14,7 @@ struct PlanningScreen: View {
     let overview: SiteOverview
     @Bindable var state: SiteTabState
     let rankings: RankingStore
+    let preferences: PlanningPreferences
     let onBack: () -> Void
     let onRefresh: () -> Void
 
@@ -37,12 +38,15 @@ struct PlanningScreen: View {
         return nil
     }
 
-    /// The difficulty a keyword has to be at or under to count as within reach. Defaults to
-    /// the site's own domain rating, and the reader moves it — this is a rough guide across
-    /// two vendors' unrelated scales, not a rule, so it belongs on the screen where it can
-    /// be seen rather than baked into the report.
+    /// The difficulty a keyword has to be at or under to count as within reach: this
+    /// site's own saved value, or `PlanningList.defaultReach` until the reader sets one.
+    ///
+    /// A rough guide across two vendors' unrelated scales, not a rule — which is why it is
+    /// a slider on the screen rather than a band in the report, and why the number is
+    /// printed beside it.
     private var reach: Double {
-        state.planningReach ?? report?.domainRating ?? 30
+        preferences.reach(for: overview.id)
+            ?? PlanningList.defaultReach(domainRating: report?.domainRating)
     }
 
     private var rows: [KeywordHealth] {
@@ -271,7 +275,8 @@ struct PlanningScreen: View {
                     Slider(
                         value: Binding(
                             get: { reach },
-                            set: { state.planningReach = $0 }
+                            // Saved per site as it moves, so the judgement is made once.
+                            set: { preferences.setReach($0, for: overview.id) }
                         ),
                         in: 0...100,
                         step: 1
@@ -281,6 +286,18 @@ struct PlanningScreen: View {
                         .font(.subheadline)
                         .monospacedDigit()
                         .frame(width: 22, alignment: .trailing)
+                    // Only offered once there is something to undo. Clearing hands the
+                    // threshold back to the default, which then follows the site's domain
+                    // rating as that moves — something a pinned number cannot do.
+                    if preferences.reach(for: overview.id) != nil {
+                        Button("Reset", systemImage: "arrow.uturn.backward") {
+                            preferences.clearReach(for: overview.id)
+                        }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .help("Back to this site's domain rating.")
+                    }
                 }
             }
 
@@ -375,6 +392,7 @@ struct PlanningScreen: View {
                 columnHeadings
                 ForEach(rows) { keyword in
                     PlanningRow(keyword: keyword, reach: reach)
+                        .equatable()
                     Divider().opacity(0.4)
                 }
             }
@@ -429,19 +447,13 @@ struct PlanningScreen: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(proposals) { proposal in
-                        ProposalRow(
-                            proposal: proposal,
-                            reach: reach,
-                            onDismiss: {
-                                Task { await rankings.dismissProposals([proposal.keyword], siteID: overview.id) }
-                            }
-                        )
-                        Divider().opacity(0.4)
+                ProposalsList(
+                    proposals: proposals,
+                    reach: reach,
+                    onDismiss: { keyword in
+                        Task { await rankings.dismissProposals([keyword], siteID: overview.id) }
                     }
-                }
-                .padding(.vertical, 4)
+                )
                 .cardSurface(cornerRadius: 12)
             }
         }
@@ -467,7 +479,11 @@ struct PlanningScreen: View {
 }
 
 /// One planned keyword: what it is aimed at, what the vendor said, and when it peaks.
-private struct PlanningRow: View {
+///
+/// `Equatable`, and drawn with `.equatable()`: the screen's body is re-evaluated whenever
+/// anything the store publishes changes, and the rows do not have to be rebuilt for a
+/// spinner that appeared somewhere above them.
+private struct PlanningRow: View, Equatable {
     let keyword: KeywordHealth
     let reach: Double
 
@@ -561,12 +577,61 @@ private struct PlanningRow: View {
 /// One proposed keyword: what it is, which seed found it, and what the vendor said when it
 /// was proposed. The numbers are frozen at that moment, which is why they can disagree with
 /// the same keyword's current metric elsewhere.
-private struct ProposalRow: View {
+/// The proposals card's rows, virtualised.
+///
+/// The only `LazyVStack` in the app, and the only list that earns one: a discovery run adds
+/// hundreds of proposals at once — 544 for shadertown — while every other list here is
+/// bounded by something a person maintains by hand. A plain stack builds and lays out every
+/// row it is handed, and the sub-screen push animates whatever the incoming screen holds, so
+/// an eager stack made opening the screen cost the whole run: 522 ms of layout for 544 rows
+/// against 13 ms lazy, measured in `ProposalsListTests`.
+///
+/// The hazard a lazy stack is banned for elsewhere (see OverviewScreen's feed, which sat at
+/// 15–20% CPU idle) is a lazy stack under a REPEATING invalidation: it re-phases its realized
+/// items every time. It does not apply here. Everything on this screen comes from the
+/// registry read, once per session, and the site tab's 5-second live poll cannot reach it —
+/// every `live` read in `SiteTabScreen` is inside `root`, which is not built while a
+/// sub-screen is shown, so the poll invalidates nothing here. The one animation over this
+/// list, `.animation(value: state.path)`, fires once per navigation.
+///
+/// Its own view rather than a stack inside the screen so a test can host it and time it.
+struct ProposalsList: View {
+    let proposals: [KeywordProposal]
+    let reach: Double
+    /// Takes the keyword rather than the row, so the caller owns what dismissing means.
+    let onDismiss: (String) -> Void
+
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(proposals) { proposal in
+                ProposalRow(
+                    proposal: proposal,
+                    reach: reach,
+                    onDismiss: { onDismiss(proposal.keyword) }
+                )
+                .equatable()
+                Divider().opacity(0.4)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// Not private, unlike the rows around it: its `==` is written by hand, so it can drift
+/// from the fields it has to compare, and a test pins it.
+struct ProposalRow: View, Equatable {
     let proposal: KeywordProposal
     let reach: Double
     let onDismiss: () -> Void
 
     @State private var dismissing = false
+
+    /// Compared on its values, ignoring the closure, which cannot be compared. Sound here
+    /// and not in general: the closure only ever dismisses `proposal.keyword` on the site
+    /// the screen is showing, so two rows equal by these fields do the same thing.
+    nonisolated static func == (lhs: ProposalRow, rhs: ProposalRow) -> Bool {
+        lhs.proposal == rhs.proposal && lhs.reach == rhs.reach
+    }
 
     var body: some View {
         HStack(spacing: PlanningRow.columnSpacing) {
