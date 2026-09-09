@@ -643,6 +643,27 @@ export const RegistryListReport = Schema.Struct({
       // Null when the site has no provider or nothing is synced yet; optional
       // key so an older server's answer still decodes.
       visits: Schema.optional(Schema.NullOr(VisitsWindowReport)),
+      // What the page is aimed at: the searches a month behind every Keyword
+      // mapped to it, counted once per distinct query rather than once per
+      // Registry row. Two word orders of one search are one search the page
+      // can only win once, so summing the rows below would overstate it — see
+      // `distinctVolume`. Sent computed because that grouping must not be
+      // re-implemented by every client.
+      //
+      // Null when no Keyword mapped to the page has been asked about yet: an
+      // unasked page and a page nobody searches for are different facts, and
+      // a zero here would report the second. Optional key so an older server's
+      // answer still decodes.
+      demand: Schema.optional(
+        Schema.NullOr(
+          Schema.Struct({
+            monthlyVolume: Schema.Number,
+            // How many distinct searches the page is planned for. Lower than
+            // the keyword count when two rows are one search reworded.
+            distinctQueries: Schema.Number,
+          }),
+        ),
+      ),
       keywords: Schema.Array(
         Schema.Struct({
           keyword: Schema.String,
