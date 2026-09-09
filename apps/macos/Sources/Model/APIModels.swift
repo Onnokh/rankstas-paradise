@@ -614,6 +614,44 @@ struct LogEntry: Codable, Sendable, Equatable, Identifiable {
 struct RegistryListReport: Codable, Sendable {
     let generatedAt: String
     let targets: [RegistryTarget]
+    /// How many of those targets Google reported as indexed, day by day, oldest first. Nil
+    /// for a server that predates the series; empty for a site that has not synced since it
+    /// began recording. Neither is a zero — see `IndexCoverageDay`.
+    var coverage: [IndexCoverageDay]? = nil
+}
+
+/// One day's Indexed tally over the registry's target pages, as the server recorded it.
+///
+/// The series cannot be backfilled: Google's URL Inspection answers only for the present, so
+/// a day nobody recorded is a day nobody can recover. A short series is therefore a young
+/// series and not a broken one, and the screen says so rather than drawing a line through
+/// days it does not have.
+struct IndexCoverageDay: Codable, Sendable, Equatable, Identifiable {
+    /// The calendar day the reading was taken, "2026-09-09".
+    let date: String
+    /// The pages the registry held that day: the denominator of the two counts below.
+    let tracked: Int
+    let indexed: Int
+    let notIndexed: Int
+
+    var id: String { date }
+
+    /// The pages Google said nothing usable about that day — never inspected, or inspected
+    /// and answered "unknown". Not a zero and not a verdict.
+    var unknown: Int { max(tracked - indexed - notIndexed, 0) }
+
+    /// The share of the registry Google held that day, 0…1. Nil for a day the registry was
+    /// empty, where a share would be a division by nothing.
+    var indexedShare: Double? {
+        guard tracked > 0 else { return nil }
+        return Double(indexed) / Double(tracked)
+    }
+
+    /// The day as a point in time (noon UTC), for plotting. Nil if the server sent something
+    /// that is not a calendar day, which the chart leaves out rather than place at an epoch.
+    var day: Date? {
+        ISODay.date(date)?.addingTimeInterval(12 * 3600)
+    }
 }
 
 struct RegistryTarget: Codable, Sendable, Equatable, Identifiable {

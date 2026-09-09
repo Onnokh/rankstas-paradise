@@ -338,6 +338,56 @@ test("index statuses upsert, prune (returning count) and freshness", async () =>
   expect(await run(Storage.use.pruneIndexStatuses([]))).toBe(1)
 })
 
+test("index coverage records one tally a day over the held statuses", async () => {
+  await run(
+    Storage.use.savePageIndexStatuses([
+      {
+        targetUrl: "https://example.com/a",
+        status: "indexed",
+        verdict: "PASS",
+        coverageState: "Submitted and indexed",
+      },
+      {
+        targetUrl: "https://example.com/b",
+        status: "not-indexed",
+        verdict: "NEUTRAL",
+        coverageState: "Discovered",
+      },
+    ]),
+  )
+
+  // Three tracked pages, one of which was never inspected: the tally counts the
+  // statuses held and takes the denominator from the caller, so the third page
+  // is neither indexed nor not-indexed rather than missing.
+  await run(Storage.use.recordIndexCoverage(3))
+  const first = await run(Storage.use.indexCoverageHistory())
+  expect(first).toHaveLength(1)
+  expect(first[0]).toMatchObject({ tracked: 3, indexed: 1, notIndexed: 1 })
+
+  // A second run the same day replaces the reading instead of adding a point.
+  await run(
+    Storage.use.savePageIndexStatuses([
+      {
+        targetUrl: "https://example.com/b",
+        status: "indexed",
+        verdict: "PASS",
+        coverageState: "Submitted and indexed",
+      },
+    ]),
+  )
+  await run(Storage.use.recordIndexCoverage(3))
+  const second = await run(Storage.use.indexCoverageHistory())
+  expect(second).toHaveLength(1)
+  expect(second[0]).toMatchObject({ tracked: 3, indexed: 2, notIndexed: 0 })
+})
+
+test("index coverage over an empty ledger reads zeros, not nothing", async () => {
+  await run(Storage.use.recordIndexCoverage(0))
+  expect(await run(Storage.use.indexCoverageHistory())).toEqual([
+    { date: expect.any(String), tracked: 0, indexed: 0, notIndexed: 0 },
+  ])
+})
+
 test("capturePageBaselines + registryProgress", async () => {
   // Seed a window of data ending well before the baseline date.
   await run(

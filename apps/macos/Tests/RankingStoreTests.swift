@@ -193,6 +193,17 @@ final class RankingStoreTests: XCTestCase {
         XCTAssertEqual(store.health["site"]?.market?.label, "United States")
     }
 
+    func testTheIndexedSeriesArrivesWithTheRegistry() async {
+        // One answer holds the list and the series, so the strip's "Indexed" share and the
+        // chart under it can never describe two different reads of the same plan.
+        let store = makeStore()
+        await store.load("site", period: .d28)
+
+        XCTAssertEqual(store.coverage["site"]?.count, 2)
+        XCTAssertEqual(store.coverage["site"]?.last?.tracked, 2)
+        XCTAssertEqual(store.coverage["site"]?.last?.indexedShare, 1)
+    }
+
     func testAWarmStoreShowsTheCachedListsBeforeTheServerAnswers() async {
         StubServer.queryLabel = "cached"
         await makeStore().load("site", period: .d28)
@@ -210,6 +221,9 @@ final class RankingStoreTests: XCTestCase {
         XCTAssertEqual(store.events[key]?.first?.name, "purchase")
         XCTAssertEqual(store.revenue[key]?.currency, "USD")
         XCTAssertEqual(store.registry["site"]?.first?.targetUrl, "/")
+        // The Indexed series is cached with the registry: it cannot be recovered from
+        // anywhere else, so a cold start with no network still charts what was read.
+        XCTAssertEqual(store.coverage["site"]?.map(\.indexed), [1, 2])
         XCTAssertTrue(store.loading.contains("site"), "The cache is shown, and the server is still asked.")
 
         load.cancel()
@@ -352,6 +366,8 @@ private enum StubServer {
         case "/api/registry":
             json = """
             {"generatedAt":"2026-09-08T07:00:00Z",
+             "coverage":[{"date":"2026-09-07","tracked":2,"indexed":1,"notIndexed":1},
+                         {"date":"2026-09-08","tracked":2,"indexed":2,"notIndexed":0}],
              "targets":[{"targetUrl":"/","phase":"live","status":"published",
                          "window":{"impressions":10,"clicks":1,"ctr":0.1,"position":5}}]}
             """

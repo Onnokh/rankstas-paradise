@@ -99,6 +99,64 @@ final class RegistryListTests: XCTestCase {
         XCTAssertEqual(RegistryList.unindexedCount(targets), 1)
     }
 
+    func testTotalsCountEveryTargetTheServerSentAndTheirShares() {
+        let targets = [
+            target("/held", indexed: "indexed", keywords: ["one", "two"]),
+            target("/waiting", indexed: "not-indexed", keywords: ["three"]),
+            target("/never-inspected", indexed: "unknown", keywords: ["four"]),
+            // An inventory-only page: tracked, with nothing planned to rank on it.
+            target("/sitemap-only", indexed: "indexed"),
+        ]
+
+        let totals = RegistryList.totals(targets)
+
+        XCTAssertEqual(totals.pages, 4)
+        XCTAssertEqual(totals.withKeywords, 3)
+        XCTAssertEqual(totals.keywords, 4)
+        XCTAssertEqual(totals.indexed, 2)
+        XCTAssertEqual(totals.notIndexed, 1)
+        // The page Google answered "unknown" about is neither indexed nor not indexed.
+        XCTAssertEqual(totals.unknown, 1)
+        XCTAssertEqual(totals.indexedShare, 0.5)
+        XCTAssertEqual(totals.keywordShare, 0.75)
+    }
+
+    func testAnEmptyRegistryHasNoSharesRatherThanZeroOnes() {
+        // Nothing is 0% indexed: a share of nothing is a division by nothing, and the strip
+        // shows a dash where the screen would otherwise claim a reading.
+        let totals = RegistryList.totals([])
+
+        XCTAssertEqual(totals.pages, 0)
+        XCTAssertNil(totals.indexedShare)
+        XCTAssertNil(totals.keywordShare)
+        XCTAssertEqual(totals.unknown, 0)
+    }
+
+    func testAPageFromAnOlderServerCountsAsNeitherIndexedNorNot() {
+        // No verdict at all is the same reading as "unknown": Google has not spoken.
+        let totals = RegistryList.totals([target("/older-server")])
+
+        XCTAssertEqual(totals.indexed, 0)
+        XCTAssertEqual(totals.notIndexed, 0)
+        XCTAssertEqual(totals.unknown, 1)
+        XCTAssertEqual(totals.indexedShare, 0)
+    }
+
+    func testCoverageDaysKeepTheServersOrderAndDropWhatIsNotADay() {
+        let days = [
+            IndexCoverageDay(date: "2026-09-07", tracked: 27, indexed: 3, notIndexed: 24),
+            IndexCoverageDay(date: "not-a-day", tracked: 27, indexed: 9, notIndexed: 18),
+            IndexCoverageDay(date: "2026-09-09", tracked: 30, indexed: 12, notIndexed: 15),
+        ]
+
+        let plotted = RegistryList.coverageDays(days)
+
+        XCTAssertEqual(plotted.map(\.date), ["2026-09-07", "2026-09-09"])
+        XCTAssertEqual(plotted.first?.indexedShare, 3.0 / 27.0)
+        // Tracked is the denominator, so the pages Google said nothing about are the rest.
+        XCTAssertEqual(plotted.last?.unknown, 3)
+    }
+
     func testSearchMatchesThePathAndTheMappedKeywords() {
         let targets = [
             target("/sleeves", keywords: ["card sleeves"]),

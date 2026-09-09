@@ -1,3 +1,4 @@
+import Charts
 import SwiftUI
 
 /// Sub-screen listing every page the site's registry tracks: what each one reached in the
@@ -29,14 +30,40 @@ struct RegistryScreen: View {
         )
     }
 
+    /// What the whole registry adds up to, over every target the server sent — not over the
+    /// filtered rows: the strip describes the plan, and a search that hides half of it does
+    /// not change what the plan holds.
+    private var totals: RegistryTotals { RegistryList.totals(targets) }
+
+    /// The Indexed series that came with the registry, oldest first.
+    private var coverage: [IndexCoverageDay] {
+        RegistryList.coverageDays(rankings.coverage[overview.id] ?? [])
+    }
+
     private var loading: Bool { rankings.loading.contains(overview.id) }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                header
-                    .padding(.top, SiteTabScreen.screenInset)
-                    .padding(.bottom, 24)
+                // The registry's numbers lead the screen, as the plan's do on the
+                // planning screen and the site's on the dashboard. With no targets in
+                // hand there is nothing to count, and a strip of zeros would be a claim
+                // about a registry the screen has not read — so those states say so in a
+                // line of prose instead.
+                Group {
+                    if targets.isEmpty {
+                        header
+                    } else {
+                        numbers
+                    }
+                }
+                .padding(.top, SiteTabScreen.screenInset)
+                .padding(.bottom, 24)
+
+                if !targets.isEmpty {
+                    indexing
+                        .padding(.bottom, 24)
+                }
 
                 controls
                     .padding(.bottom, 20)
@@ -57,32 +84,174 @@ struct RegistryScreen: View {
 
     // MARK: Header
 
-    /// What the screen holds, in one line, under the tab's header row.
+    /// What the screen holds, in one line — and only while there is no registry to count.
+    /// With one in hand the strip below says all of this and says it as figures, so a line
+    /// repeating it would be a second, older copy of the same claim.
     private var header: some View {
         Text(summary)
             .foregroundStyle(.secondary)
     }
 
-    /// What the registry holds, in one line: how many pages, how many carry keywords, how
-    /// many Google does not hold, and the market every search volume below is measured in.
-    /// The market is a property of the site, so it belongs here once rather than on each
-    /// keyword — but it has to be somewhere, because a volume without its market is
-    /// ambiguous.
     private var summary: String {
-        guard !targets.isEmpty else {
-            return loading ? "Loading…" : "No target pages yet."
+        loading ? "Loading…" : "No target pages yet."
+    }
+
+    // MARK: Numbers
+
+    /// The registry's figures in one row, plain on the panel, read like the dashboard's: a
+    /// label over a large number. How many pages the plan holds, then the two shares that
+    /// say what is true of them — how much of the registry aims at a keyword at all, and how
+    /// much of it Google holds — and the pages Google reports it does not hold.
+    ///
+    /// The shares are shown as shares, with their count under them. The count alone left the
+    /// reader dividing two numbers to answer the only question the strip is asked: is this
+    /// most of the registry, or a corner of it.
+    ///
+    /// A hairline separates those from the market, as on the planning screen: the market
+    /// describes the SITE and not this plan, and it is what every search volume in the rows
+    /// below means — a volume is only comparable inside one market.
+    private var numbers: some View {
+        HStack(alignment: .top, spacing: 0) {
+            Metric(
+                title: "Pages",
+                value: totals.pages.formatted(),
+                footnote: "in the registry"
+            )
+            .help("Every page the registry tracks: the keyword targets, and the inventory-only pages tracked with no keyword of their own.")
+            gap
+            Metric(
+                title: "With keywords",
+                value: percent(totals.keywordShare),
+                footnote: pagesFootnote(totals.withKeywords)
+            )
+            .help("How much of the registry aims at a keyword at all. The rest are inventory-only pages — tracked, and judged on every query they draw, with nothing planned to rank on them.")
+            gap
+            Metric(
+                title: "Indexed",
+                value: percent(totals.indexedShare),
+                footnote: pagesFootnote(totals.indexed)
+            )
+            .help(indexedHelp)
+            gap
+            Metric(
+                title: "Not indexed",
+                value: totals.notIndexed.formatted(),
+                // The count and not a share: this is the backlog, and a backlog is
+                // worked through page by page. The pages Google has answered nothing
+                // about are named beside it when there are any, because they are the
+                // ones a reader would otherwise take for indexed.
+                footnote: totals.unknown > 0
+                    ? "\(totals.unknown) unanswered"
+                    : "of \(totals.pages) \(totals.pages == 1 ? "page" : "pages")"
+            )
+            .help("Pages Google reports it has NOT indexed. These are the dimmed rows below, and the checkbox beside the search keeps only them.")
+
+            if let market = overview.site.market, RegistryList.hasDemand(targets) {
+                gap
+                Rectangle()
+                    .fill(Palette.line)
+                    .frame(width: 1, height: 48)
+                gap
+                Metric(
+                    title: "Market",
+                    value: market.languageCode.uppercased(),
+                    footnote: market.label
+                )
+                .help("Every search volume in the rows below is measured in \(market.summary). The same keyword has a different number in every market.")
+            }
         }
-        let mapped = targets.filter { !$0.mappedKeywords.isEmpty }.count
-        let unindexed = RegistryList.unindexedCount(targets)
-        var parts = ["\(targets.count) \(targets.count == 1 ? "page" : "pages")"]
-        parts.append("\(mapped) with keywords")
-        if unindexed > 0 {
-            parts.append("\(unindexed) not indexed")
+    }
+
+    /// One flexible gap, as on the dashboard's strip: the figures sit at the two ends of the
+    /// column and the room between them is shared, so the row reads as one line across the
+    /// page rather than a cluster on its left.
+    private var gap: some View {
+        Spacer(minLength: 20)
+    }
+
+    /// A share as the strip prints it. A dash where there is nothing to divide: an empty
+    /// registry is not a registry that is 0% indexed.
+    private func percent(_ share: Double?) -> String {
+        share?.formatted(.percent.precision(.fractionLength(0))) ?? "—"
+    }
+
+    /// The denominator, in the footnote rather than the figure: the large number answers
+    /// "how much of it", and the count under it says of what.
+    private func pagesFootnote(_ count: Int) -> String {
+        "\(count) of \(totals.pages) \(totals.pages == 1 ? "page" : "pages")"
+    }
+
+    private var indexedHelp: String {
+        var help = "How much of the registry Google reports as in its index, from its last inspection of each page."
+        if totals.unknown > 0 {
+            help += " The \(totals.unknown) Google has said nothing about count against this share, not beside it: a page nobody has checked earns no more than one Google left out."
         }
-        if let market = overview.site.market, RegistryList.hasDemand(targets) {
-            parts.append(market.summary)
+        return help
+    }
+
+    // MARK: Indexing over time
+
+    /// How much of the registry Google held, day by day.
+    ///
+    /// The server records one reading a day and cannot backfill it — URL Inspection answers
+    /// only for the present — so the series is worth exactly as many days as it has been
+    /// recording. A young registry therefore gets a sentence instead of a chart, rather than
+    /// a line drawn through days nobody recorded.
+    private var indexing: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                Text("Indexed over time")
+                    .font(.headline)
+                if loading {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Spacer()
+                legend
+            }
+
+            if coverage.count >= 2 {
+                IndexingChart(days: coverage)
+            } else {
+                Text(waitingForDays)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, minHeight: 80, alignment: .topLeading)
+            }
         }
-        return parts.joined(separator: " · ")
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .cardSurface(cornerRadius: 12)
+    }
+
+    /// Which line is which, as a pair of dots — the same tie between a figure and its series
+    /// the dashboard's strip uses.
+    private var legend: some View {
+        HStack(spacing: 14) {
+            ForEach(
+                [("Indexed", IndexingChart.indexedColor), ("Pages tracked", IndexingChart.trackedColor)],
+                id: \.0
+            ) { label, color in
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(color)
+                        .frame(width: 6, height: 6)
+                    Text(label)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// Why there is no chart yet. Never "no data": the series is young, which is a fact
+    /// about how long the server has been recording and not about this registry.
+    private var waitingForDays: String {
+        guard let only = coverage.last else {
+            return "No day recorded yet. The daily sync writes one reading a day from here on, and the chart appears once there are two — the series is written a day at a time and cannot be backfilled."
+        }
+        return "One day recorded so far: \(only.indexed) of \(only.tracked) \(only.tracked == 1 ? "page" : "pages") indexed. The chart appears once there are two — the series is written a day at a time and cannot be backfilled."
     }
 
     private var controls: some View {
@@ -177,6 +346,196 @@ struct RegistryScreen: View {
 
     private func toggle(_ target: RegistryTarget) {
         state.registryOpenPath = state.registryOpenPath == target.targetUrl ? nil : target.targetUrl
+    }
+}
+
+// MARK: - Indexing chart
+
+/// How many of the registry's pages Google held, day by day, against how many the registry
+/// tracked that day.
+///
+/// Two lines and not one percentage: a share that fell can mean Google dropped a page or that
+/// the registry gained one, and those call for opposite work. The gap between the lines is
+/// the backlog, and the tooltip prints the share for the day the reader is on.
+private struct IndexingChart: View {
+    let days: [IndexCoverageDay]
+
+    @Environment(\.isTabPreview) private var isPreview
+    @State private var hovered: IndexCoverageDay?
+
+    static let indexedColor = Palette.mint
+    static let trackedColor = Palette.blue
+
+    var body: some View {
+        VStack(spacing: 6) {
+            chart
+            endLabels
+        }
+    }
+
+    /// The first and last day, at the two ends of the run, as the dashboard's chart sets
+    /// them: outside the plot, so the plot keeps the card's full width.
+    private var endLabels: some View {
+        HStack {
+            Text(label(days.first))
+            Spacer()
+            Text(label(days.last))
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+
+    private func label(_ day: IndexCoverageDay?) -> String {
+        guard let date = day?.day else { return "" }
+        return date.formatted(.dateTime.day().month(.abbreviated))
+    }
+
+    private var chart: some View {
+        Chart {
+            ForEach(days) { day in
+                if let date = day.day {
+                    AreaMark(
+                        x: .value("Date", date),
+                        y: .value("Indexed", day.indexed),
+                        series: .value("Series", "Indexed"),
+                        stacking: .unstacked
+                    )
+                    .foregroundStyle(Self.gradient)
+
+                    LineMark(
+                        x: .value("Date", date),
+                        y: .value("Indexed", day.indexed),
+                        series: .value("Series", "Indexed")
+                    )
+                    .foregroundStyle(Self.indexedColor)
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, lineJoin: .round))
+
+                    // The registry itself, as a dashed ceiling: it is a count of rows and
+                    // not a measurement, so it is drawn as the boundary of the plot rather
+                    // than as a second reading beside the first.
+                    LineMark(
+                        x: .value("Date", date),
+                        y: .value("Pages tracked", day.tracked),
+                        series: .value("Series", "Pages tracked")
+                    )
+                    .foregroundStyle(Self.trackedColor.opacity(0.8))
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                }
+            }
+            .interpolationMethod(.monotone)
+
+            if let hovered, let date = hovered.day {
+                RuleMark(x: .value("Date", date))
+                    .foregroundStyle(.secondary.opacity(0.6))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    .annotation(
+                        position: .top,
+                        alignment: .leading,
+                        spacing: 10,
+                        overflowResolution: .init(x: .fit(to: .chart), y: .disabled)
+                    ) {
+                        IndexingTooltip(day: hovered)
+                    }
+                PointMark(x: .value("Date", date), y: .value("Indexed", hovered.indexed))
+                    .foregroundStyle(Self.indexedColor)
+                    .symbolSize(70)
+            }
+        }
+        .chartLegend(.hidden)
+        // Zero to the whole registry, always: a chart scaled to the readings alone turned
+        // "3 of 27 indexed" into a line across the top of the card.
+        .chartYScale(domain: 0...Double(max(days.map(\.tracked).max() ?? 1, 1)))
+        // The baseline is the only horizontal rule: a hairline at zero, as on the dashboard.
+        .chartYAxis {
+            AxisMarks(values: [0]) { _ in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 1))
+                    .foregroundStyle(Palette.line)
+            }
+        }
+        .chartXAxis {
+            AxisMarks(values: .stride(by: .day, count: tickStride)) { _ in
+                AxisTick(centered: false, length: 2, stroke: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .foregroundStyle(Palette.line)
+            }
+        }
+        // Room above the ceiling for the tooltip.
+        .chartPlotStyle { plot in
+            plot.padding(.top, 8)
+        }
+        .chartOverlay { proxy in
+            if !isPreview {
+                GeometryReader { geometry in
+                    Rectangle()
+                        .fill(.clear)
+                        .contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            switch phase {
+                            case .active(let location):
+                                hovered = day(at: location, proxy: proxy, geometry: geometry)
+                            case .ended:
+                                hovered = nil
+                            }
+                        }
+                }
+            }
+        }
+        .frame(minHeight: 160, maxHeight: 220)
+    }
+
+    /// Days between ticks: one per day up to a month, then thinned so the dots stay dots.
+    private var tickStride: Int {
+        days.count <= 31 ? 1 : days.count <= 100 ? 3 : 7
+    }
+
+    private func day(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) -> IndexCoverageDay? {
+        guard let plotFrame = proxy.plotFrame else { return nil }
+        let origin = geometry[plotFrame].origin
+        guard let date: Date = proxy.value(atX: location.x - origin.x) else { return nil }
+        return days
+            .compactMap { day -> (IndexCoverageDay, TimeInterval)? in
+                guard let own = day.day else { return nil }
+                return (day, abs(own.timeIntervalSince(date)))
+            }
+            .min { $0.1 < $1.1 }?
+            .0
+    }
+
+    private static let gradient = LinearGradient(
+        colors: [indexedColor.opacity(0.28), indexedColor.opacity(0.02)],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+}
+
+/// One day of the Indexed series, on hover: the share, the two counts behind it, and the
+/// pages Google said nothing about that day — the ones the share counts against.
+private struct IndexingTooltip: View {
+    let day: IndexCoverageDay
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let date = day.day {
+                Text(date.formatted(.dateTime.day().month(.abbreviated)))
+                    .font(.callout.weight(.semibold))
+            }
+            Text("Indexed : \(day.indexed) of \(day.tracked)\(share)")
+            if day.unknown > 0 {
+                Text("\(day.unknown) unanswered")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.callout)
+        .monospacedDigit()
+        .padding(12)
+        .background(.regularMaterial, in: .rect(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+        .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
+    }
+
+    private var share: String {
+        guard let share = day.indexedShare else { return "" }
+        return " · \(share.formatted(.percent.precision(.fractionLength(0))))"
     }
 }
 

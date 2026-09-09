@@ -702,8 +702,12 @@ export const layer = Layer.effect(
               (visitsOverview?.rows ?? []).map((row) => [row.page, row]),
             )
             const hasVisits = yield* hasSyncedVisits(analyticsStatus)
+            // The Indexed series, read whole: it is one small row a day, and
+            // the client charts it against the targets below.
+            const coverage = yield* storage.indexCoverageHistory()
             return {
               ...(resolved.market ? { market: resolved.market } : {}),
+              coverage,
               targets: targets.map((progress) => {
                 const first = progress.entries[0]!
                 return {

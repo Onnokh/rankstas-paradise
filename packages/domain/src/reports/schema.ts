@@ -602,6 +602,18 @@ export const KeywordDismissResult = Schema.Struct({
 export interface KeywordDismissResult
   extends Schema.Schema.Type<typeof KeywordDismissResult> {}
 
+// One day's Indexed tally over the Registry's target pages. `tracked` is the
+// denominator: the pages the Registry held that day. The pages neither indexed
+// nor not-indexed are the ones Google has said nothing usable about.
+export const IndexCoverageDayReport = Schema.Struct({
+  date: Schema.String,
+  tracked: Schema.Number,
+  indexed: Schema.Number,
+  notIndexed: Schema.Number,
+}).annotate({ identifier: "IndexCoverageDayReport" })
+export interface IndexCoverageDayReport
+  extends Schema.Schema.Type<typeof IndexCoverageDayReport> {}
+
 export const RegistryListReport = Schema.Struct({
   targets: Schema.Array(
     Schema.Struct({
@@ -642,6 +654,12 @@ export const RegistryListReport = Schema.Struct({
   // The Market every `demand` block above describes. Optional so an older
   // server's answer still decodes.
   market: Schema.optional(MarketReport),
+  // How many of the target pages above Google reported as indexed, day by day,
+  // oldest first. Recorded once a day by the Sync and never backfilled, so the
+  // series is worth exactly as many days as it has been recording — a site
+  // synced for the first time today has one point, and that is the truth about
+  // it. Optional so an older server's answer still decodes.
+  coverage: Schema.optional(Schema.Array(IndexCoverageDayReport)),
 }).annotate({ identifier: "RegistryListReport" })
 export interface RegistryListReport
   extends Schema.Schema.Type<typeof RegistryListReport> {}

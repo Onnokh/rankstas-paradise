@@ -38,6 +38,7 @@ import {
   type DomainRatingDay,
   type EventWindowRow,
   type HistoryDay,
+  type IndexCoverageDay,
   type LogEntry,
   type LogEntryInput,
   type Metrics,
@@ -75,6 +76,13 @@ export interface Interface {
   readonly pruneIndexStatuses: (
     targetUrls: ReadonlyArray<string>,
   ) => Effect.Effect<number, StorageError>
+  // Record today's Indexed tally over the statuses held now, replacing any
+  // reading already stored for the same day. `tracked` is how many target pages
+  // the Registry holds, which is not the row count of `page_index_status`: a
+  // page whose inspection failed has no row there, and it is still tracked.
+  readonly recordIndexCoverage: (
+    tracked: number,
+  ) => Effect.Effect<void, StorageError>
   readonly addLogEntry: (
     entry: LogEntryInput,
   ) => Effect.Effect<LogEntry, StorageError>
@@ -234,6 +242,10 @@ export interface Interface {
   readonly domainRatingHistory: (
     limit?: number,
   ) => Effect.Effect<ReadonlyArray<DomainRatingDay>, StorageError>
+  // The stored Indexed series, oldest first.
+  readonly indexCoverageHistory: (
+    limit?: number,
+  ) => Effect.Effect<ReadonlyArray<IndexCoverageDay>, StorageError>
   readonly historyWithPending: (
     limit?: number,
   ) => Effect.Effect<ReadonlyArray<HistoryDay>, StorageError>
@@ -535,6 +547,19 @@ export const layer = Layer.effect(
         verdict text not null,
         coverage_state text not null default '',
         inspected_at text not null default current_timestamp
+      )`,
+      // One Indexed tally per calendar day, over the pages `page_index_status`
+      // holds. That table keeps one row per target and overwrites it on every
+      // inspection, so it can only ever answer "how many are indexed now" —
+      // this is where "how many were indexed then" comes from. Like
+      // domain_rating it cannot be backfilled, and it is keyed by date rather
+      // than by fetch instant so several syncs in one day settle on one reading.
+      `create table if not exists index_coverage (
+        date text primary key,
+        tracked integer not null,
+        indexed integer not null,
+        not_indexed integer not null,
+        recorded_at text not null default current_timestamp
       )`,
       // One row, pinned to id 1: this is a single per-site scalar, not a series,
       // and a run that fetched nothing has no day to hang its instant off — so
@@ -1622,6 +1647,33 @@ export const layer = Layer.effect(
         return deleted.length
       })
 
+    // Counted in SQL rather than handed in, so the tally cannot disagree with
+    // the statuses the same run just wrote. `tracked` is the caller's, because
+    // the table cannot know about a target it holds no row for.
+    //
+    // The trailing `where true` is not a filter: SQLite cannot parse an
+    // `on conflict` clause after a select without one, because it would read as
+    // a table alias.
+    const recordIndexCoverageI = (tracked: number) => sql`
+      insert into index_coverage (date, tracked, indexed, not_indexed)
+      select date('now'), ${tracked},
+        count(*) filter (where status = 'indexed'),
+        count(*) filter (where status = 'not-indexed')
+      from page_index_status where true
+      on conflict(date) do update set
+        tracked = excluded.tracked,
+        indexed = excluded.indexed,
+        not_indexed = excluded.not_indexed,
+        recorded_at = current_timestamp`
+
+    const indexCoverageHistoryI = (limit = 180) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<IndexCoverageDay>`
+          select date, tracked, indexed, not_indexed as "notIndexed"
+          from index_coverage order by date`
+        return rows.slice(-limit) as ReadonlyArray<IndexCoverageDay>
+      })
+
     const addLogEntryI = (entry: LogEntryInput) =>
       Effect.gen(function* () {
         const rows = yield* sql<{ id: number; created_at: string }>`
@@ -2087,6 +2139,13 @@ export const layer = Layer.effect(
         saveDailyTotalsI(totals, fetchedDates).pipe(mapErr("saveDailyTotals")),
       savePageIndexStatuses: (statuses) =>
         savePageIndexStatusesI(statuses).pipe(mapErr("savePageIndexStatuses")),
+      recordIndexCoverage: (tracked) =>
+        recordIndexCoverageI(tracked).pipe(
+          Effect.asVoid,
+          mapErr("recordIndexCoverage"),
+        ),
+      indexCoverageHistory: (limit) =>
+        indexCoverageHistoryI(limit).pipe(mapErr("indexCoverageHistory")),
       pruneIndexStatuses: (targetUrls) =>
         pruneIndexStatusesI(targetUrls).pipe(mapErr("pruneIndexStatuses")),
       addLogEntry: (entry) => addLogEntryI(entry).pipe(mapErr("addLogEntry")),
