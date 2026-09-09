@@ -14,6 +14,9 @@ struct RootView: View {
     @State private var favicons = FaviconStore()
     @State private var history = HistoryStore()
     @State private var rankings = RankingStore()
+    /// The reader's own planning thresholds, per site. Owned here beside the stores so one
+    /// instance serves every tab and the peek previews.
+    @State private var preferences = PlanningPreferences()
     @State private var live = LiveStore()
     @State private var drag: DragSession?
 
@@ -75,6 +78,7 @@ struct RootView: View {
                     model: model,
                     history: history,
                     rankings: rankings,
+                    preferences: preferences,
                     live: live,
                     favicons: favicons,
                     actions: actions,
@@ -102,6 +106,7 @@ struct RootView: View {
                     model: model,
                     history: history,
                     rankings: rankings,
+                    preferences: preferences,
                     live: live,
                     favicons: favicons,
                     showsShortcuts: isCommandHeld,
