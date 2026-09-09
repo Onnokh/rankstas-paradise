@@ -708,6 +708,24 @@ export const layer = Layer.effect(
         fetched_at text not null default current_timestamp
       )`,
     ]
+    // One shape change to live through, before the DDL runs. `index_coverage`
+    // shipped counting every tracked page and now counts the Registry's keyword
+    // targets, and `create table if not exists` is a no-op over the old table —
+    // so a deployment that ran the first version answered every registry read
+    // with "no such column: keyword_targets" until this.
+    //
+    // Dropped rather than renamed. The old rows' numerators are counted over the
+    // other population, so they are not convertible, and a series that mixes two
+    // populations is worse than one that starts over: at most one day of the
+    // wrong measurement is lost, and the series was never backfillable anyway.
+    const coverageColumns = yield* sql<{ name: string }>`
+      select name from pragma_table_info('index_coverage')`.pipe(
+      mapErr("initialize"),
+    )
+    if (coverageColumns.some((column) => column.name === "tracked")) {
+      yield* sql.unsafe(`drop table index_coverage`).pipe(mapErr("initialize"))
+    }
+
     yield* Effect.forEach(ddl, (statement) => sql.unsafe(statement)).pipe(
       mapErr("initialize"),
     )
