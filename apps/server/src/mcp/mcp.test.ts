@@ -18,7 +18,11 @@ import { Reports } from "@rp/domain/reports/reports"
 import { ReportsError } from "@rp/domain/reports/schema"
 import { Sites } from "@rp/domain/sites/sites"
 import { SiteId, type Site } from "@rp/domain/sites/schema"
-import type { StatusReport, LogAddResult } from "@rp/domain/reports/schema"
+import type {
+  KeywordProposalsReport,
+  LogAddResult,
+  StatusReport,
+} from "@rp/domain/reports/schema"
 
 import { buildMcpServer, type RunTool } from "./mcp.ts"
 
@@ -64,6 +68,7 @@ const fakeLogged: LogAddResult = {
 const reportsMock = Layer.mock(Reports.Service)({
   statusReport: () => Effect.succeed(fakeStatus),
   logAdd: () => Effect.succeed(fakeLogged),
+  proposedKeywords: () => Effect.succeed(fakeProposalsReport),
   registryList: () =>
     Effect.fail(new ReportsError({ message: "registry unavailable" })),
 })
@@ -94,12 +99,34 @@ const fakeProposal: KeywordProposal = {
   discoveredAt: "2026-09-08T00:00:00.000Z",
 }
 
-// Mock KeywordDiscovery: `proposed` succeeds, `dismiss` succeeds, and `discover`
+// The report envelope the HTTP route answers with, which `keywords_proposed`
+// has to answer with too — same data, one shape.
+const fakeProposalsReport: KeywordProposalsReport = {
+  market: {
+    locationCode: 2840,
+    languageCode: "en",
+    label: "United States",
+    provider: "labs",
+  },
+  totals: { proposals: 1, monthlyVolume: 320 },
+  proposals: [fakeProposal],
+}
+
+// Mock KeywordDiscovery: `dismiss` succeeds, `propose` succeeds, and `discover`
 // fails with the domain's tagged error, so the discovery tools' own error
-// mapping is exercised rather than assumed to match Reports'.
+// mapping is exercised rather than assumed to match Reports'. `proposed` is not
+// here: that tool reads through `Reports`, so a mock of it would hide a
+// regression rather than catch one.
 const discoveryMock = Layer.mock(KeywordDiscovery.Service)({
-  proposed: () => Effect.succeed([fakeProposal]),
   dismiss: () => Effect.succeed(1),
+  propose: (keywords) =>
+    Effect.succeed({
+      named: keywords.length,
+      stored: keywords.length,
+      skippedKnown: 0,
+      skippedBrandOrOperator: 0,
+      skippedDuplicate: 0,
+    }),
   discover: () =>
     Effect.fail(new KeywordDiscoveryError({ message: "no DataForSEO key" })),
 })
@@ -172,15 +199,85 @@ test("a domain tagged error maps to a structured MCP error result", async () => 
   })
 })
 
-test("keywords_proposed returns the stored proposals", async () => {
+test("keywords_proposed answers with the report envelope, not a bare array", async () => {
+  // The same document as `GET /api/keywords/proposed`. It used to call
+  // `KeywordDiscovery.proposed()` straight through and answer with the array
+  // alone, so the market and the totals were missing over MCP and a client
+  // reading both surfaces had to know which one it was on.
   await withClient(async (client) => {
     const result = await client.callTool({
       name: "keywords_proposed",
       arguments: { site: "acme" },
     })
     expect(result.isError).toBeFalsy()
-    expect(JSON.parse(textOf(result))).toEqual([fakeProposal])
+    const payload = JSON.parse(textOf(result))
+    expect(payload).toEqual(fakeProposalsReport)
+    expect(payload.totals).toEqual({ proposals: 1, monthlyVolume: 320 })
+    expect(Array.isArray(payload)).toBe(false)
   })
+})
+
+test("keywords_propose hands the rows to the domain and reports what it stored", async () => {
+  const seen: Array<unknown> = []
+  const runtime = ManagedRuntime.make(
+    Layer.mergeAll(
+      reportsMock,
+      sitesMock,
+      configMock,
+      Layer.mock(KeywordDiscovery.Service)({
+        propose: (keywords) =>
+          Effect.sync(() => {
+            seen.push(keywords)
+            return {
+              named: keywords.length,
+              stored: keywords.length,
+              skippedKnown: 0,
+              skippedBrandOrOperator: 0,
+              skippedDuplicate: 0,
+            }
+          }),
+      }),
+    ),
+  )
+  const client = await connectClient((_site, effect) => runtime.runPromise(effect))
+  try {
+    const result = await client.callTool({
+      name: "keywords_propose",
+      arguments: {
+        site: "acme",
+        // Pasted back verbatim from a discover result, which is how the tool
+        // description tells a caller to send them: the market, the status and
+        // the instant come along and are not the caller's to set, so they are
+        // dropped at the boundary rather than trusted.
+        keywords: [fakeProposal],
+      },
+    })
+    expect(result.isError).toBeFalsy()
+    expect(JSON.parse(textOf(result))).toEqual({
+      named: 1,
+      stored: 1,
+      skippedKnown: 0,
+      skippedBrandOrOperator: 0,
+      skippedDuplicate: 0,
+    })
+    expect(seen).toEqual([
+      [
+        {
+          keyword: "acme widget sizes",
+          seed: "acme widget",
+          source: "suggestions",
+          searchVolume: 320,
+          difficulty: 18,
+          costPerClick: 0.9,
+          competition: 0.3,
+          intent: "informational",
+        },
+      ],
+    ])
+  } finally {
+    await client.close()
+    await runtime.dispose()
+  }
 })
 
 test("keywords_dismiss names the count rather than returning a bare number", async () => {
@@ -264,12 +361,13 @@ test("keywords_discover passes its filters through and never invents a limit", a
               seed: request.seed,
               source: "suggestions" as const,
               returned: 0,
+              droppedUnusable: 0,
               droppedKnown: 0,
               droppedBrandOrOperator: 0,
               droppedBelowVolume: 0,
               droppedAboveDifficulty: 0,
               droppedByIntent: 0,
-              proposals: [],
+              keywords: [],
             }
           }),
       }),
