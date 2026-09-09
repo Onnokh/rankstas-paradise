@@ -692,6 +692,10 @@ struct RegistryTarget: Codable, Sendable, Equatable, Identifiable {
     /// The keywords mapped to the page. Absent for a page the sitemap contributed, and for a
     /// snapshot written before the field.
     var keywords: [RegistryKeyword]? = nil
+    /// What the page is aimed at, in the site's market: see `TargetDemand`. Nil when no
+    /// keyword mapped to it has been asked about, and for a server or a snapshot that
+    /// predates the field.
+    var demand: TargetDemand? = nil
 
     var id: String { targetUrl }
 
@@ -700,6 +704,30 @@ struct RegistryTarget: Codable, Sendable, Equatable, Identifiable {
     var isUnindexed: Bool { indexed == "not-indexed" }
 
     var mappedKeywords: [RegistryKeyword] { keywords ?? [] }
+}
+
+/// The demand behind one page: what every keyword aiming at it adds up to, as the server
+/// counted it.
+///
+/// Counted once per distinct search, not once per registry row, and never added up here.
+/// DataForSEO answers a term in each word order it holds a number for and bills for each,
+/// so `background design for website` and `design background website` come back as two rows
+/// of one search. Summing them claims twice the demand the page can only win once — on
+/// shadertown that read 1,470 a month behind a page worth 390. The server does the grouping
+/// and sends the result, so every client reports the same number.
+struct TargetDemand: Codable, Sendable, Equatable, Hashable {
+    /// The searches a month behind the page, over its distinct queries. A page whose
+    /// keywords were asked about and reported nothing has 0 here; a page nobody asked about
+    /// has no `TargetDemand` at all.
+    let monthlyVolume: Double
+    /// How many distinct searches the page is planned for. Lower than the count of mapped
+    /// keywords when two of them are one search worded differently.
+    let distinctQueries: Int
+
+    /// The volume as a row shows it.
+    var volumeLabel: String {
+        monthlyVolume.formatted(.number.precision(.fractionLength(0)))
+    }
 }
 
 /// One keyword mapped to a target page.

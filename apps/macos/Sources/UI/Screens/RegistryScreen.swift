@@ -1,10 +1,10 @@
 import Charts
 import SwiftUI
 
-/// Sub-screen listing every page the site's registry tracks: what each one reached in the
-/// server's own 28-day window, the phase it is in, and the keywords mapped to it. A page
-/// Google reports as not indexed keeps its place in the ranking and is dimmed, the reading
-/// the ranking card and the other clients give it.
+/// Sub-screen listing every page the site's registry tracks: what each one is aimed at,
+/// what it reached in the server's own 28-day window, the phase it is in, and the keywords
+/// mapped to it. A page Google reports as not indexed keeps its place in the ranking and is
+/// dimmed, the reading the ranking card and the other clients give it.
 ///
 /// The rows are the ones the site screen already loaded: the registry comes with the ranked
 /// lists, cache-first, so this screen shows what is held at once and never fetches on its own.
@@ -352,6 +352,9 @@ struct RegistryScreen: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text("Phase")
                 .frame(width: RegistryRow.phaseWidth, alignment: .leading)
+            Text("Volume")
+                .frame(width: RegistryRow.numberWidth, alignment: .trailing)
+                .help("Searches a month behind the keywords aiming at the page, counted once per distinct search. Blank where no keyword on the page has been asked about yet.")
             Text("Impressions")
                 .frame(width: RegistryRow.numberWidth, alignment: .trailing)
             Text("Clicks")
@@ -625,6 +628,16 @@ private struct RegistryRow: View {
             PhaseBadge(phase: target.phase)
                 .frame(width: Self.phaseWidth, alignment: .leading)
 
+            // What the page is aimed at, beside what it reached. It sits ahead of the
+            // Search Console figures because that is the order the row is read in: a page
+            // drawing 40 impressions is doing well against 90 searches a month and badly
+            // against 9,000, and the number that says which is this one.
+            //
+            // A page with no answer shows a dash and never a 0 — see `TargetDemand`.
+            Text(target.demand?.volumeLabel ?? "—")
+                .frame(width: Self.numberWidth, alignment: .trailing)
+                .foregroundStyle(target.demand == nil ? .secondary : .primary)
+
             number(target.window.impressions)
             number(target.window.clicks)
             Text(target.window.impressions > 0 ? target.window.ctr.formatted(.percent.precision(.fractionLength(1))) : "—")
@@ -702,9 +715,19 @@ private struct RegistryDetail: View {
 
             if !target.mappedKeywords.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Keywords")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        Text("Keywords")
+                        // The page's total, beside the chips it is counted from. It is
+                        // rarely the chips added up, and that is the point: two chips can
+                        // be one search reworded, which the page can only win once.
+                        if let demand = target.demand {
+                            Text("\(demand.volumeLabel)/mo over \(demand.distinctQueries) \(demand.distinctQueries == 1 ? "search" : "searches")")
+                                .monospacedDigit()
+                                .help("Searches a month behind this page. Its keywords are grouped first, so a search worded two ways is counted once — this can be less than the chips below add up to.")
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                     // A wrapping row of the mapped keywords, each with its search volume:
                     // this is what makes the plan checkable rather than a list of
                     // intentions. A keyword nobody searches for is a page nobody will find,

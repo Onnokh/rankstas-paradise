@@ -1,8 +1,11 @@
 import Foundation
 
 /// How the registry screen ranks its pages. Clicks, impressions and visits are the same
-/// three the ranking cards offer; path is the way to find one page among many.
+/// three the ranking cards offer; volume ranks the plan by what it aims at rather than by
+/// what it has reached, which is the order to read a new plan in; path is the way to find
+/// one page among many.
 enum RegistrySort: String, CaseIterable, Identifiable, Sendable {
+    case volume
     case impressions
     case clicks
     case visits
@@ -12,6 +15,7 @@ enum RegistrySort: String, CaseIterable, Identifiable, Sendable {
 
     var label: String {
         switch self {
+        case .volume: "Volume"
         case .impressions: "Impressions"
         case .clicks: "Clicks"
         case .visits: "Visits"
@@ -20,8 +24,13 @@ enum RegistrySort: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// What the sort reads off a page. Nil for the path, which sorts by its own text.
+    ///
+    /// A page with no answer ranks as a zero, as one with no visits does. That is a ranking
+    /// decision and not a reading of the number: the row still shows no volume rather than
+    /// a 0, because nobody asked is not nobody searches.
     func value(of target: RegistryTarget) -> Double? {
         switch self {
+        case .volume: target.demand?.monthlyVolume ?? 0
         case .impressions: target.window.impressions
         case .clicks: target.window.clicks
         case .visits: target.visits?.current.visits ?? 0

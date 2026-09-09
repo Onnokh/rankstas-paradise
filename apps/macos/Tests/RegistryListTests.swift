@@ -10,7 +10,8 @@ final class RegistryListTests: XCTestCase {
         clicks: Double = 0,
         visits: Double? = nil,
         indexed: String? = nil,
-        keywords: [String] = []
+        keywords: [String] = [],
+        volume: Double? = nil
     ) -> RegistryTarget {
         RegistryTarget(
             targetUrl: path,
@@ -26,7 +27,8 @@ final class RegistryListTests: XCTestCase {
                 )
             },
             indexed: indexed,
-            keywords: keywords.map { RegistryKeyword(keyword: $0, cluster: "c", intent: "informational") }
+            keywords: keywords.map { RegistryKeyword(keyword: $0, cluster: "c", intent: "informational") },
+            demand: volume.map { TargetDemand(monthlyVolume: $0, distinctQueries: keywords.count) }
         )
     }
 
@@ -73,6 +75,61 @@ final class RegistryListTests: XCTestCase {
         let targets = [target("/none", impressions: 99), target("/seen", visits: 12)]
 
         XCTAssertEqual(RegistryList.rows(targets, sort: .visits).map(\.targetUrl), ["/seen", "/none"])
+    }
+
+    func testVolumeRanksThePlanByWhatItAimsAt() {
+        // The order to read a new plan in: what each page is aimed at, before what it has
+        // reached. The two disagree, which is the point — the strongest page here has drawn
+        // nothing yet.
+        let targets = [
+            target("/reached", impressions: 900, volume: 90),
+            target("/aimed", impressions: 0, volume: 9_000),
+            target("/asked-and-empty", impressions: 40, volume: 0),
+            target("/never-asked", impressions: 40),
+        ]
+
+        XCTAssertEqual(
+            RegistryList.rows(targets, sort: .volume).map(\.targetUrl),
+            ["/aimed", "/reached", "/asked-and-empty", "/never-asked"]
+        )
+    }
+
+    func testAPageNobodyAskedAboutRanksLastWithoutReadingAsAZero() {
+        // Ranking a page with no answer as a zero is a sorting decision, and must not leak
+        // into what the row reports: nobody asked and nobody searches lead to opposite
+        // fixes, so the page keeps no volume to show at all.
+        let unasked = target("/never-asked")
+
+        XCTAssertEqual(RegistrySort.volume.value(of: unasked), 0)
+        XCTAssertNil(unasked.demand)
+    }
+
+    func testTheVolumeAPageShowsIsTheServersAndNeverItsKeywordsAddedUp() {
+        // Two keywords, one search worded twice: the server groups them and sends 1,900.
+        // The app must show that and never sum the chips, which would claim 3,700 of
+        // demand this page can only win once.
+        var page = target("/pocket-alternative", keywords: ["pocket alternative", "alternative to pocket"])
+        page.keywords = ["pocket alternative": 1_900.0, "alternative to pocket": 1_800.0]
+            .map { keyword, volume in
+                RegistryKeyword(
+                    keyword: keyword,
+                    cluster: "c",
+                    intent: "comparison",
+                    demand: KeywordDemand(
+                        searchVolume: volume,
+                        difficulty: nil,
+                        costPerClick: nil,
+                        competition: nil,
+                        intent: nil,
+                        fetchedAt: "2026-09-08T00:00:00.000Z"
+                    )
+                )
+            }
+        page.demand = TargetDemand(monthlyVolume: 1_900, distinctQueries: 1)
+
+        XCTAssertEqual(page.demand?.monthlyVolume, 1_900)
+        XCTAssertEqual(page.demand?.distinctQueries, 1)
+        XCTAssertEqual(page.mappedKeywords.count, 2)
     }
 
     func testPathSortsInNaturalOrder() {
