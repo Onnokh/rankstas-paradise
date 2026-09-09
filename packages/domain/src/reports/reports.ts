@@ -710,6 +710,24 @@ export const layer = Layer.effect(
               coverage,
               targets: targets.map((progress) => {
                 const first = progress.entries[0]!
+                const keywords = progress.entries
+                  .filter((entry) => entry.keyword.trim())
+                  .map((entry) => {
+                    const metric = demand.get(foldKeyword(entry.keyword))
+                    return {
+                      keyword: entry.keyword,
+                      cluster: entry.cluster,
+                      intent: entry.intent,
+                      ...(metric ? { demand: demandReport(metric) } : {}),
+                    }
+                  })
+                // The page's own demand, grouped so a search counts once. Held
+                // back entirely until one of its Keywords has been asked
+                // about: `distinctVolume` reports 0 for a page nobody has
+                // measured, and 0 reads as "nobody searches this" when the
+                // truth is "nobody asked". A Keyword the vendor answered
+                // nothing for HAS been asked, and does report 0.
+                const asked = keywords.some((row) => row.demand)
                 return {
                   targetUrl: progress.targetUrl,
                   phase: phaseFor(progress),
@@ -729,17 +747,15 @@ export const layer = Layer.effect(
                   visits: hasVisits
                     ? visitsWindow(visitsByPath.get(progress.targetUrl))
                     : null,
-                  keywords: progress.entries
-                    .filter((entry) => entry.keyword.trim())
-                    .map((entry) => {
-                      const metric = demand.get(foldKeyword(entry.keyword))
-                      return {
-                        keyword: entry.keyword,
-                        cluster: entry.cluster,
-                        intent: entry.intent,
-                        ...(metric ? { demand: demandReport(metric) } : {}),
-                      }
-                    }),
+                  demand: asked
+                    ? distinctVolume(
+                        keywords.map((row) => ({
+                          keyword: row.keyword,
+                          searchVolume: row.demand?.searchVolume ?? null,
+                        })),
+                      )
+                    : null,
+                  keywords,
                 }
               }),
             }

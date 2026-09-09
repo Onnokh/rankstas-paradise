@@ -313,6 +313,11 @@ const site: Site = {
   },
 } satisfies Site
 
+// Registry rows a single test needs on top of the shared fixture, emptied
+// after each one. The fixture maps one Keyword per page, which is the ordinary
+// case and the wrong shape for testing what a page's Keywords add up to.
+const extraRegistry: RegistryEntry[] = []
+
 // The Keyword metrics the KeywordMetrics stub reports. Filled by the demand
 // tests and emptied after each one, so every other test in this file reads the
 // ordinary case: a site whose metrics have never been fetched.
@@ -364,7 +369,7 @@ beforeAll(async () => {
   } satisfies CurrentSite.Interface)
 
   const registryLayer = Layer.succeed(Registry.Service, {
-    loadRegistry: () => Effect.succeed(fixtureRegistry),
+    loadRegistry: () => Effect.succeed([...fixtureRegistry, ...extraRegistry]),
     appendRegistryEntry: () => Effect.void,
     updateRegistryRows: () => Effect.succeed(0),
     removeRegistryRows: () => Effect.succeed(0),
@@ -567,6 +572,7 @@ test("pageReport rejects a non-slash path", async () => {
 afterEach(() => {
   storedDemand.clear()
   storedRating.value = null
+  extraRegistry.length = 0
 })
 
 test("queriesReport carries the Market and the demand behind each Query", async () => {
@@ -638,6 +644,60 @@ test("registryList carries the demand behind each planned Keyword", async () => 
       )
       .every((keyword) => keyword.demand === undefined),
   ).toBe(true)
+})
+
+test("registryList counts a page's demand once per distinct search", async () => {
+  // The same search in two word orders, both aimed at one page. DataForSEO
+  // bills for each and answers each, and the page can only win it once — so
+  // the page's number is the largest of the group, not their sum.
+  extraRegistry.push(
+    entry({
+      cluster: "Alternatives",
+      keyword: "alternative to pocket",
+      targetUrl: "/pocket-alternative",
+      intent: "comparison",
+      status: "Measuring",
+    }),
+  )
+  storedDemand.set(
+    "pocket alternative",
+    demandMetric("pocket alternative", { searchVolume: 1_900 }),
+  )
+  storedDemand.set(
+    "alternative to pocket",
+    demandMetric("alternative to pocket", { searchVolume: 1_800 }),
+  )
+
+  const report = await run(Reports.use.registryList())
+  const target = report.targets.find(
+    (row) => row.targetUrl === "/pocket-alternative",
+  )
+  expect(target?.keywords).toHaveLength(2)
+  // 1,900 and not 3,700: two rows, one search.
+  expect(target?.demand).toEqual({ monthlyVolume: 1_900, distinctQueries: 1 })
+})
+
+test("registryList reports no demand for a page nobody has asked about", async () => {
+  storedDemand.set(
+    "chrome read later extension",
+    // Asked, and the vendor reported nothing: a real zero, and the case the
+    // Registry exists to surface — a page aimed at a search nobody makes.
+    demandMetric("chrome read later extension", { searchVolume: 0 }),
+  )
+
+  const report = await run(Reports.use.registryList())
+  const byPath = (path: string) =>
+    report.targets.find((row) => row.targetUrl === path)
+
+  expect(byPath("/chrome-extension")?.demand).toEqual({
+    monthlyVolume: 0,
+    distinctQueries: 1,
+  })
+  // Never asked. Null and not a zero: the two lead to opposite decisions —
+  // measure this page, against retarget it.
+  expect(byPath("/pocket-alternative")?.demand).toBeNull()
+  // An inventory-only page carries no Keyword to ask about at all.
+  expect(byPath("/")?.demand).toBeNull()
 })
 
 test("a report reads no demand at all when nothing is stored", async () => {
