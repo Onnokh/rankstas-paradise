@@ -583,8 +583,8 @@ private struct PlanningRow: View, Equatable {
 /// hundreds of proposals at once — 544 for shadertown — while every other list here is
 /// bounded by something a person maintains by hand. A plain stack builds and lays out every
 /// row it is handed, and the sub-screen push animates whatever the incoming screen holds, so
-/// an eager stack made opening the screen cost the whole run: 129 ms of layout for 544 rows
-/// against 3 ms lazy, measured in `ProposalsListTests`.
+/// an eager stack made opening the screen cost the whole run: 522 ms of layout for 544 rows
+/// against 13 ms lazy, measured in `ProposalsListTests`.
 ///
 /// The hazard a lazy stack is banned for elsewhere (see OverviewScreen's feed, which sat at
 /// 15–20% CPU idle) is a lazy stack under a REPEATING invalidation: it re-phases its realized

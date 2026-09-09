@@ -23,9 +23,9 @@ final class ProposalsListTests: XCTestCase {
         let long = bestOfThree(Self.long)
         let ratio = long / short
 
-        // Measured when this landed: 0.94 lazy, 10.2 eager (3 ms against 129 ms of layout
-        // for the 544 rows). Three is clear of both, so this fails on an eager stack and
-        // not on a slow machine.
+        // Measured when this landed: 0.97 lazy, 11.2 eager — 13 ms of layout for the 544
+        // rows against 522 ms. Three is clear of both, so this fails on an eager stack
+        // and not on a slow machine.
         XCTAssertLessThan(
             ratio, 3,
             """
@@ -39,9 +39,16 @@ final class ProposalsListTests: XCTestCase {
         (0..<3).map { _ in layoutCost(count) }.min()!
     }
 
-    /// Hosts the list at a fixed size and lays it out, which is what forces SwiftUI to
-    /// build the rows. No window: laying out the hosting view is enough, checked by
-    /// neutering — an eager stack is still caught without one.
+    /// Hosts the list at a fixed size and lays it out. The layout pass is what forces
+    /// SwiftUI to build the rows, and it is the whole harness — each of these was checked
+    /// by neutering, against an eager stack rather than against the lazy one, which passes
+    /// either way and proves nothing:
+    ///
+    /// - No `NSWindow` is needed. An eager stack is caught without one.
+    /// - `displayIfNeeded()` is not needed either. It forces the build too, so keeping
+    ///   both hid which one mattered; the layout pass is the honest thing to time.
+    /// - Drop the layout pass as well and nothing is built, so the numbers go to noise and
+    ///   the test fails — which is the right way round.
     private func layoutCost(_ count: Int) -> TimeInterval {
         let list = ProposalsList(proposals: proposals(count), reach: 10, onDismiss: { _ in })
         let host = NSHostingView(rootView: ScrollView { list })
@@ -49,7 +56,6 @@ final class ProposalsListTests: XCTestCase {
 
         let start = Date()
         host.layoutSubtreeIfNeeded()
-        host.displayIfNeeded()
         return Date().timeIntervalSince(start)
     }
 
