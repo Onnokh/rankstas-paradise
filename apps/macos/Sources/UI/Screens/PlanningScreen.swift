@@ -410,13 +410,6 @@ struct PlanningScreen: View {
         )
     }
 
-    /// The proposals drawn right now: the first page of them, and one more page each time
-    /// the reader asks. The count in the heading stays the count of the whole list — a
-    /// drawn row is not a found keyword, and the heading is about what was found.
-    private var drawnProposals: ArraySlice<KeywordProposal> {
-        PlanningList.page(proposals, shown: state.planningProposalsShown)
-    }
-
     /// Keywords the site does NOT have, offered for a decision. Below the plan rather than
     /// mixed into it: a proposal is a suggestion and a planned keyword is a commitment, and
     /// one list holding both would let a reader act on the wrong one.
@@ -454,56 +447,16 @@ struct PlanningScreen: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(drawnProposals) { proposal in
-                        ProposalRow(
-                            proposal: proposal,
-                            reach: reach,
-                            onDismiss: {
-                                Task { await rankings.dismissProposals([proposal.keyword], siteID: overview.id) }
-                            }
-                        )
-                        .equatable()
-                        Divider().opacity(0.4)
+                ProposalsList(
+                    proposals: proposals,
+                    reach: reach,
+                    onDismiss: { keyword in
+                        Task { await rankings.dismissProposals([keyword], siteID: overview.id) }
                     }
-                }
-                .padding(.vertical, 4)
+                )
                 .cardSurface(cornerRadius: 12)
-
-                if drawnProposals.count < proposals.count {
-                    more
-                }
             }
         }
-    }
-
-    /// What is held back, and the two ways to see it. The line comes before the buttons
-    /// because the number is the point: a reader who has just run a discovery needs to
-    /// know the card is a window onto it, not the whole of it.
-    private var more: some View {
-        HStack(spacing: 12) {
-            Text("Showing \(drawnProposals.count) of \(proposals.count).")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-            Button("Show \(min(PlanningList.proposalPage, proposals.count - drawnProposals.count)) more") {
-                state.planningProposalsShown = drawnProposals.count + PlanningList.proposalPage
-            }
-            .buttonStyle(.plain)
-            .font(.caption)
-            .foregroundStyle(Palette.mint)
-            // Drawing hundreds of rows at once is what made this screen slow, so the way
-            // to do it is offered rather than assumed.
-            Button("Show all") {
-                state.planningProposalsShown = proposals.count
-            }
-            .buttonStyle(.plain)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .help("Slow with a long list: every row is drawn.")
-            Spacer()
-        }
-        .padding(.top, 4)
     }
 
     private var columnHeadings: some View {
@@ -624,6 +577,46 @@ private struct PlanningRow: View, Equatable {
 /// One proposed keyword: what it is, which seed found it, and what the vendor said when it
 /// was proposed. The numbers are frozen at that moment, which is why they can disagree with
 /// the same keyword's current metric elsewhere.
+/// The proposals card's rows, virtualised.
+///
+/// The only `LazyVStack` in the app, and the only list that earns one: a discovery run adds
+/// hundreds of proposals at once — 544 for shadertown — while every other list here is
+/// bounded by something a person maintains by hand. A plain stack builds and lays out every
+/// row it is handed, and the sub-screen push animates whatever the incoming screen holds, so
+/// an eager stack made opening the screen cost the whole run: 522 ms of layout for 544 rows
+/// against 13 ms lazy, measured in `ProposalsListTests`.
+///
+/// The hazard a lazy stack is banned for elsewhere (see OverviewScreen's feed, which sat at
+/// 15–20% CPU idle) is a lazy stack under a REPEATING invalidation: it re-phases its realized
+/// items every time. It does not apply here. Everything on this screen comes from the
+/// registry read, once per session, and the site tab's 5-second live poll cannot reach it —
+/// every `live` read in `SiteTabScreen` is inside `root`, which is not built while a
+/// sub-screen is shown, so the poll invalidates nothing here. The one animation over this
+/// list, `.animation(value: state.path)`, fires once per navigation.
+///
+/// Its own view rather than a stack inside the screen so a test can host it and time it.
+struct ProposalsList: View {
+    let proposals: [KeywordProposal]
+    let reach: Double
+    /// Takes the keyword rather than the row, so the caller owns what dismissing means.
+    let onDismiss: (String) -> Void
+
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(proposals) { proposal in
+                ProposalRow(
+                    proposal: proposal,
+                    reach: reach,
+                    onDismiss: { onDismiss(proposal.keyword) }
+                )
+                .equatable()
+                Divider().opacity(0.4)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
 /// Not private, unlike the rows around it: its `==` is written by hand, so it can drift
 /// from the fields it has to compare, and a test pins it.
 struct ProposalRow: View, Equatable {
