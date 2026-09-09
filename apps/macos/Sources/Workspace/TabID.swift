@@ -7,12 +7,33 @@ enum TabID: Hashable, Sendable {
     case site(Site.ID)
 }
 
-/// A sub-screen inside a site tab.
-enum SiteScreen: Hashable, Sendable {
-    case opportunities
+/// One of the screens a site tab shows. Peers, not a stack: the rail beside the pane swaps
+/// between them, and the dashboard is one of them rather than the way to the others.
+enum SiteScreen: String, CaseIterable, Identifiable, Hashable, Sendable {
+    case dashboard
     case registry
     case planning
     case log
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .dashboard: "Dashboard"
+        case .registry: "Registry"
+        case .planning: "Planning"
+        case .log: "Log"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .dashboard: "chart.xyaxis.line"
+        case .registry: "list.bullet.rectangle"
+        case .planning: "calendar"
+        case .log: "clock"
+        }
+    }
 }
 
 /// Per-site UI state that outlives the tab's view.
@@ -23,7 +44,8 @@ enum SiteScreen: Hashable, Sendable {
 @Observable
 final class SiteTabState {
     let siteID: Site.ID
-    var path: [SiteScreen] = []
+    /// The screen the tab is on. Survives a tab switch and an eviction, like every selection.
+    var screen: SiteScreen = .dashboard
     /// The span the metric cards and chart cover.
     var period: Period = .d28
     /// The Registry sub-screen: how its list is ranked, what it is narrowed to, and which

@@ -15,7 +15,6 @@ struct PlanningScreen: View {
     @Bindable var state: SiteTabState
     let rankings: RankingStore
     let preferences: PlanningPreferences
-    let onBack: () -> Void
     let onRefresh: () -> Void
 
     @Environment(\.isTabPreview) private var isPreview
@@ -63,7 +62,7 @@ struct PlanningScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header
-                    .padding(.top, SiteTabScreen.columnInset)
+                    .padding(.top, SiteTabScreen.screenInset)
                     .padding(.bottom, 24)
 
                 // No tiles without a report. Three zeros are a statement about the plan,
@@ -102,29 +101,10 @@ struct PlanningScreen: View {
 
     // MARK: Header
 
+    /// What the screen holds, in one line, under the tab's header row.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Button(overview.site.name, systemImage: "chevron.left", action: onBack)
-                    .keyboardShortcut(isPreview ? nil : KeyboardShortcut("[", modifiers: .command))
-                Spacer()
-                if loading {
-                    ProgressView().controlSize(.small)
-                }
-                Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .disabled(loading)
-                    .help("Refresh (⌘R)")
-            }
-
-            Text("Planning")
-                .font(.largeTitle)
-
-            Text(summary)
-                .foregroundStyle(.secondary)
-        }
+        Text(summary)
+            .foregroundStyle(.secondary)
     }
 
     /// What the plan is, in one line. The market is named because a search volume without it
@@ -590,9 +570,10 @@ private struct PlanningRow: View, Equatable {
 /// 15–20% CPU idle) is a lazy stack under a REPEATING invalidation: it re-phases its realized
 /// items every time. It does not apply here. Everything on this screen comes from the
 /// registry read, once per session, and the site tab's 5-second live poll cannot reach it —
-/// every `live` read in `SiteTabScreen` is inside `root`, which is not built while a
-/// sub-screen is shown, so the poll invalidates nothing here. The one animation over this
-/// list, `.animation(value: state.path)`, fires once per navigation.
+/// the dashboard's `live` reads are inside `dashboard`, which is not built while this screen
+/// is shown, and the header's online count is its own view (`OnlineCount`), so the poll
+/// invalidates a label and nothing here. Keep it that way: a `live` read in
+/// `SiteTabScreen`'s header or `screen` switch would bring the hazard back.
 ///
 /// Its own view rather than a stack inside the screen so a test can host it and time it.
 struct ProposalsList: View {

@@ -15,50 +15,20 @@ struct SiteTabScreen: View {
     @Environment(\.isTabPreview) private var isPreview
 
     var body: some View {
-        // The path lives in the tab state, so the screen you were on survives a switch.
-        // A plain switch instead of NavigationStack: that would install a window toolbar,
-        // which clashes with the tab bar owning the title bar area.
-        ZStack {
-            if let screen = state.path.last {
-                Group {
-                    switch screen {
-                    case .opportunities:
-                        OpportunitiesScreen(overview: overview, onBack: pop)
-                    case .registry:
-                        RegistryScreen(
-                            overview: overview,
-                            state: state,
-                            rankings: rankings,
-                            onBack: pop,
-                            onRefresh: onRefresh
-                        )
-                    case .planning:
-                        PlanningScreen(
-                            overview: overview,
-                            state: state,
-                            rankings: rankings,
-                            preferences: preferences,
-                            onBack: pop,
-                            onRefresh: onRefresh
-                        )
-                    case .log:
-                        PlaceholderScreen(
-                            title: "Log",
-                            message: "The action log for \(overview.site.name) is not in the macOS app yet.",
-                            systemImage: "clock",
-                            backTitle: overview.site.name,
-                            onBack: pop
-                        )
-                    }
-                }
-                .transition(.move(edge: .trailing))
-            } else {
-                root
-                    .transition(.move(edge: .leading))
-            }
+        // One header row for every screen, pinned above the content, so the site's name,
+        // its live count and the period never scroll away and never change shape between
+        // screens. The rail beside the pane chooses the screen; the swap is instant, like a
+        // tab's. A plain switch instead of NavigationStack: that would install a window
+        // toolbar, which clashes with the tab bar owning the title bar area.
+        VStack(spacing: 0) {
+            header
+                .column()
+                .frame(height: Self.headerHeight)
+            Rectangle()
+                .fill(Palette.line)
+                .frame(height: 1)
+            screen
         }
-        .clipped()
-        .animation(.snappy(duration: 0.3), value: state.path)
         // The live count polls only while the real screen is shown: a preview is a still.
         .task(id: overview.id) {
             guard !isPreview else { return }
@@ -76,8 +46,22 @@ struct SiteTabScreen: View {
         }
     }
 
-    private func pop() {
-        state.path.removeLast()
+    @ViewBuilder
+    private var screen: some View {
+        switch state.screen {
+        case .dashboard:
+            dashboard
+        case .registry:
+            RegistryScreen(overview: overview, state: state, rankings: rankings, onRefresh: onRefresh)
+        case .planning:
+            PlanningScreen(overview: overview, state: state, rankings: rankings, preferences: preferences, onRefresh: onRefresh)
+        case .log:
+            PlaceholderScreen(
+                title: "Log",
+                message: "The action log for \(overview.site.name) is not in the macOS app yet.",
+                systemImage: "clock"
+            )
+        }
     }
 
     // MARK: Root
@@ -134,16 +118,15 @@ struct SiteTabScreen: View {
     /// reads like the pane's own floor.
     static let columnWidth: CGFloat = 880
     static let columnInset: CGFloat = 24
+    /// The header row's height. The rail beside the pane centres its first icon on it.
+    static let headerHeight: CGFloat = 56
+    /// The room between the header's hairline and the first line of a screen.
+    static let screenInset: CGFloat = 32
 
-    private var root: some View {
+    private var dashboard: some View {
         // The screen scrolls: the two ranked lists under the chart can outgrow the pane.
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                header
-                    .column()
-                    .padding(.top, Self.columnInset)
-                    .padding(.bottom, 40)
-
                 if state.period == .today {
                     todayBody
                 } else {
@@ -155,6 +138,7 @@ struct SiteTabScreen: View {
                     .padding(.top, 24)
                     .padding(.bottom, Self.columnInset)
             }
+            .padding(.top, Self.screenInset)
         }
         .scrollDisabled(isPreview)
     }
@@ -295,44 +279,42 @@ struct SiteTabScreen: View {
                 .textSelection(.enabled)
                 .lineLimit(1)
 
-            // The people on the site right now, beside the name: the one figure on the screen
-            // that moves on its own. The provider's "online" count, the last five minutes;
-            // the realtime card below draws the wider half hour by the minute.
-            if let liveVisitors {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(visitsColor)
-                        .frame(width: 7, height: 7)
-                    Text("\(liveVisitors.onlineNow.formatted(.number.precision(.fractionLength(0)))) online")
-                        .monospacedDigit()
-                }
-                .foregroundStyle(.secondary)
-                .padding(.leading, 6)
-                .help("Distinct people on the site in the last \(liveVisitors.onlineMinutes) minutes")
-                .accessibilityLabel("\(liveVisitors.onlineNow.formatted(.number.precision(.fractionLength(0)))) people online")
-            }
+            // The people on the site right now, beside the name: the one figure in the header
+            // that moves on its own. Its own view, so the poll that feeds it invalidates a
+            // label and not the screen below — see `OnlineCount`.
+            OnlineCount(live: live, siteID: overview.id)
 
             Spacer()
 
-            // Every control of the screen sits in one trailing cluster: the period first,
-            // as it changes what the whole screen shows, then the places to go.
+            // The controls sit in one trailing cluster. The period only means something on
+            // the dashboard — the registry and the plan have their own windows — so it
+            // leaves with the dashboard rather than staying and lying.
             HStack(spacing: 20) {
-                PeriodSwitch(selection: $state.period)
-                    .disabled(isPreview)
+                if state.screen == .dashboard {
+                    PeriodSwitch(selection: $state.period)
+                        .disabled(isPreview)
+                }
 
-                HStack(spacing: 14) {
-                    Button("Registry") { state.path.append(.registry) }
-                    Button("Planning") { state.path.append(.planning) }
-                    Button("Log") { state.path.append(.log) }
+                HStack(spacing: 10) {
+                    if busy {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
                     Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
                         .labelStyle(.iconOnly)
-                        .disabled(isRefreshing || history.refreshing.contains(overview.id))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .disabled(busy)
                         .help("Refresh (⌘R)")
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// Whether anything this tab shows is still on its way: the overview, the site's series,
+    /// or its ranked lists.
+    private var busy: Bool {
+        isRefreshing || history.refreshing.contains(overview.id) || rankings.loading.contains(overview.id)
     }
 
     private var footer: some View {
@@ -343,10 +325,6 @@ struct SiteTabScreen: View {
                     .lineLimit(1)
             }
             Spacer()
-            if isRefreshing || history.refreshing.contains(overview.id) {
-                ProgressView()
-                    .controlSize(.small)
-            }
             if let generated = Self.instant(overview.dashboard?.generatedAt) {
                 // Ticks from a coarse timeline, not SwiftUI's relative date text: that style
                 // asks for a new frame continuously and costs a fifth of a core while idle.
@@ -370,6 +348,38 @@ struct SiteTabScreen: View {
     static func instant(_ string: String?) -> Date? {
         guard let string else { return nil }
         return isoWithFraction.date(from: string) ?? iso.date(from: string)
+    }
+}
+
+// MARK: - Online count
+
+/// The provider's "online" count, the last five minutes; the realtime card on the dashboard
+/// draws the wider half hour by the minute.
+///
+/// The header is pinned above every screen, and the live store lands a new report every few
+/// seconds. This is the only view in the header that reads that store, so a poll re-renders
+/// one label. If the header read `live` itself, every poll would rebuild the screen under it,
+/// and the Planning screen's lazy list re-phases its rows each time — the idle-CPU hazard
+/// `ProposalsList` documents.
+private struct OnlineCount: View {
+    let live: LiveStore
+    let siteID: Site.ID
+
+    var body: some View {
+        if let liveVisitors = live.reports[siteID]?.live {
+            let count = liveVisitors.onlineNow.formatted(.number.precision(.fractionLength(0)))
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(visitsColor)
+                    .frame(width: 7, height: 7)
+                Text("\(count) online")
+                    .monospacedDigit()
+            }
+            .foregroundStyle(.secondary)
+            .padding(.leading, 6)
+            .help("Distinct people on the site in the last \(liveVisitors.onlineMinutes) minutes")
+            .accessibilityLabel("\(count) people online")
+        }
     }
 }
 
@@ -1514,71 +1524,17 @@ private struct VisitsTooltip: View {
     }
 }
 
-// MARK: - Sub-screens
+// MARK: - Placeholder
 
-/// Sub-screen listing every opportunity signal of a site.
-private struct OpportunitiesScreen: View {
-    let overview: SiteOverview
-    let onBack: () -> Void
-
-    @Environment(\.isTabPreview) private var isPreview
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                Button(overview.site.name, systemImage: "chevron.left", action: onBack)
-                    .keyboardShortcut(isPreview ? nil : KeyboardShortcut("[", modifiers: .command))
-                Spacer()
-            }
-
-            Text("Opportunities")
-                .font(.largeTitle)
-
-            let signals = overview.dashboard?.digest.signals ?? []
-            if signals.isEmpty {
-                ContentUnavailableView(
-                    "No opportunities",
-                    systemImage: "checkmark.circle",
-                    description: Text("Nothing needs attention in the current snapshot.")
-                )
-            } else {
-                List(Array(signals.enumerated()), id: \.offset) { _, signal in
-                    HStack {
-                        Label(signal.label, systemImage: "sparkles")
-                        Spacer()
-                        Text(signal.kind)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-        .padding(24)
-    }
-}
-
+/// A screen that is not in the Mac app yet, in the same frame the real one will take.
 private struct PlaceholderScreen: View {
     let title: String
     let message: String
     let systemImage: String
-    let backTitle: String
-    let onBack: () -> Void
-
-    @Environment(\.isTabPreview) private var isPreview
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                Button(backTitle, systemImage: "chevron.left", action: onBack)
-                    .keyboardShortcut(isPreview ? nil : KeyboardShortcut("[", modifiers: .command))
-                Spacer()
-            }
-            Text(title)
-                .font(.largeTitle)
-            ContentUnavailableView(title, systemImage: systemImage, description: Text(message))
-            Spacer()
-        }
-        .padding(24)
+        ContentUnavailableView(title, systemImage: systemImage, description: Text(message))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

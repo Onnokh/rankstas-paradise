@@ -39,11 +39,11 @@ final class WorkspaceTests: XCTestCase {
         workspace.reconcile(siteIDs: ["a", "b"])
 
         workspace.activate(.site("a"))
-        workspace.state(for: "a").path = [.opportunities]
+        workspace.state(for: "a").screen = .registry
         workspace.activate(.site("b"))
 
         XCTAssertFalse(workspace.mountedTabIDs.contains(.site("a")))
-        XCTAssertEqual(workspace.state(for: "a").path, [.opportunities])
+        XCTAssertEqual(workspace.state(for: "a").screen, .registry)
     }
 
     func testActivateTabAtIndexFollowsTabOrder() {

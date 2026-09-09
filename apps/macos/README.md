@@ -75,12 +75,14 @@ xcodegen generate
 - `Sources/Model` — API client, DTOs, cache-first repository, `OverviewModel`, `LiveStore` (live counts and the live feed, polled, never cached). Data only, shared by every tab.
 - `Sources/Workspace` — `Workspace` (tabs, active tab, bounded mounted set), per-tab state, `PeekProgress` (0 closed, 1 strip, 2 grid).
 - `Sources/Gesture` — three-finger trackpad drag recogniser streaming travel and velocity.
-- `Sources/UI` — `RootView`, `TabBar`, `PeekOverlay`, `TabContentStack`, and `PeekLayout`, the pure struct that turns window size plus peek progress into every frame.
+- `Sources/UI` — `RootView`, `TabBar`, `PeekOverlay`, `TabContentStack`, `ScreenRail`, and `PeekLayout`, the pure struct that turns window size plus peek progress into every frame.
 - `Sources/UI/Screens` — one screen per tab kind, rendered from tab state so previews match the live screen.
-  A site tab also carries sub-screens: Opportunities, and Registry, which lists every target page with its
-  window, phase and keywords. Pages Google reports as not indexed are dimmed there and in the ranking card.
+  A site tab has four screens, peers chosen from the rail beside the pane: Dashboard, Registry (every target
+  page with its window, phase and keywords; pages Google reports as not indexed are dimmed there and in the
+  ranking card), Planning, and Log. One header row — favicon, name, origin, people online, the period on the
+  dashboard, refresh — is pinned above all four.
 
-Peek: swipe down with three fingers (or ⌘⇧P) to reveal live previews under the tabs; keep swiping for the grid. Esc or a click closes it. ⌘1…⌘9 select tabs; ⌘← and ⌘→ step between them. View > Refresh (⌘R) refreshes the active tab.
+Peek: swipe down with three fingers (or ⌘⇧P) to reveal live previews under the tabs; keep swiping for the grid. Esc or a click closes it. ⌘1…⌘9 select tabs; ⌘← and ⌘→ step between them. ⌘⌥1…⌘⌥4 choose a site's screen in the rail's order. View > Refresh (⌘R) refreshes the active tab.
 
 Refreshing and loading never blank the screen. Every store keeps what it shows until the server's answer lands, and the overview, history and ranked lists are read from a local cache first, so a warm launch and a refresh only change the numbers, not the layout. The live count is the one exception: it is never cached, because a stale "3 people" would be a lie.
 

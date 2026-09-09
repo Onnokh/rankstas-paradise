@@ -11,7 +11,6 @@ struct RegistryScreen: View {
     let overview: SiteOverview
     @Bindable var state: SiteTabState
     let rankings: RankingStore
-    let onBack: () -> Void
     let onRefresh: () -> Void
 
     @Environment(\.isTabPreview) private var isPreview
@@ -36,7 +35,7 @@ struct RegistryScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header
-                    .padding(.top, SiteTabScreen.columnInset)
+                    .padding(.top, SiteTabScreen.screenInset)
                     .padding(.bottom, 24)
 
                 controls
@@ -58,30 +57,10 @@ struct RegistryScreen: View {
 
     // MARK: Header
 
+    /// What the screen holds, in one line, under the tab's header row.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Button(overview.site.name, systemImage: "chevron.left", action: onBack)
-                    .keyboardShortcut(isPreview ? nil : KeyboardShortcut("[", modifiers: .command))
-                Spacer()
-                if loading {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .disabled(loading)
-                    .help("Refresh (⌘R)")
-            }
-
-            Text("Registry")
-                .font(.largeTitle)
-
-            Text(summary)
-                .foregroundStyle(.secondary)
-        }
+        Text(summary)
+            .foregroundStyle(.secondary)
     }
 
     /// What the registry holds, in one line: how many pages, how many carry keywords, how
