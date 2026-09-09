@@ -168,8 +168,8 @@ enum LogList {
         )
     }
 
-    /// How many entries of each kind the record holds, for the filter chips. Counted before
-    /// the kind filter, so a chip's figure does not change as chips are pressed.
+    /// How many entries of each kind the record holds, for the kind filter's rows. Counted
+    /// before the kind filter, so a row's figure does not change as rows are picked.
     static func kindCounts(_ entries: [LogEntry]) -> [LogKind: Int] {
         var counts: [LogKind: Int] = [:]
         for entry in entries {
