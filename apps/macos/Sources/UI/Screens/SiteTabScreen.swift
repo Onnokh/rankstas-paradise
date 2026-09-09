@@ -6,6 +6,7 @@ struct SiteTabScreen: View {
     @Bindable var state: SiteTabState
     let history: HistoryStore
     let rankings: RankingStore
+    let preferences: PlanningPreferences
     let live: LiveStore
     let icon: Image?
     let isRefreshing: Bool
@@ -36,6 +37,7 @@ struct SiteTabScreen: View {
                             overview: overview,
                             state: state,
                             rankings: rankings,
+                            preferences: preferences,
                             onBack: pop,
                             onRefresh: onRefresh
                         )
@@ -1586,6 +1588,7 @@ private struct PlaceholderScreen: View {
         state: SiteTabState(siteID: "sleevy"),
         history: HistoryStore(),
         rankings: RankingStore(),
+        preferences: PlanningPreferences(),
         live: LiveStore(),
         icon: nil,
         isRefreshing: false,

@@ -342,3 +342,23 @@ extension PlanningListTests {
         XCTAssertEqual(unknown.verdictKind, .unmeasured)
     }
 }
+
+// MARK: - The default reach
+
+extension PlanningListTests {
+    func testTheDefaultReachNeverSitsBelowTheFloor() {
+        // A domain rating of 0 does not mean the site can only rank for keywords scored 0.
+        // Taking the rating literally at the bottom of the scale hides the entire long tail
+        // a new site can actually take — which, at DR 0, is the only thing it can take.
+        XCTAssertEqual(PlanningList.defaultReach(domainRating: 0), 10)
+        XCTAssertEqual(PlanningList.defaultReach(domainRating: 4.7), 10)
+        XCTAssertEqual(PlanningList.defaultReach(domainRating: nil), 10)
+    }
+
+    func testAboveTheFloorTheDefaultIsTheRatingItself() {
+        // No headroom added: above the floor the rating is the honest comparison, and the
+        // reader can move the slider if they disagree.
+        XCTAssertEqual(PlanningList.defaultReach(domainRating: 34), 34)
+        XCTAssertEqual(PlanningList.defaultReach(domainRating: 71.5), 71.5)
+    }
+}
