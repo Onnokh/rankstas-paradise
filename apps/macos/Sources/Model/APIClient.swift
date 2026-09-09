@@ -86,6 +86,16 @@ struct APIClient: Sendable {
         )
     }
 
+    /// The site's whole work record, newest first. `path` narrows it to one page; the Log
+    /// screen asks for all of it, because the screen's own filters read across pages.
+    func log(siteID: String, path: String? = nil) async throws -> LogListReport {
+        var query = [URLQueryItem(name: "site", value: siteID)]
+        if let path {
+            query.append(URLQueryItem(name: "path", value: path))
+        }
+        return try await get(path: "/api/log", query: query)
+    }
+
     func keywordProposals(siteID: String) async throws -> KeywordProposalsReport {
         try await get(
             path: "/api/keywords/proposed",
