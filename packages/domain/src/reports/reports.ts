@@ -803,7 +803,10 @@ export const layer = Layer.effect(
                   cluster: entry.cluster,
                   priority: entry.priority,
                   intent: entry.intent,
-                  verdict: keywordVerdict(metric),
+                  verdict: keywordVerdict(
+                    metric,
+                    isBrandKeyword(entry.keyword, brandTerms),
+                  ),
                   searchVolume: metric?.searchVolume ?? null,
                   difficulty,
                   difficultyGap:
@@ -832,6 +835,7 @@ export const layer = Layer.effect(
               domainRating,
               totals: {
                 keywords: keywords.length,
+                brand: count("brand"),
                 unmeasured: count("unmeasured"),
                 unreported: count("unreported"),
                 noDemand: count("no-demand"),
@@ -1325,13 +1329,42 @@ export const entrySummary = (entry: RegistryEntry): EntrySummary => ({
 })
 
 // An opportunity signal summarized for display.
-// What a stored metric says about a planned Keyword, or "unmeasured" when there
-// is none. See KeywordHealthVerdict for why a null volume and a zero one are
-// kept apart: both mean "expect no traffic here", but only one of them is the
-// vendor saying so.
+// What a stored metric says about a planned Keyword, or why there is none. See
+// KeywordHealthVerdict for why a null volume and a zero one are kept apart:
+// both mean "expect no traffic here", but only one of them is the vendor saying
+// so.
+//
+// `isBrand` is asked before the metric is read, because a Brand query has no
+// metric BY DESIGN — KeywordMetrics never asks about one, since volume on the
+// Site's own name cannot change a decision and the vendor charges per term. Left
+// as `unmeasured` it reads "never asked; configure a DataForSEO key and sync",
+// which is advice that would change nothing: the key is configured, and the
+// keyword still would not be asked about. Found on a real plan, where the row
+// was the Site's own name.
+// Whether a planned Keyword is the Site's own name. The same test KeywordMetrics
+// applies before spending money, applied here to explain the silence it causes.
+// Exported so the rule lives in one place: if the two ever disagree, a row would
+// be labelled brand and asked about anyway, or asked about and labelled as if a
+// key were missing.
+export const isBrandKeyword = (
+  keyword: string,
+  brandTerms: ReadonlyArray<string>,
+): boolean => {
+  const folded = foldKeyword(keyword)
+  return brandTerms.some((term) => {
+    const brand = foldKeyword(term)
+    return brand !== "" && folded.includes(brand)
+  })
+}
+
 export const keywordVerdict = (
   metric: KeywordMetricSummary | undefined,
+  isBrand = false,
 ): KeywordHealthVerdict => {
+  // Ahead of the metric check on purpose. A Brand query that somehow does hold
+  // a stored row — asked about before it became a brand term, say — is still a
+  // Brand query, and its volume is still not something to act on.
+  if (isBrand) return "brand"
   if (!metric) return "unmeasured"
   if (metric.searchVolume === null) return "unreported"
   return metric.searchVolume > 0 ? "has-demand" : "no-demand"
@@ -1402,11 +1435,15 @@ export const seasonalityOf = (
 // first, because that is where the plan's weight actually is; then the rows the
 // reader has to decide about, with the measured-and-empty ones ahead of the
 // unmeasured, because those are a decision and these are just a gap in the data.
+// Plan order: what to act on first, and what needs nothing at all last. Brand
+// sits below unmeasured because an unmeasured row still asks something of the
+// reader — measure it — and a brand row asks nothing, ever.
 const healthRank: Record<KeywordHealthVerdict, number> = {
   "has-demand": 0,
   "no-demand": 1,
   unreported: 2,
   unmeasured: 3,
+  brand: 4,
 }
 
 // A stored Keyword metric as a report reports it.

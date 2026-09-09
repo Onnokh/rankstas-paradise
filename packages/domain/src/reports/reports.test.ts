@@ -247,6 +247,20 @@ const fixtureRegistry: ReadonlyArray<RegistryEntry> = [
     baselineDate: "2026-05-18",
     status: "Measuring",
   }),
+  // The site's own name. In the shared fixture rather than a test of its own
+  // because the interesting behaviour is what registryHealth does with it, and
+  // the fixture site's brandTerms already hold "sleevy".
+  entry({
+    cluster: "Brand",
+    keyword: "sleevy pro",
+    targetUrl: "/pro",
+    intent: "brand",
+    whyOpportunity: "The paid tier's own page.",
+    priority: "P2",
+    publishedAt: "2026-05-20",
+    baselineDate: "2026-05-18",
+    status: "Measuring",
+  }),
   entry({
     cluster: "Mobile",
     keyword: "save links from iphone",
@@ -483,12 +497,13 @@ const debugVisits: VisitsDays = {
 
 test("statusReport counts registry targets/keywords and sitemap pages", async () => {
   const report = await run(Reports.use.statusReport())
-  // 4 registry rows over 4 distinct targetUrls; 3 carry a keyword (the 4th is
+  // 5 registry rows over 5 distinct targetUrls; 4 carry a keyword (the 5th is
   // the inventory "/" row with an empty keyword).
-  expect(report.registry.targets).toBe(4)
-  expect(report.registry.keywords).toBe(3)
-  // Sitemap has 6 pages; 3 mapped keyword targets + 1 inventory "/" → /pricing
-  // and /about are unmapped.
+  expect(report.registry.targets).toBe(5)
+  expect(report.registry.keywords).toBe(4)
+  // Sitemap has 6 pages; of them 3 mapped keyword targets + 1 inventory "/" →
+  // /pricing and /about are unmapped. The brand row's /pro is a registry target
+  // the sitemap does not list, which is why it is not in this count.
   expect(report.sitemap.pages).toBe(6)
   expect(report.sitemap.unmapped).toEqual(["/pricing", "/about"])
   // Data block reflects the seeded 56-day debug dataset.
@@ -777,9 +792,13 @@ test("registryHealth sorts the plan by demand and counts each verdict", async ()
     ["pocket alternative", "has-demand"],
     ["chrome read later extension", "no-demand"],
     ["save links from iphone", "unreported"],
+    // The site's own name, last: an unmeasured row asks to be measured, and
+    // this one asks nothing at all.
+    ["sleevy pro", "brand"],
   ])
   expect(report.totals).toEqual({
-    keywords: 3,
+    keywords: 4,
+    brand: 1,
     unmeasured: 0,
     unreported: 1,
     noDemand: 1,
@@ -789,6 +808,15 @@ test("registryHealth sorts the plan by demand and counts each verdict", async ()
     monthlyVolume: 1_900,
   })
   expect(report.market?.label).toBe("United States")
+})
+
+test("the five verdicts account for every planned keyword", async () => {
+  // The invariant behind the tiles: a reader adding up the counts must land on
+  // the number of keywords. Adding a verdict without adding its total is the
+  // way that quietly stops being true.
+  const report = await run(Reports.use.registryHealth())
+  const { keywords, monthlyVolume: _volume, ...byVerdict } = report.totals
+  expect(Object.values(byVerdict).reduce((total, n) => total + n, 0)).toBe(keywords)
 })
 
 test("the verdict decides the order, not the plan's own", async () => {
@@ -810,8 +838,10 @@ test("the verdict decides the order, not the plan's own", async () => {
   expect(report.keywords.map((row) => [row.keyword, row.verdict])).toEqual([
     ["save links from iphone", "no-demand"],
     ["chrome read later extension", "unreported"],
-    // Nobody asked about this one at all, so it comes last.
+    // Nobody asked about this one at all, so it comes after those two.
     ["pocket alternative", "unmeasured"],
+    // And the brand row after even that, because it asks nothing of anyone.
+    ["sleevy pro", "brand"],
   ])
 })
 
@@ -864,11 +894,11 @@ test("registryHealth carries each keyword's peak month", async () => {
 })
 
 test("registryHealth leaves inventory-only rows out", async () => {
-  // The fixture registry holds four rows and one of them has a blank keyword:
+  // The fixture registry holds five rows and one of them has a blank keyword:
   // a page the sitemap contributed. It makes no claim about demand, so judging
   // it would invent a verdict about nothing.
   const report = await run(Reports.use.registryHealth())
-  expect(report.keywords).toHaveLength(3)
+  expect(report.keywords).toHaveLength(4)
   expect(report.keywords.every((row) => row.keyword.trim() !== "")).toBe(true)
 })
 
@@ -878,7 +908,14 @@ test("an unmeasured keyword says nothing about the keyword", async () => {
   const report = await run(Reports.use.registryHealth())
   expect(report.totals.unmeasured).toBe(3)
   expect(report.totals.monthlyVolume).toBe(0)
-  expect(report.keywords.every((row) => row.verdict === "unmeasured")).toBe(true)
+  // Every row except the brand one, which is unmeasured for a different reason
+  // and says so: it will never be asked about, key or no key.
+  expect(
+    report.keywords
+      .filter((row) => row.verdict !== "brand")
+      .every((row) => row.verdict === "unmeasured"),
+  ).toBe(true)
+  expect(report.totals.brand).toBe(1)
   expect(report.keywords.every((row) => row.searchVolume === null)).toBe(true)
 })
 
@@ -888,7 +925,11 @@ test("registryHealth ranks demand strongest first within a verdict", async () =>
   storedDemand.set("save links from iphone", demandMetric("save links from iphone", { searchVolume: 720 }))
 
   const report = await run(Reports.use.registryHealth())
-  expect(report.keywords.map((row) => row.searchVolume)).toEqual([4_400, 720, 90])
+  // The brand row trails with no volume: it is never asked about, so there is
+  // nothing to rank it by.
+  expect(report.keywords.map((row) => row.searchVolume)).toEqual([
+    4_400, 720, 90, null,
+  ])
   expect(report.totals.monthlyVolume).toBe(5_210)
 })
 

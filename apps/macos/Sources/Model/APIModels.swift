@@ -476,6 +476,10 @@ struct RegistryHealthReport: Codable, Sendable {
     let keywords: [KeywordHealth]
 }
 
+// `totals.brand` is deliberately absent. The screen counts each verdict off `keywords`
+// itself, so reading the server's count would add a field that must be kept in step for
+// nothing — and a non-optional field with a default does NOT decode when the key is
+// missing, so adding it would break every report already cached on disk.
 struct KeywordTotals: Codable, Sendable, Equatable {
     let keywords: Int
     let unmeasured: Int
@@ -495,7 +499,8 @@ struct KeywordHealth: Codable, Sendable, Equatable, Identifiable {
     let priority: String
     /// The intent the plan claims.
     let intent: String
-    /// "has-demand", "no-demand", "unreported" or "unmeasured" — see `KeywordVerdict`.
+    /// "has-demand", "no-demand", "unreported", "unmeasured" or "brand" — see
+    /// `KeywordVerdict`.
     let verdict: String
     let searchVolume: Double?
     let difficulty: Double?
@@ -524,7 +529,7 @@ struct KeywordHealth: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-/// What the vendor said about a planned keyword, as four distinct facts. A word this build
+/// What the vendor said about a planned keyword, as five distinct facts. A word this build
 /// does not know reads as `unmeasured`: claiming the vendor said something it did not is
 /// worse than admitting we have not asked.
 enum KeywordVerdict: String, Sendable, CaseIterable {
@@ -532,6 +537,9 @@ enum KeywordVerdict: String, Sendable, CaseIterable {
     case noDemand = "no-demand"
     case unreported = "unreported"
     case unmeasured = "unmeasured"
+    /// The site's own name, which is never asked about. Apart from `unmeasured` because the
+    /// two ask opposite things of the reader: measure that one, and leave this one alone.
+    case brand = "brand"
 
     var label: String {
         switch self {
@@ -539,6 +547,7 @@ enum KeywordVerdict: String, Sendable, CaseIterable {
         case .noDemand: "Aimed at nothing"
         case .unreported: "Too rare to measure"
         case .unmeasured: "Not measured"
+        case .brand: "Your own brand"
         }
     }
 }

@@ -482,6 +482,12 @@ export interface OpportunitiesReport
 //   - "no-demand": asked, and the vendor measured zero. The rows to act on.
 //   - "has-demand": asked, and there is real demand behind the plan.
 export const keywordHealthVerdicts = [
+  // Deliberately never asked: the Keyword is the Site's own name. Its own
+  // verdict rather than `unmeasured`, because the two lead opposite ways — an
+  // unmeasured Keyword asks the reader to configure a key and sync, and this
+  // one asks nothing of them ever. Volume on your own brand tells you nothing
+  // you can act on, so the row is correct as it stands.
+  "brand",
   "unmeasured",
   "unreported",
   "no-demand",
@@ -538,6 +544,9 @@ export const RegistryHealthReport = Schema.Struct({
   domainRating: Schema.NullOr(Schema.Number),
   totals: Schema.Struct({
     keywords: Schema.Number,
+    // The five verdicts sum to `keywords`, so a reader can see that every
+    // planned Keyword is accounted for.
+    brand: Schema.Number,
     unmeasured: Schema.Number,
     unreported: Schema.Number,
     noDemand: Schema.Number,
