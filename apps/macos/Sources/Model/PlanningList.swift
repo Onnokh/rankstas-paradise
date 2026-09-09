@@ -13,7 +13,7 @@ import Foundation
 /// The distinction that matters is between an EMPTY answer and NO answer. Only the first is
 /// a statement about the plan.
 enum PlanningState: Equatable {
-    /// A report arrived. The list, the tiles and the counts all speak for themselves.
+    /// A report arrived. The list, the strip of figures and the counts all speak for themselves.
     case plan
     /// Nothing has arrived and nothing has failed: the first look at a cold site.
     case waiting
@@ -106,6 +106,21 @@ enum PlanningList {
         }
     }
 
+    /// The verdicts offered as chips over the list — not every case, because two of them
+    /// cannot be acted on from here.
+    ///
+    /// `noDemand` needs the vendor to answer with a literal zero, and it does not: a term
+    /// nobody searches for comes back with no volume at all, which is `unreported`. Across
+    /// the four sites the store holds, every measured keyword is `has-demand`, `unreported`
+    /// or `brand`, and not one is `no-demand` — so the chip was a filter that could only
+    /// ever read 0. The verdict itself stays: the server can still produce it, and a row
+    /// that ever is one says so in coral where it belongs, beside the keyword.
+    ///
+    /// `unmeasured` is not a verdict on a keyword at all — it says a DataForSEO key is
+    /// missing or a sync has not run, which is our own setup. The Measured figure above the
+    /// list is where that belongs, with its denominator beside it.
+    static let verdictFilters: [KeywordVerdict] = [.hasDemand, .unreported, .brand]
+
     /// How much of the plan the vendor has actually answered for. The denominator of every
     /// claim the screen makes: a "1 of 3" is honest where a "1 of 29" would not be, because
     /// the other 26 were never asked about.
@@ -123,34 +138,5 @@ enum PlanningList {
             guard let difficulty = keyword.difficulty else { return false }
             return difficulty <= reach
         }
-    }
-
-    /// Keywords with a season worth planning around, soonest first from `month`.
-    ///
-    /// This is the planning part: a term that peaks every October needs its page to exist
-    /// before then, so the useful order is not "biggest" but "next".
-    static func upcoming(
-        _ keywords: [KeywordHealth],
-        from month: Int,
-        seasonalAbove threshold: Double
-    ) -> [KeywordHealth] {
-        keywords
-            .filter { keyword in
-                guard let peak = keyword.peakMonth, let seasonality = keyword.seasonality
-                else { return false }
-                return (1...12).contains(peak) && seasonality >= threshold
-            }
-            .sorted { left, right in
-                let a = monthsAhead(left.peakMonth!, from: month)
-                let b = monthsAhead(right.peakMonth!, from: month)
-                // Same month: the bigger term first.
-                return a == b ? (left.searchVolume ?? 0) > (right.searchVolume ?? 0) : a < b
-            }
-    }
-
-    /// How many months until `peak`, counting the current month as zero and wrapping the
-    /// year. A peak that has just passed is eleven months away, not one behind.
-    static func monthsAhead(_ peak: Int, from month: Int) -> Int {
-        ((peak - month) % 12 + 12) % 12
     }
 }
