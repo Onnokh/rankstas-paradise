@@ -391,6 +391,11 @@ export const layer = Layer.effect(
           : { inspections: [], failed: 0 }
       yield* storage.savePageIndexStatuses(inspection.inspections)
       yield* storage.pruneIndexStatuses(targetUrls)
+      // The day's Indexed tally, over the statuses just written and pruned. It
+      // is recorded even when every target was fresh and nothing was inspected:
+      // the reading is about the day, not about this run's calls, and a run that
+      // skipped the vendor still knows what the ledger says today.
+      yield* storage.recordIndexCoverage(targetUrls.length)
 
       // Keyword metrics run last and in sequence, not forked with the others,
       // because they are the one third-party call that depends on this run's

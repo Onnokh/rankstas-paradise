@@ -30,6 +30,37 @@ enum RegistrySort: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// What the whole registry adds up to, as the strip over the list reads it.
+///
+/// Every share carries its own denominator and every one of them is the same: the pages the
+/// registry holds. A share of nothing is nil rather than zero — an empty registry is not a
+/// registry that is 0% indexed, and the screen says the two differently.
+struct RegistryTotals: Equatable, Sendable {
+    /// The pages the registry holds.
+    let pages: Int
+    /// The pages carrying at least one keyword. The rest are inventory-only pages: tracked,
+    /// with nothing planned to rank on them.
+    let withKeywords: Int
+    /// Keyword mappings across every page, counted once per row, not per distinct term.
+    let keywords: Int
+    let indexed: Int
+    let notIndexed: Int
+
+    /// The pages Google has said nothing usable about: never inspected, or inspected and
+    /// answered "unknown". Not a zero and not a verdict.
+    var unknown: Int { max(pages - indexed - notIndexed, 0) }
+
+    /// How much of the registry aims at a keyword at all, 0…1.
+    var keywordShare: Double? { share(withKeywords) }
+    /// How much of the registry Google holds, 0…1.
+    var indexedShare: Double? { share(indexed) }
+
+    private func share(_ count: Int) -> Double? {
+        guard pages > 0 else { return nil }
+        return Double(count) / Double(pages)
+    }
+}
+
 /// The registry as the screen shows it: the server's targets narrowed by what the reader
 /// asked for, then ranked. A pure function of its inputs, so the screen holds no list of
 /// its own and a refresh replaces the rows under the same order.
@@ -79,5 +110,28 @@ enum RegistryList {
     /// How many of the pages Google reports as not indexed.
     static func unindexedCount(_ targets: [RegistryTarget]) -> Int {
         targets.filter(\.isUnindexed).count
+    }
+
+    /// What the registry adds up to. Counted over every target the server sent, never over
+    /// the filtered rows: the strip describes the plan, and a search that hides half of it
+    /// does not change what the plan holds.
+    static func totals(_ targets: [RegistryTarget]) -> RegistryTotals {
+        RegistryTotals(
+            pages: targets.count,
+            withKeywords: targets.filter { !$0.mappedKeywords.isEmpty }.count,
+            keywords: targets.reduce(0) { $0 + $1.mappedKeywords.count },
+            indexed: targets.filter { $0.indexed == "indexed" }.count,
+            notIndexed: unindexedCount(targets)
+        )
+    }
+
+    /// The Indexed series as the chart plots it: the days the server sent that carry a real
+    /// calendar date, oldest first.
+    ///
+    /// The series is never sorted or filled here. The server records one reading a day and
+    /// sends them in order; a gap in it is a day nobody synced, and the chart draws straight
+    /// across it rather than inventing a reading the ledger does not hold.
+    static func coverageDays(_ days: [IndexCoverageDay]) -> [IndexCoverageDay] {
+        days.filter { $0.day != nil }
     }
 }

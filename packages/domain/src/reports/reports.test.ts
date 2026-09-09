@@ -1122,6 +1122,29 @@ test("registryList includes a known target with its keywords", async () => {
   expect(pocket?.visits?.current).toEqual({ pageviews: 0, visits: 0 })
 })
 
+test("registryList carries the Indexed series the Sync recorded", async () => {
+  // Nothing has recorded a reading in this fixture, and the report says so with an
+  // empty series rather than leaving the key out: a client that gets no series cannot
+  // tell a young registry from a server that does not keep one.
+  expect((await run(Reports.use.registryList())).coverage).toEqual([])
+
+  await runtime.runPromise(
+    Effect.gen(function* () {
+      const storage = yield* Storage.Service
+      yield* storage.recordIndexCoverage(3)
+    }),
+  )
+
+  expect((await run(Reports.use.registryList())).coverage).toEqual([
+    {
+      date: expect.any(String),
+      tracked: 3,
+      indexed: 0,
+      notIndexed: 1,
+    },
+  ])
+})
+
 test("logFeed enriches an action with a before/after window", async () => {
   const feed = await run(Reports.use.logFeed())
   const action = feed.find((item) => item.path === "/pocket-alternative")

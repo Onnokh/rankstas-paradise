@@ -345,6 +345,21 @@ test("a first sync writes the tracked window to Storage", async () => {
   expect(summary).toContain("Saved 28 Search Console rows across 28 finalized days")
 })
 
+test("a sync records the day's Indexed tally over its target pages", async () => {
+  await run(Sync.use.syncSearchConsole())
+
+  expect(await run(Storage.use.indexCoverageHistory())).toEqual([
+    { date: expect.any(String), tracked: 1, indexed: 1, notIndexed: 0 },
+  ])
+
+  // The second run inspects nothing (every status is fresh) and still records
+  // the day: the reading is about the day, not about this run's calls — and the
+  // day it already holds is replaced rather than doubled.
+  await run(Sync.use.syncSearchConsole())
+  expect(recorder.inspectFetches).toHaveLength(1)
+  expect(await run(Storage.use.indexCoverageHistory())).toHaveLength(1)
+})
+
 test("keyword candidates are the Registry's plan plus this run's own Queries", async () => {
   await run(Sync.use.syncSearchConsole())
 

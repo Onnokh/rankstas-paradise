@@ -79,6 +79,25 @@ built against an older server keeps decoding:
 Visits have no finalization lag: the newest stored day is yesterday (UTC), and
 the last two days are re-fetched on each sync.
 
+### Indexing over time
+
+Each target of `GET /api/registry` carries Google's last verdict on the page
+(`indexed`, `coverageState`, `inspectedAt`), which is a reading of the present:
+the ledger keeps one row per target and every URL Inspection overwrites it.
+
+`GET /api/registry` therefore also carries **`coverage`**: one reading a day of
+what the whole Registry looked like, oldest first, as
+`[{ date, tracked, indexed, notIndexed }]`. `tracked` is how many target pages
+the Registry held that day and is the denominator of the other two; the pages
+that are neither are the ones Google said nothing usable about (never inspected,
+or answered "unknown"). The Mac's registry screen charts it.
+
+The daily sync records the day's reading and replaces it if it runs again the
+same day. The series **cannot be backfilled** — URL Inspection answers only for
+the present — so it is worth exactly as many days as it has been recording, and
+an empty `coverage` is a young site rather than a broken one. The key is
+optional, so a client built against an older server keeps decoding.
+
 ### Keyword demand
 
 With a `dataforseo` key in the vault (or `DATAFORSEO_API_KEY` in the

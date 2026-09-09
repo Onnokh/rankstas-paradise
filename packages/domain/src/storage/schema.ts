@@ -353,4 +353,19 @@ export interface DomainRatingDay {
   readonly rating: number
 }
 
+// One day's Indexed tally across the Registry's target pages: how many pages the
+// Registry tracked that day, how many Google reported as indexed, and how many
+// it reported as not indexed. The rest — `tracked - indexed - notIndexed` — are
+// the pages Google has said nothing usable about.
+//
+// Accumulated one reading a day like the Domain Rating, and for the same reason:
+// URL Inspection answers only for the present, so a day nobody recorded is a day
+// that cannot be recovered.
+export interface IndexCoverageDay {
+  readonly date: string
+  readonly tracked: number
+  readonly indexed: number
+  readonly notIndexed: number
+}
+
 export * as StorageSchema from "./schema"

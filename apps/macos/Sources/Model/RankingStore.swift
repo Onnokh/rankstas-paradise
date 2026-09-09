@@ -21,6 +21,9 @@ final class RankingStore {
     private(set) var events: [KeywordsKey: [EventRow]] = [:]
     private(set) var revenue: [KeywordsKey: RevenueReport] = [:]
     private(set) var registry: [Site.ID: [RegistryTarget]] = [:]
+    /// How much of each site's registry Google held, day by day. Comes with the registry, in
+    /// the same answer: it is the same plan counted over time.
+    private(set) var coverage: [Site.ID: [IndexCoverageDay]] = [:]
     /// The plan judged on demand. Fetched with the registry, on the same terms: it is the
     /// same plan read the other way round, so one is never shown against a stale other.
     private(set) var health: [Site.ID: RegistryHealthReport] = [:]
@@ -97,6 +100,12 @@ final class RankingStore {
             }
             if let fetched = try await plan {
                 registry[siteID] = fetched.targets
+                // Held on the same terms as the reports below: only an answer replaces a
+                // series, so a server that stopped sending one does not erase the days
+                // already read.
+                if let days = fetched.coverage {
+                    coverage[siteID] = days
+                }
                 // A held report survives a failed refresh, so only an answer replaces
                 // one. See `PlanRead` for why the report may be missing.
                 if let report = fetched.health {
@@ -129,6 +138,9 @@ final class RankingStore {
     /// The registry and the two reports that read the same plan from other sides, together.
     private struct PlanRead: Sendable {
         let targets: [RegistryTarget]
+        /// The Indexed series that came with the registry. Nil for a server that predates
+        /// it; an empty series is a young one, not a missing one.
+        let coverage: [IndexCoverageDay]?
         /// Nil when the report did not arrive. The registry list is kept anyway: this
         /// endpoint is newer than the registry, so a server that predates it answers a
         /// 404 — and losing the registry over a screen the reader may not even be on
@@ -171,7 +183,8 @@ final class RankingStore {
 
         // The registry is the one that decides the read: without it the screens have no
         // list at all. The other two are awaited after it, so a failure there cancels them.
-        let list = try await targets.targets
+        let answer = try await targets
+        let list = answer.targets
         var report: RegistryHealthReport?
         var reason: String?
         do {
@@ -183,6 +196,7 @@ final class RankingStore {
         }
         return PlanRead(
             targets: list,
+            coverage: answer.coverage,
             health: report,
             healthError: reason,
             proposals: try? await proposals
@@ -235,6 +249,7 @@ final class RankingStore {
         var events: [Period.RawValue: [EventRow]] = [:]
         var revenue: [Period.RawValue: RevenueReport] = [:]
         var registry: [RegistryTarget]?
+        var coverage: [IndexCoverageDay]?
         var health: RegistryHealthReport?
         var proposals: KeywordProposalsReport?
     }
@@ -253,6 +268,9 @@ final class RankingStore {
         }
         if registry[siteID] == nil, let targets = cached.registry {
             registry[siteID] = targets
+        }
+        if coverage[siteID] == nil, let days = cached.coverage {
+            coverage[siteID] = days
         }
         if health[siteID] == nil, let cachedHealth = cached.health {
             health[siteID] = cachedHealth
@@ -274,6 +292,7 @@ final class RankingStore {
     private func writeCache(_ siteID: Site.ID) {
         var cache = SiteCache(
             registry: registry[siteID],
+            coverage: coverage[siteID],
             health: health[siteID],
             proposals: proposals[siteID]
         )
