@@ -14,52 +14,32 @@ struct SiteTabScreen: View {
     let onRefresh: () -> Void
 
     @Environment(\.isTabPreview) private var isPreview
+    /// The screens this tab holds a view for. The one it opens on is mounted at once; the
+    /// others are warmed one by one in the moments after, hidden, so the first click on any
+    /// of them is a visibility flip and not a build. See `screens`.
+    @State private var mounted: Set<SiteScreen> = []
+
+    /// The screen on show. A preview is a still of the site and always shows the dashboard:
+    /// a card in the peek is for picking a site, not for reading its registry at a fifth of
+    /// the size, and following the live screen made every rail click build the chosen screen
+    /// a second time inside a card nobody had open.
+    private var shown: SiteScreen { isPreview ? .dashboard : state.screen }
 
     var body: some View {
-        // The path lives in the tab state, so the screen you were on survives a switch.
-        // A plain switch instead of NavigationStack: that would install a window toolbar,
-        // which clashes with the tab bar owning the title bar area.
-        ZStack {
-            if let screen = state.path.last {
-                Group {
-                    switch screen {
-                    case .opportunities:
-                        OpportunitiesScreen(overview: overview, onBack: pop)
-                    case .registry:
-                        RegistryScreen(
-                            overview: overview,
-                            state: state,
-                            rankings: rankings,
-                            onBack: pop,
-                            onRefresh: onRefresh
-                        )
-                    case .planning:
-                        PlanningScreen(
-                            overview: overview,
-                            state: state,
-                            rankings: rankings,
-                            preferences: preferences,
-                            onBack: pop,
-                            onRefresh: onRefresh
-                        )
-                    case .log:
-                        LogScreen(
-                            overview: overview,
-                            state: state,
-                            log: log,
-                            onBack: pop,
-                            onRefresh: onRefresh
-                        )
-                    }
-                }
-                .transition(.move(edge: .trailing))
-            } else {
-                root
-                    .transition(.move(edge: .leading))
-            }
+        // One header row for every screen, pinned above the content, so the site's name,
+        // its live count and the period never scroll away and never change shape between
+        // screens. The rail beside the pane chooses the screen; the swap is instant, like a
+        // tab's. A plain switch instead of NavigationStack: that would install a window
+        // toolbar, which clashes with the tab bar owning the title bar area.
+        VStack(spacing: 0) {
+            header
+                .column()
+                .frame(height: Self.headerHeight)
+            Rectangle()
+                .fill(Palette.line)
+                .frame(height: 1)
+            screens
         }
-        .clipped()
-        .animation(.snappy(duration: 0.3), value: state.path)
         // The live count polls only while the real screen is shown: a preview is a still.
         .task(id: overview.id) {
             guard !isPreview else { return }
@@ -77,57 +57,61 @@ struct SiteTabScreen: View {
         }
     }
 
-    private func pop() {
-        state.path.removeLast()
-    }
-
-    // MARK: Root
-
-    /// The long daily series when it is loaded, else the dashboard's own 28 days.
-    private var days: [HistoryReportDay] {
-        if let series = history.series[overview.id], !series.isEmpty {
-            return series
+    /// The chosen screen in front, the ones visited before kept behind it, hidden. The swap
+    /// is instant the way a tab's is: nothing is built or torn down, only shown. Each hidden
+    /// screen keeps its scroll position and its open page. A preview is a still of one
+    /// screen and mounts only that.
+    /// The chosen screen in front, the others kept behind it, hidden. A swap is instant the
+    /// way a tab's is: nothing is built or torn down, only shown.
+    ///
+    /// Two things make that true, and both are load-bearing. Each screen sits in a
+    /// `ScreenSlot` drawn with `.equatable()`, so this body re-evaluating for a click does
+    /// not re-evaluate, and so not re-lay-out, the screens behind it — a swap back to the
+    /// dashboard used to cost its four charts again, 130 ms in a Release build. And the
+    /// screens are warmed after the tab's first frame rather than on first click, which put
+    /// the registry's 340 ms of layout between the click and the pane.
+    private var screens: some View {
+        ZStack {
+            ForEach(SiteScreen.allCases) { screen in
+                let isActive = screen == shown
+                if isActive || (!isPreview && mounted.contains(screen)) {
+                    ScreenSlot(
+                        screen: screen,
+                        overview: overview,
+                        state: state,
+                        history: history,
+                        rankings: rankings,
+                        preferences: preferences,
+                        live: live,
+                        log: log,
+                        isRefreshing: isRefreshing,
+                        onRefresh: onRefresh
+                    )
+                    .equatable()
+                    // Read by the Log screen, which fetches its record only once it is in
+                    // front. An environment value rather than a slot field, so the slot
+                    // stays equal across a click and the screens behind it stay untouched.
+                    .environment(\.isScreenShown, isActive)
+                    .opacity(isActive ? 1 : 0)
+                    .allowsHitTesting(isActive)
+                    .accessibilityHidden(!isActive)
+                    .zIndex(isActive ? 1 : 0)
+                }
+            }
         }
-        return (overview.dashboard?.history ?? []).map {
-            HistoryReportDay(date: $0.date, provisional: false, impressions: $0.impressions, clicks: $0.clicks, ctr: $0.ctr, position: $0.position)
+        .onChange(of: shown, initial: true) { _, screen in
+            mounted.insert(screen)
         }
-    }
-
-    private var comparison: PeriodComparison {
-        PeriodComparison(days: days.map(\.asHistoryDay), window: state.period.days)
-    }
-
-    private var visitsComparison: VisitsComparison? {
-        VisitsComparison(days: days, window: state.period.days)
-    }
-
-    private var liveVisitors: LiveVisitors? {
-        live.reports[overview.id]?.live
-    }
-
-    private var todayVisits: TodayVisits? {
-        live.todays[overview.id]?.today
-    }
-
-    /// The period's sales, once loaded. Nil until then, and for a site without a commerce
-    /// provider the report itself says so and the card is not shown.
-    private var revenueReport: RevenueReport? {
-        rankings.revenue[RankingStore.KeywordsKey(siteID: overview.id, period: state.period)]
-    }
-
-    /// Whether the site has an analytics provider with anything to show: a live count, or
-    /// at least one day of visits in the series.
-    private var hasAnalytics: Bool {
-        liveVisitors != nil || visitsComparison != nil
-    }
-
-    private var ratingMove: RatingMove? {
-        guard let dashboard = overview.dashboard else { return nil }
-        var series = dashboard.domainRatingHistory ?? []
-        if series.isEmpty, let rating = dashboard.domainRating {
-            series = [DomainRatingDay(date: String(rating.fetchedAt.prefix(10)), rating: rating.rating)]
+        // Warm the other screens once the first frame is up, one per beat, so the work lands
+        // between the reader's glances and never in front of a click. A preview stays one screen.
+        .task(id: overview.id) {
+            guard !isPreview else { return }
+            for screen in SiteScreen.allCases where !mounted.contains(screen) {
+                try? await Task.sleep(for: .milliseconds(120))
+                guard !Task.isCancelled else { return }
+                mounted.insert(screen)
+            }
         }
-        return RatingMove(history: series, days: state.period.days)
     }
 
     /// The reading column. Text, numbers and controls stay in one measured column, centred in the
@@ -135,140 +119,10 @@ struct SiteTabScreen: View {
     /// reads like the pane's own floor.
     static let columnWidth: CGFloat = 880
     static let columnInset: CGFloat = 24
-
-    private var root: some View {
-        // The screen scrolls: the two ranked lists under the chart can outgrow the pane.
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                header
-                    .column()
-                    .padding(.top, Self.columnInset)
-                    .padding(.bottom, 40)
-
-                if state.period == .today {
-                    todayBody
-                } else {
-                    periodBody
-                }
-
-                footer
-                    .column()
-                    .padding(.top, 24)
-                    .padding(.bottom, Self.columnInset)
-            }
-        }
-        .scrollDisabled(isPreview)
-    }
-
-    /// A stored period: Search Console figures and chart, then the provider's cards.
-    @ViewBuilder
-    private var periodBody: some View {
-        MetricStrip(comparison: comparison, visits: visitsComparison, rating: ratingMove)
-            .column()
-
-        TrendChart(days: Array(days.suffix(state.period.days)))
-            .padding(.top, 36)
-
-        // The analytics provider's two views, side by side under the Search Console
-        // chart and apart from it: the people on the site this half hour, and the
-        // period's visits. A site without a provider has neither and gets no row.
-        // A site that also sells gets its commerce provider's view as a third card:
-        // the period's revenue, one bar per day like the visits.
-        if hasAnalytics {
-            HStack(alignment: .top, spacing: 20) {
-                RealtimeCard(live: liveVisitors)
-                VisitsCard(days: Array(days.suffix(state.period.days)), comparison: visitsComparison)
-                if let report = revenueReport, report.revenue != nil {
-                    RevenueCard(report: report)
-                }
-            }
-            .column()
-            .padding(.top, 36)
-
-            // What visitors did, over the same period: the provider's third view,
-            // the full column wide because event names run long.
-            EventsCard(
-                rows: rankings.events[RankingStore.KeywordsKey(siteID: overview.id, period: state.period)] ?? [],
-                loading: rankings.loading.contains(overview.id)
-            )
-            .column()
-            .padding(.top, 20)
-        }
-
-        rankingCards
-            .column()
-            .padding(.top, 36)
-    }
-
-    /// Today: nothing is stored yet, so everything here is the provider's, read live. Search
-    /// Console has no figures for today at all, so its strip, chart and lists are not shown
-    /// rather than shown empty.
-    @ViewBuilder
-    private var todayBody: some View {
-        if let today = todayVisits {
-            TodayStrip(today: today, rating: ratingMove)
-                .column()
-
-            HoursChart(today: today)
-                .padding(.top, 36)
-
-            HStack(alignment: .top, spacing: 20) {
-                RealtimeCard(live: liveVisitors)
-                PagesTodayCard(pages: today.pages)
-            }
-            .column()
-            .padding(.top, 36)
-
-            EventsCard(
-                rows: today.events.map { EventRow(name: $0.name, current: $0.count, previous: 0, delta: 0) },
-                loading: false
-            )
-            .column()
-            .padding(.top, 20)
-        } else if let report = live.todays[overview.id] {
-            ContentUnavailableView(
-                report.analytics == nil ? "No analytics provider" : "Analytics not ready",
-                systemImage: "chart.bar.xaxis",
-                description: Text(report.analytics?.reason ?? "Today is read live from the site's analytics provider, and \(overview.site.name) has none configured.")
-            )
-            .frame(minHeight: 320)
-        } else {
-            ProgressView()
-                .controlSize(.small)
-                .frame(maxWidth: .infinity, minHeight: 320)
-        }
-    }
-
-    /// Keywords and registry targets side by side, each ranked by clicks.
-    private var rankingCards: some View {
-        let key = RankingStore.KeywordsKey(siteID: overview.id, period: state.period)
-        let loading = rankings.loading.contains(overview.id)
-        return HStack(alignment: .top, spacing: 20) {
-            RankingCard(
-                title: "Keywords",
-                rows: (rankings.keywords[key] ?? []).map {
-                    RankingCard.Row(id: $0.id, label: $0.query, metrics: $0.current)
-                },
-                loading: loading,
-                emptyMessage: "No searches in this period."
-            )
-            RankingCard(
-                title: "Registry",
-                rows: (rankings.registry[overview.id] ?? []).map {
-                    RankingCard.Row(
-                        id: $0.id,
-                        label: $0.targetUrl,
-                        metrics: $0.window,
-                        visits: $0.visits?.current.visits,
-                        unindexed: $0.isUnindexed,
-                        indexNote: $0.coverageState
-                    )
-                },
-                loading: loading,
-                emptyMessage: "No target pages in the registry yet."
-            )
-        }
-    }
+    /// The header row's height. The rail beside the pane centres its first icon on it.
+    static let headerHeight: CGFloat = 56
+    /// The room between the header's hairline and the first line of a screen.
+    static let screenInset: CGFloat = 32
 
     /// The site's favicon beside its name.
     private static let titleIconSize: CGFloat = 20
@@ -296,69 +150,42 @@ struct SiteTabScreen: View {
                 .textSelection(.enabled)
                 .lineLimit(1)
 
-            // The people on the site right now, beside the name: the one figure on the screen
-            // that moves on its own. The provider's "online" count, the last five minutes;
-            // the realtime card below draws the wider half hour by the minute.
-            if let liveVisitors {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(visitsColor)
-                        .frame(width: 7, height: 7)
-                    Text("\(liveVisitors.onlineNow.formatted(.number.precision(.fractionLength(0)))) online")
-                        .monospacedDigit()
-                }
-                .foregroundStyle(.secondary)
-                .padding(.leading, 6)
-                .help("Distinct people on the site in the last \(liveVisitors.onlineMinutes) minutes")
-                .accessibilityLabel("\(liveVisitors.onlineNow.formatted(.number.precision(.fractionLength(0)))) people online")
-            }
+            // The people on the site right now, beside the name: the one figure in the header
+            // that moves on its own. Its own view, so the poll that feeds it invalidates a
+            // label and not the screen below — see `OnlineCount`.
+            OnlineCount(live: live, siteID: overview.id)
 
             Spacer()
 
-            // Every control of the screen sits in one trailing cluster: the period first,
-            // as it changes what the whole screen shows, then the places to go.
+            // The controls sit in one trailing cluster. The period only means something on
+            // the dashboard — the registry and the plan have their own windows — so it
+            // leaves with the dashboard rather than staying and lying.
             HStack(spacing: 20) {
-                PeriodSwitch(selection: $state.period)
-                    .disabled(isPreview)
+                if shown == .dashboard {
+                    PeriodSwitch(selection: $state.period)
+                        .disabled(isPreview)
+                }
 
-                HStack(spacing: 14) {
-                    Button("Registry") { state.path.append(.registry) }
-                    Button("Planning") { state.path.append(.planning) }
-                    Button("Log") { state.path.append(.log) }
+                HStack(spacing: 10) {
+                    if busy {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
                     Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
                         .labelStyle(.iconOnly)
-                        .disabled(isRefreshing || history.refreshing.contains(overview.id))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .disabled(busy)
                         .help("Refresh (⌘R)")
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
             }
         }
     }
 
-    private var footer: some View {
-        HStack {
-            if let error = history.errors[overview.id] ?? rankings.errors[overview.id] {
-                Text(error)
-                    .foregroundStyle(Palette.coral)
-                    .lineLimit(1)
-            }
-            Spacer()
-            if isRefreshing || history.refreshing.contains(overview.id) {
-                ProgressView()
-                    .controlSize(.small)
-            }
-            if let generated = Self.instant(overview.dashboard?.generatedAt) {
-                // Ticks from a coarse timeline, not SwiftUI's relative date text: that style
-                // asks for a new frame continuously and costs a fifth of a core while idle.
-                TimelineView(.periodic(from: .now, by: 15)) { context in
-                    Text("Updated \(RelativeAge.label(from: generated, to: context.date) ?? "at \(generated.formatted(date: .omitted, time: .shortened))")")
-                        .help(generated.formatted(date: .abbreviated, time: .standard))
-                }
-            }
-        }
-        .font(.callout)
-        .foregroundStyle(.secondary)
+    /// Whether anything this tab shows is still on its way: the overview, the site's series,
+    /// or its ranked lists.
+    private var busy: Bool {
+        isRefreshing || history.refreshing.contains(overview.id) || rankings.loading.contains(overview.id)
     }
 
     private static let isoWithFraction: ISO8601DateFormatter = {
@@ -371,6 +198,38 @@ struct SiteTabScreen: View {
     static func instant(_ string: String?) -> Date? {
         guard let string else { return nil }
         return isoWithFraction.date(from: string) ?? iso.date(from: string)
+    }
+}
+
+// MARK: - Online count
+
+/// The provider's "online" count, the last five minutes; the realtime card on the dashboard
+/// draws the wider half hour by the minute.
+///
+/// The header is pinned above every screen, and the live store lands a new report every few
+/// seconds. This is the only view in the header that reads that store, so a poll re-renders
+/// one label. If the header read `live` itself, every poll would rebuild the screen under it,
+/// and the Planning screen's lazy list re-phases its rows each time — the idle-CPU hazard
+/// `ProposalsList` documents.
+private struct OnlineCount: View {
+    let live: LiveStore
+    let siteID: Site.ID
+
+    var body: some View {
+        if let liveVisitors = live.reports[siteID]?.live {
+            let count = liveVisitors.onlineNow.formatted(.number.precision(.fractionLength(0)))
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(visitsColor)
+                    .frame(width: 7, height: 7)
+                Text("\(count) online")
+                    .monospacedDigit()
+            }
+            .foregroundStyle(.secondary)
+            .padding(.leading, 6)
+            .help("Distinct people on the site in the last \(liveVisitors.onlineMinutes) minutes")
+            .accessibilityLabel("\(count) people online")
+        }
     }
 }
 
@@ -1515,46 +1374,268 @@ private struct VisitsTooltip: View {
     }
 }
 
-// MARK: - Sub-screens
+// MARK: - Dashboard
 
-/// Sub-screen listing every opportunity signal of a site.
-private struct OpportunitiesScreen: View {
+/// The site's first screen: the period's figures, the chart, the provider's cards and the
+/// ranked lists. Its own view rather than part of the tab so it can sit in a `ScreenSlot`
+/// and be left alone while another screen is in front.
+private struct SiteDashboard: View {
     let overview: SiteOverview
-    let onBack: () -> Void
+    let state: SiteTabState
+    let history: HistoryStore
+    let rankings: RankingStore
+    let live: LiveStore
+    let isRefreshing: Bool
 
     @Environment(\.isTabPreview) private var isPreview
 
+
+    /// The long daily series when it is loaded, else the dashboard's own 28 days.
+    private var days: [HistoryReportDay] {
+        if let series = history.series[overview.id], !series.isEmpty {
+            return series
+        }
+        return (overview.dashboard?.history ?? []).map {
+            HistoryReportDay(date: $0.date, provisional: false, impressions: $0.impressions, clicks: $0.clicks, ctr: $0.ctr, position: $0.position)
+        }
+    }
+
+    private var comparison: PeriodComparison {
+        PeriodComparison(days: days.map(\.asHistoryDay), window: state.period.days)
+    }
+
+    private var visitsComparison: VisitsComparison? {
+        VisitsComparison(days: days, window: state.period.days)
+    }
+
+    private var liveVisitors: LiveVisitors? {
+        live.reports[overview.id]?.live
+    }
+
+    private var todayVisits: TodayVisits? {
+        live.todays[overview.id]?.today
+    }
+
+    /// The period's sales, once loaded. Nil until then, and for a site without a commerce
+    /// provider the report itself says so and the card is not shown.
+    private var revenueReport: RevenueReport? {
+        rankings.revenue[RankingStore.KeywordsKey(siteID: overview.id, period: state.period)]
+    }
+
+    /// Whether the site has an analytics provider with anything to show: a live count, or
+    /// at least one day of visits in the series.
+    private var hasAnalytics: Bool {
+        liveVisitors != nil || visitsComparison != nil
+    }
+
+    private var ratingMove: RatingMove? {
+        guard let dashboard = overview.dashboard else { return nil }
+        var series = dashboard.domainRatingHistory ?? []
+        if series.isEmpty, let rating = dashboard.domainRating {
+            series = [DomainRatingDay(date: String(rating.fetchedAt.prefix(10)), rating: rating.rating)]
+        }
+        return RatingMove(history: series, days: state.period.days)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                Button(overview.site.name, systemImage: "chevron.left", action: onBack)
-                    .keyboardShortcut(isPreview ? nil : KeyboardShortcut("[", modifiers: .command))
-                Spacer()
+        // The screen scrolls: the two ranked lists under the chart can outgrow the pane.
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                if state.period == .today {
+                    todayBody
+                } else {
+                    periodBody
+                }
+
+                footer
+                    .column()
+                    .padding(.top, 24)
+                    .padding(.bottom, SiteTabScreen.columnInset)
             }
+            .padding(.top, SiteTabScreen.screenInset)
+        }
+        .scrollDisabled(isPreview)
+    }
 
-            Text("Opportunities")
-                .font(.largeTitle)
+    /// A stored period: Search Console figures and chart, then the provider's cards.
+    @ViewBuilder
+    private var periodBody: some View {
+        MetricStrip(comparison: comparison, visits: visitsComparison, rating: ratingMove)
+            .column()
 
-            let signals = overview.dashboard?.digest.signals ?? []
-            if signals.isEmpty {
-                ContentUnavailableView(
-                    "No opportunities",
-                    systemImage: "checkmark.circle",
-                    description: Text("Nothing needs attention in the current snapshot.")
-                )
-            } else {
-                List(Array(signals.enumerated()), id: \.offset) { _, signal in
-                    HStack {
-                        Label(signal.label, systemImage: "sparkles")
-                        Spacer()
-                        Text(signal.kind)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+        TrendChart(days: Array(days.suffix(state.period.days)))
+            .padding(.top, 36)
+
+        // The analytics provider's two views, side by side under the Search Console
+        // chart and apart from it: the people on the site this half hour, and the
+        // period's visits. A site without a provider has neither and gets no row.
+        // A site that also sells gets its commerce provider's view as a third card:
+        // the period's revenue, one bar per day like the visits.
+        if hasAnalytics {
+            HStack(alignment: .top, spacing: 20) {
+                RealtimeCard(live: liveVisitors)
+                VisitsCard(days: Array(days.suffix(state.period.days)), comparison: visitsComparison)
+                if let report = revenueReport, report.revenue != nil {
+                    RevenueCard(report: report)
+                }
+            }
+            .column()
+            .padding(.top, 36)
+
+            // What visitors did, over the same period: the provider's third view,
+            // the full column wide because event names run long.
+            EventsCard(
+                rows: rankings.events[RankingStore.KeywordsKey(siteID: overview.id, period: state.period)] ?? [],
+                loading: rankings.loading.contains(overview.id)
+            )
+            .column()
+            .padding(.top, 20)
+        }
+
+        rankingCards
+            .column()
+            .padding(.top, 36)
+    }
+
+    /// Today: nothing is stored yet, so everything here is the provider's, read live. Search
+    /// Console has no figures for today at all, so its strip, chart and lists are not shown
+    /// rather than shown empty.
+    @ViewBuilder
+    private var todayBody: some View {
+        if let today = todayVisits {
+            TodayStrip(today: today, rating: ratingMove)
+                .column()
+
+            HoursChart(today: today)
+                .padding(.top, 36)
+
+            HStack(alignment: .top, spacing: 20) {
+                RealtimeCard(live: liveVisitors)
+                PagesTodayCard(pages: today.pages)
+            }
+            .column()
+            .padding(.top, 36)
+
+            EventsCard(
+                rows: today.events.map { EventRow(name: $0.name, current: $0.count, previous: 0, delta: 0) },
+                loading: false
+            )
+            .column()
+            .padding(.top, 20)
+        } else if let report = live.todays[overview.id] {
+            ContentUnavailableView(
+                report.analytics == nil ? "No analytics provider" : "Analytics not ready",
+                systemImage: "chart.bar.xaxis",
+                description: Text(report.analytics?.reason ?? "Today is read live from the site's analytics provider, and \(overview.site.name) has none configured.")
+            )
+            .frame(minHeight: 320)
+        } else {
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, minHeight: 320)
+        }
+    }
+
+    /// Keywords and registry targets side by side, each ranked by clicks.
+    private var rankingCards: some View {
+        let key = RankingStore.KeywordsKey(siteID: overview.id, period: state.period)
+        let loading = rankings.loading.contains(overview.id)
+        return HStack(alignment: .top, spacing: 20) {
+            RankingCard(
+                title: "Keywords",
+                rows: (rankings.keywords[key] ?? []).map {
+                    RankingCard.Row(id: $0.id, label: $0.query, metrics: $0.current)
+                },
+                loading: loading,
+                emptyMessage: "No searches in this period."
+            )
+            RankingCard(
+                title: "Registry",
+                rows: (rankings.registry[overview.id] ?? []).map {
+                    RankingCard.Row(
+                        id: $0.id,
+                        label: $0.targetUrl,
+                        metrics: $0.window,
+                        visits: $0.visits?.current.visits,
+                        unindexed: $0.isUnindexed,
+                        indexNote: $0.coverageState
+                    )
+                },
+                loading: loading,
+                emptyMessage: "No target pages in the registry yet."
+            )
+        }
+    }
+
+    private var footer: some View {
+        HStack {
+            if let error = history.errors[overview.id] ?? rankings.errors[overview.id] {
+                Text(error)
+                    .foregroundStyle(Palette.coral)
+                    .lineLimit(1)
+            }
+            Spacer()
+            if let generated = SiteTabScreen.instant(overview.dashboard?.generatedAt) {
+                // Ticks from a coarse timeline, not SwiftUI's relative date text: that style
+                // asks for a new frame continuously and costs a fifth of a core while idle.
+                TimelineView(.periodic(from: .now, by: 15)) { context in
+                    Text("Updated \(RelativeAge.label(from: generated, to: context.date) ?? "at \(generated.formatted(date: .omitted, time: .shortened))")")
+                        .help(generated.formatted(date: .abbreviated, time: .standard))
                 }
             }
         }
-        .padding(24)
+        .font(.callout)
+        .foregroundStyle(.secondary)
+    }
+}
+
+// MARK: - Screen slot
+
+/// One screen of a site tab, in a shell that SwiftUI can skip.
+///
+/// `Equatable` by the values a screen is drawn from, ignoring the refresh closure, which
+/// cannot be compared and only ever refreshes the tab it belongs to. The stores are compared
+/// by identity: the screens observe them directly, so a new row or a finished load
+/// invalidates the rows that read it without passing through here. What this buys is that
+/// a click on the rail, which re-evaluates the tab's body, leaves the screens behind the
+/// active one untouched — their layout, and the dashboard's charts, stay as they are.
+private struct ScreenSlot: View, Equatable {
+    let screen: SiteScreen
+    let overview: SiteOverview
+    let state: SiteTabState
+    let history: HistoryStore
+    let rankings: RankingStore
+    let preferences: PlanningPreferences
+    let live: LiveStore
+    let log: LogStore
+    let isRefreshing: Bool
+    let onRefresh: () -> Void
+
+    nonisolated static func == (lhs: ScreenSlot, rhs: ScreenSlot) -> Bool {
+        lhs.screen == rhs.screen
+            && lhs.overview.site == rhs.overview.site
+            && lhs.overview.dashboard?.generatedAt == rhs.overview.dashboard?.generatedAt
+            && lhs.overview.errorMessage == rhs.overview.errorMessage
+            && lhs.state === rhs.state
+            && lhs.history === rhs.history
+            && lhs.rankings === rhs.rankings
+            && lhs.preferences === rhs.preferences
+            && lhs.live === rhs.live
+            && lhs.log === rhs.log
+            && lhs.isRefreshing == rhs.isRefreshing
+    }
+
+    var body: some View {
+        switch screen {
+        case .dashboard:
+            SiteDashboard(overview: overview, state: state, history: history, rankings: rankings, live: live, isRefreshing: isRefreshing)
+        case .registry:
+            RegistryScreen(overview: overview, state: state, rankings: rankings, onRefresh: onRefresh)
+        case .planning:
+            PlanningScreen(overview: overview, state: state, rankings: rankings, preferences: preferences, onRefresh: onRefresh)
+        case .log:
+            LogScreen(overview: overview, state: state, log: log, onRefresh: onRefresh)
+        }
     }
 }
 

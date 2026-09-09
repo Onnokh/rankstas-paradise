@@ -13,6 +13,19 @@ extension EnvironmentValues {
     }
 }
 
+/// True for the screen a site tab has in front. The tab keeps its other screens mounted
+/// behind it, so a screen that fetches for itself waits for this before it asks.
+private struct IsScreenShownKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var isScreenShown: Bool {
+        get { self[IsScreenShownKey.self] }
+        set { self[IsScreenShownKey.self] = newValue }
+    }
+}
+
 /// What a screen can ask the workspace to do. Previews get no-ops.
 struct TabActions {
     var activate: (TabID) -> Void
@@ -25,8 +38,9 @@ struct TabActions {
 
 /// Renders one tab's current screen from its state.
 ///
-/// The same view backs the mounted screen and the peek previews, so a preview shows the
-/// sub-screen the tab is actually on.
+/// The same view backs the mounted screen and the peek previews. A site's preview always
+/// shows its dashboard: a card is for picking a site, and following the live screen made
+/// every rail click build the chosen screen a second time inside a card nobody had open.
 struct TabScreen: View {
     let tab: TabID
     let workspace: Workspace

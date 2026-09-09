@@ -70,9 +70,20 @@ struct RootView: View {
                 chrome: chrome
             )
             let pane = layout.contentFrame
+            // The rail stands beside a site's pane and takes its strip off the pane's width.
+            // The overview has one screen and no rail, so it keeps the full width.
+            let railSiteID: Site.ID? = if case .site(let siteID) = workspace.activeTabID { siteID } else { nil }
+            let railWidth: CGFloat = railSiteID == nil ? 0 : ScreenRail.width
 
             ZStack(alignment: .topLeading) {
                 Palette.void
+
+                if let railSiteID {
+                    ScreenRail(state: workspace.state(for: railSiteID))
+                        .frame(width: railWidth, height: pane.height, alignment: .top)
+                        .offset(x: pane.minX, y: pane.minY + layout.contentOffset)
+                        .allowsHitTesting(!workspace.isPeeking)
+                }
 
                 TabContentStack(
                     workspace: workspace,
@@ -86,7 +97,7 @@ struct RootView: View {
                     actions: actions,
                     height: pane.height
                 )
-                    .frame(width: pane.width, height: pane.height)
+                    .frame(width: pane.width - railWidth, height: pane.height)
                     .allowsHitTesting(!workspace.isPeeking)
                     .overlay {
                         if workspace.isPeeking {
@@ -97,7 +108,7 @@ struct RootView: View {
                                 .accessibilityHidden(true)
                         }
                     }
-                    .offset(x: pane.minX, y: pane.minY + layout.contentOffset)
+                    .offset(x: pane.minX + railWidth, y: pane.minY + layout.contentOffset)
 
                 TabBar(layout: layout, onPeek: advancePeek)
 
@@ -236,7 +247,7 @@ struct RootView: View {
         // Only when the tab is on the Log: elsewhere nothing shows the record, and a
         // refresh should not fetch what is not on screen. A tab arriving at the Log loads
         // it itself; see `LogScreen`.
-        if workspace.state(for: siteID).path.last == .log {
+        if workspace.state(for: siteID).screen == .log {
             Task { await log.refresh(siteID) }
         }
         // Today has no Search Console window to rank by; its lists come with the live poll.
@@ -272,6 +283,15 @@ struct RootView: View {
                     }
                 }
                 .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
+            }
+            // ⌘⌥1…⌘⌥4 choose the active site's screen, the rail's order.
+            ForEach(Array(SiteScreen.allCases.enumerated()), id: \.element) { index, screen in
+                Button(screen.title) {
+                    if case .site(let siteID) = workspace.activeTabID {
+                        workspace.state(for: siteID).screen = screen
+                    }
+                }
+                .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: [.command, .option])
             }
             // ⌘← and ⌘→ step along the tab bar, wrapping at the ends.
             Button("Previous tab") {

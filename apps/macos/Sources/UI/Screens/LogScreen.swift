@@ -14,10 +14,10 @@ struct LogScreen: View {
     let overview: SiteOverview
     @Bindable var state: SiteTabState
     let log: LogStore
-    let onBack: () -> Void
     let onRefresh: () -> Void
 
     @Environment(\.isTabPreview) private var isPreview
+    @Environment(\.isScreenShown) private var isShown
 
     /// The record as it is held for this site, in the server's order.
     private var entries: [LogEntry] {
@@ -38,7 +38,7 @@ struct LogScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header
-                    .padding(.top, SiteTabScreen.columnInset)
+                    .padding(.top, SiteTabScreen.screenInset)
                     .padding(.bottom, 24)
 
                 if !entries.isEmpty {
@@ -59,42 +59,28 @@ struct LogScreen: View {
         }
         .scrollDisabled(isPreview)
         // The screen loads its own record, unlike the Registry and Planning screens, whose
-        // rows come down with the site's root screen. Nothing outside this screen shows the
-        // Log, so a site tab that is never taken here costs no request at all — and the
-        // screen only exists while the tab is on it.
-        .task(id: overview.id) {
+        // rows come down with the site's dashboard. Nothing outside this screen shows the
+        // Log, so a site tab that is never taken here costs no request at all. The tab
+        // keeps this screen mounted behind the others so the click is instant, which is
+        // why the load waits for `isScreenShown` rather than for the view to exist.
+        .task(id: LoadKey(siteID: overview.id, shown: isShown)) {
             // Previews share the store with the live screen; only the live screen loads.
-            guard !isPreview else { return }
+            guard !isPreview, isShown else { return }
             await log.load(overview.id)
         }
     }
 
+    private struct LoadKey: Hashable {
+        let siteID: Site.ID
+        let shown: Bool
+    }
+
     // MARK: Header
 
+    /// What the record holds, in one line, under the tab's header row.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Button(overview.site.name, systemImage: "chevron.left", action: onBack)
-                    .keyboardShortcut(isPreview ? nil : KeyboardShortcut("[", modifiers: .command))
-                Spacer()
-                if loading {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .disabled(loading)
-                    .help("Refresh (⌘R)")
-            }
-
-            Text("Log")
-                .font(.largeTitle)
-
-            Text(summary)
-                .foregroundStyle(.secondary)
-        }
+        Text(summary)
+            .foregroundStyle(.secondary)
     }
 
     /// What the record holds, in one line. Actions and Notes are counted apart because they
@@ -381,7 +367,6 @@ private struct LogKindBadge: View {
         overview: OverviewModel.preview.overviews[0],
         state: SiteTabState(siteID: "sleevy"),
         log: LogStore(),
-        onBack: {},
         onRefresh: {}
     )
     .frame(width: 1100, height: 640)

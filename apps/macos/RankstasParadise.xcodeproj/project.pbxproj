@@ -64,6 +64,7 @@
 		BC6BF8F8C2FBC906EC76D8D1 /* RemoteTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D47884F5C76365B32D976D91 /* RemoteTarget.swift */; };
 		BFF543C15FF5B6DA3AAE6FE5 /* FlowRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96296EA468BBA15D6D00024B /* FlowRow.swift */; };
 		D01E330C581A42EA73EEB612 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 873FA0566A88AA3A04250DF4 /* SettingsView.swift */; };
+		DD9D443BBC7EE1C9F81E709B /* ScreenRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF24CBB6E2E5E52EC3618E09 /* ScreenRail.swift */; };
 		E5563277B4AAEF923CCF3024 /* OverviewStartupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EECC279489F2799FC2058D9 /* OverviewStartupTests.swift */; };
 		E6BE7E42DE600F1584F97274 /* PeekProgressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CBE8B0CA6B44C981EE7AE2F /* PeekProgressTests.swift */; };
 		EAFDF604EC61E9E9F81803FB /* SiteSettingsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 263902669DFF0DA465682E2B /* SiteSettingsPage.swift */; };
@@ -147,6 +148,7 @@
 		D8E17C8B77CA1B192AFF6678 /* RankstasParadiseTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RankstasParadiseTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA3677E1911D6BD045D49CF1 /* LogScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogScreen.swift; sourceTree = "<group>"; };
 		DB82AF93569E40E4297CF5AC /* WorkspaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceTests.swift; sourceTree = "<group>"; };
+		DF24CBB6E2E5E52EC3618E09 /* ScreenRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenRail.swift; sourceTree = "<group>"; };
 		DF3CCE903967EA97F88CF96F /* VisitsComparisonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitsComparisonTests.swift; sourceTree = "<group>"; };
 		E0E248A64C63A8B0908C7A22 /* LogListTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogListTests.swift; sourceTree = "<group>"; };
 		E1CA89C89C02C407A80DF8C6 /* RankstasParadise.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RankstasParadise.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -274,6 +276,7 @@
 				C34C86ED39F2F1CBD090FCBD /* PeekLayout.swift */,
 				321E61A9553942809C755B5E /* PeekOverlay.swift */,
 				9E39AF56E6524C71BC8CD647 /* RootView.swift */,
+				DF24CBB6E2E5E52EC3618E09 /* ScreenRail.swift */,
 				CCE806538483AE3DC0C0C5DC /* TabBar.swift */,
 				1A150D8B80757FCED82E85B5 /* TabContentStack.swift */,
 				A02EB9D6D72519239BBF7226 /* WindowChromeReader.swift */,
@@ -460,6 +463,7 @@
 				F031E639C1AC38B117298F75 /* RelativeAge.swift in Sources */,
 				BC6BF8F8C2FBC906EC76D8D1 /* RemoteTarget.swift in Sources */,
 				AAA57221A6143D5011DA8867 /* RootView.swift in Sources */,
+				DD9D443BBC7EE1C9F81E709B /* ScreenRail.swift in Sources */,
 				49747DECBAF0F2C43A75D190 /* SettingsModel.swift in Sources */,
 				785768F1D0685577D1855F64 /* SettingsModels.swift in Sources */,
 				D01E330C581A42EA73EEB612 /* SettingsView.swift in Sources */,
