@@ -15,7 +15,7 @@ import { CurrentSite } from "../sites/current-site.ts"
 import { Site } from "../sites/schema.ts"
 import { Storage } from "../storage/storage.ts"
 import { KeywordMetrics } from "./keyword-metrics.ts"
-import { type KeywordMetric } from "./schema.ts"
+import { queryShape, type KeywordMetric } from "./schema.ts"
 
 const siteIn = (locationCode: number, languageCode: string, provider: string) =>
   Schema.decodeUnknownSync(Site)({
@@ -513,4 +513,42 @@ test("a batch that fails records no silence, because nothing was learned", async
 
   expect(Exit.isFailure(exit)).toBe(true)
   expect(store.size).toBe(0)
+})
+
+// --- queryShape --------------------------------------------------------------
+
+test("queryShape folds the word orders DataForSEO bills separately", () => {
+  // The rows that started this: one query, three rows, 210 a month each.
+  const orders = [
+    "background design for website",
+    "design background website",
+    "website design background",
+    "background website design",
+  ].map(queryShape)
+  expect(new Set(orders).size).toBe(1)
+
+  // Plurals and articles too, because the vendor returns those as rows as well.
+  expect(queryShape("glassmorphism card")).toBe(queryShape("glassmorphism cards"))
+  expect(queryShape("hero section of a website")).toBe(
+    queryShape("the hero section for websites"),
+  )
+})
+
+test("queryShape keeps queries apart that a reader would keep apart", () => {
+  // Different words, so different shapes — the folding is blunt but it does not
+  // merge on length or on a shared stem.
+  expect(queryShape("glass effect css")).not.toBe(queryShape("glass effect react"))
+  expect(queryShape("hero background")).not.toBe(queryShape("hero animation"))
+  // A short word ending in s is left alone: "css" must not become "cs".
+  expect(queryShape("animated background css")).toBe("animated background css")
+  // Double-s survives too, or "glass" would fold onto "gla".
+  expect(queryShape("frosted glass")).toBe("frosted glass")
+})
+
+test("queryShape is not a storage key", () => {
+  // Stated as a test because the comment on it can be skipped and this cannot:
+  // `foldKeyword` is what a metric is stored and looked up under. Two genuinely
+  // different queries CAN share a shape, so joining on this would hand one
+  // keyword's numbers to another.
+  expect(queryShape("dog bites man")).toBe(queryShape("man bites dog"))
 })
