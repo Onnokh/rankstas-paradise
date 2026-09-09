@@ -338,7 +338,7 @@ test("index statuses upsert, prune (returning count) and freshness", async () =>
   expect(await run(Storage.use.pruneIndexStatuses([]))).toBe(1)
 })
 
-test("index coverage records one tally a day over the held statuses", async () => {
+test("index coverage records one tally a day over the keyword targets", async () => {
   await run(
     Storage.use.savePageIndexStatuses([
       {
@@ -353,16 +353,31 @@ test("index coverage records one tally a day over the held statuses", async () =
         verdict: "NEUTRAL",
         coverageState: "Discovered",
       },
+      // An inventory-only page: inspected like any tracked page, and not one the
+      // caller passes below.
+      {
+        targetUrl: "https://example.com/login",
+        status: "not-indexed",
+        verdict: "NEUTRAL",
+        coverageState: "Excluded by noindex tag",
+      },
     ]),
   )
 
-  // Three tracked pages, one of which was never inspected: the tally counts the
-  // statuses held and takes the denominator from the caller, so the third page
-  // is neither indexed nor not-indexed rather than missing.
-  await run(Storage.use.recordIndexCoverage(3))
+  // Three keyword targets, one of which was never inspected: the tally counts the
+  // statuses held for these URLs and takes the denominator from the caller, so
+  // the third page is neither indexed nor not-indexed rather than missing. The
+  // /login page is counted nowhere — it aims at no Keyword.
+  await run(
+    Storage.use.recordIndexCoverage([
+      "https://example.com/a",
+      "https://example.com/b",
+      "https://example.com/c",
+    ]),
+  )
   const first = await run(Storage.use.indexCoverageHistory())
   expect(first).toHaveLength(1)
-  expect(first[0]).toMatchObject({ tracked: 3, indexed: 1, notIndexed: 1 })
+  expect(first[0]).toMatchObject({ keywordTargets: 3, indexed: 1, notIndexed: 1 })
 
   // A second run the same day replaces the reading instead of adding a point.
   await run(
@@ -375,16 +390,61 @@ test("index coverage records one tally a day over the held statuses", async () =
       },
     ]),
   )
-  await run(Storage.use.recordIndexCoverage(3))
+  await run(
+    Storage.use.recordIndexCoverage([
+      "https://example.com/a",
+      "https://example.com/b",
+      "https://example.com/c",
+    ]),
+  )
   const second = await run(Storage.use.indexCoverageHistory())
   expect(second).toHaveLength(1)
-  expect(second[0]).toMatchObject({ tracked: 3, indexed: 2, notIndexed: 0 })
+  expect(second[0]).toMatchObject({ keywordTargets: 3, indexed: 2, notIndexed: 0 })
 })
 
-test("index coverage over an empty ledger reads zeros, not nothing", async () => {
-  await run(Storage.use.recordIndexCoverage(0))
+test("index coverage counts a repeated target once", async () => {
+  // The Registry holds one row per keyword, so a page with four keywords arrives
+  // four times. Counted as four, a plan of one page would read as four.
+  await run(
+    Storage.use.savePageIndexStatuses([
+      {
+        targetUrl: "https://example.com/a",
+        status: "indexed",
+        verdict: "PASS",
+        coverageState: "Submitted and indexed",
+      },
+    ]),
+  )
+  await run(
+    Storage.use.recordIndexCoverage([
+      "https://example.com/a",
+      "https://example.com/a",
+      "https://example.com/a",
+    ]),
+  )
+
   expect(await run(Storage.use.indexCoverageHistory())).toEqual([
-    { date: expect.any(String), tracked: 0, indexed: 0, notIndexed: 0 },
+    { date: expect.any(String), keywordTargets: 1, indexed: 1, notIndexed: 0 },
+  ])
+})
+
+test("index coverage over a plan with no keyword targets reads zeros, not nothing", async () => {
+  // A Registry of nothing but inventory-only pages plans no ranking at all, and
+  // that is a reading. A missing day would read as a sync that never ran.
+  await run(
+    Storage.use.savePageIndexStatuses([
+      {
+        targetUrl: "https://example.com/login",
+        status: "not-indexed",
+        verdict: "NEUTRAL",
+        coverageState: "Excluded by noindex tag",
+      },
+    ]),
+  )
+  await run(Storage.use.recordIndexCoverage([]))
+
+  expect(await run(Storage.use.indexCoverageHistory())).toEqual([
+    { date: expect.any(String), keywordTargets: 0, indexed: 0, notIndexed: 0 },
   ])
 })
 

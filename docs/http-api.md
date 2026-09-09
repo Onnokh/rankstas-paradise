@@ -86,11 +86,18 @@ Each target of `GET /api/registry` carries Google's last verdict on the page
 the ledger keeps one row per target and every URL Inspection overwrites it.
 
 `GET /api/registry` therefore also carries **`coverage`**: one reading a day of
-what the whole Registry looked like, oldest first, as
-`[{ date, tracked, indexed, notIndexed }]`. `tracked` is how many target pages
-the Registry held that day and is the denominator of the other two; the pages
-that are neither are the ones Google said nothing usable about (never inspected,
-or answered "unknown"). The Mac's registry screen charts it.
+what the plan looked like, oldest first, as
+`[{ date, keywordTargets, indexed, notIndexed }]`. `keywordTargets` is how many
+pages at least one Keyword aimed at that day and is the denominator of the other
+two; the pages that are neither are the ones Google said nothing usable about
+(never inspected, or answered "unknown"). The Mac's registry screen charts it.
+
+Inventory-only pages are **inspected** like every other tracked page — each one
+carries its own `indexed` — but they are not counted in `coverage`. They have no
+Keyword to rank, so Google's verdict on them cannot block a plan, and a site's
+`/login` or `/privacy` is a page Google is right never to index: counted in, it
+holds the share down for ever. On missingmounts this is the difference between
+12 of 18 pages (67%) and 9 of 10 keyword targets (90%).
 
 The daily sync records the day's reading and replaces it if it runs again the
 same day. The series **cannot be backfilled** — URL Inspection answers only for

@@ -353,17 +353,22 @@ export interface DomainRatingDay {
   readonly rating: number
 }
 
-// One day's Indexed tally across the Registry's target pages: how many pages the
-// Registry tracked that day, how many Google reported as indexed, and how many
-// it reported as not indexed. The rest — `tracked - indexed - notIndexed` — are
-// the pages Google has said nothing usable about.
+// One day's Indexed tally over the Registry's keyword targets: how many pages a
+// Keyword aimed at that day, how many Google reported as indexed, and how many
+// it reported as not indexed. The rest — `keywordTargets - indexed - notIndexed`
+// — are the pages Google has said nothing usable about.
+//
+// Inventory-only pages are left out on purpose. They have no Keyword to rank, so
+// their verdict cannot block a plan, and a site's `/login` and `/privacy` are
+// pages Google is right never to index — counted in, they hold the share down
+// for ever and the reader learns to ignore it.
 //
 // Accumulated one reading a day like the Domain Rating, and for the same reason:
 // URL Inspection answers only for the present, so a day nobody recorded is a day
 // that cannot be recovered.
 export interface IndexCoverageDay {
   readonly date: string
-  readonly tracked: number
+  readonly keywordTargets: number
   readonly indexed: number
   readonly notIndexed: number
 }

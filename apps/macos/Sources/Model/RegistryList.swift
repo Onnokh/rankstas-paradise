@@ -32,8 +32,14 @@ enum RegistrySort: String, CaseIterable, Identifiable, Sendable {
 
 /// What the whole registry adds up to, as the strip over the list reads it.
 ///
-/// Every share carries its own denominator and every one of them is the same: the pages the
-/// registry holds. A share of nothing is nil rather than zero — an empty registry is not a
+/// The two shares are measured against different populations, on purpose. How much of the
+/// registry aims at a keyword is a fact about every page it holds. How much of it Google
+/// holds is a fact about the pages a keyword aims at only: an inventory-only page has
+/// nothing planned to rank on it, so Google's verdict on it cannot block a plan — and a
+/// site's `/login` and `/privacy` are pages Google is right never to index, which counted in
+/// would hold the share down for ever and teach the reader to ignore it.
+///
+/// A share of nothing is nil rather than zero — a registry aiming at nothing is not a
 /// registry that is 0% indexed, and the screen says the two differently.
 struct RegistryTotals: Equatable, Sendable {
     /// The pages the registry holds.
@@ -43,21 +49,25 @@ struct RegistryTotals: Equatable, Sendable {
     let withKeywords: Int
     /// Keyword mappings across every page, counted once per row, not per distinct term.
     let keywords: Int
+    /// Google's verdicts, counted over the keyword-carrying pages only.
     let indexed: Int
     let notIndexed: Int
 
-    /// The pages Google has said nothing usable about: never inspected, or inspected and
-    /// answered "unknown". Not a zero and not a verdict.
-    var unknown: Int { max(pages - indexed - notIndexed, 0) }
+    /// The keyword-carrying pages Google has said nothing usable about: never inspected, or
+    /// inspected and answered "unknown". Not a zero and not a verdict.
+    var unknown: Int { max(withKeywords - indexed - notIndexed, 0) }
 
     /// How much of the registry aims at a keyword at all, 0…1.
-    var keywordShare: Double? { share(withKeywords) }
-    /// How much of the registry Google holds, 0…1.
-    var indexedShare: Double? { share(indexed) }
-
-    private func share(_ count: Int) -> Double? {
+    var keywordShare: Double? {
         guard pages > 0 else { return nil }
-        return Double(count) / Double(pages)
+        return Double(withKeywords) / Double(pages)
+    }
+
+    /// How much of the plan Google holds, 0…1. Measured over the keyword-carrying pages, so
+    /// an inventory-only page cannot move it either way.
+    var indexedShare: Double? {
+        guard withKeywords > 0 else { return nil }
+        return Double(indexed) / Double(withKeywords)
     }
 }
 
@@ -115,13 +125,18 @@ enum RegistryList {
     /// What the registry adds up to. Counted over every target the server sent, never over
     /// the filtered rows: the strip describes the plan, and a search that hides half of it
     /// does not change what the plan holds.
+    ///
+    /// The verdicts are counted over the keyword-carrying pages only — see `RegistryTotals`
+    /// for why, and `unindexedCount` for the tally over every page, which is what the list
+    /// below dims and what its filter keeps.
     static func totals(_ targets: [RegistryTarget]) -> RegistryTotals {
-        RegistryTotals(
+        let planned = targets.filter { !$0.mappedKeywords.isEmpty }
+        return RegistryTotals(
             pages: targets.count,
-            withKeywords: targets.filter { !$0.mappedKeywords.isEmpty }.count,
+            withKeywords: planned.count,
             keywords: targets.reduce(0) { $0 + $1.mappedKeywords.count },
-            indexed: targets.filter { $0.indexed == "indexed" }.count,
-            notIndexed: unindexedCount(targets)
+            indexed: planned.filter { $0.indexed == "indexed" }.count,
+            notIndexed: unindexedCount(planned)
         )
     }
 

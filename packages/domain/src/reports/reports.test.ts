@@ -1131,14 +1131,20 @@ test("registryList carries the Indexed series the Sync recorded", async () => {
   await runtime.runPromise(
     Effect.gen(function* () {
       const storage = yield* Storage.Service
-      yield* storage.recordIndexCoverage(3)
+      yield* storage.recordIndexCoverage([
+        `${ORIGIN}/pocket-alternative`,
+        `${ORIGIN}/chrome-extension`,
+        `${ORIGIN}/never-inspected`,
+      ])
     }),
   )
 
+  // Three keyword targets; one carries a not-indexed verdict and the other two
+  // have none, so they are unanswered rather than indexed.
   expect((await run(Reports.use.registryList())).coverage).toEqual([
     {
       date: expect.any(String),
-      tracked: 3,
+      keywordTargets: 3,
       indexed: 0,
       notIndexed: 1,
     },

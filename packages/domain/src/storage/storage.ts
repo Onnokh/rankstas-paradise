@@ -77,11 +77,16 @@ export interface Interface {
     targetUrls: ReadonlyArray<string>,
   ) => Effect.Effect<number, StorageError>
   // Record today's Indexed tally over the statuses held now, replacing any
-  // reading already stored for the same day. `tracked` is how many target pages
-  // the Registry holds, which is not the row count of `page_index_status`: a
-  // page whose inspection failed has no row there, and it is still tracked.
+  // reading already stored for the same day.
+  //
+  // Takes the Registry's keyword targets — the pages at least one Keyword aims
+  // at, fully qualified — and not a count, for two reasons. The denominator is
+  // not the row count of `page_index_status`: a page whose inspection failed has
+  // no row there and is still a target. And the numerators are counted over
+  // these URLs only, so an inventory-only page Google is right never to index
+  // cannot hold the share down.
   readonly recordIndexCoverage: (
-    tracked: number,
+    keywordTargets: ReadonlyArray<string>,
   ) => Effect.Effect<void, StorageError>
   readonly addLogEntry: (
     entry: LogEntryInput,
@@ -556,7 +561,7 @@ export const layer = Layer.effect(
       // than by fetch instant so several syncs in one day settle on one reading.
       `create table if not exists index_coverage (
         date text primary key,
-        tracked integer not null,
+        keyword_targets integer not null,
         indexed integer not null,
         not_indexed integer not null,
         recorded_at text not null default current_timestamp
@@ -1647,29 +1652,41 @@ export const layer = Layer.effect(
         return deleted.length
       })
 
-    // Counted in SQL rather than handed in, so the tally cannot disagree with
-    // the statuses the same run just wrote. `tracked` is the caller's, because
-    // the table cannot know about a target it holds no row for.
+    // Counted in SQL over the caller's own URLs, so the tally cannot disagree
+    // with the statuses the same run just wrote, and cannot count a page the
+    // Registry aims no Keyword at.
     //
-    // The trailing `where true` is not a filter: SQLite cannot parse an
-    // `on conflict` clause after a select without one, because it would read as
-    // a table alias.
-    const recordIndexCoverageI = (tracked: number) => sql`
-      insert into index_coverage (date, tracked, indexed, not_indexed)
-      select date('now'), ${tracked},
-        count(*) filter (where status = 'indexed'),
-        count(*) filter (where status = 'not-indexed')
-      from page_index_status where true
-      on conflict(date) do update set
-        tracked = excluded.tracked,
-        indexed = excluded.indexed,
-        not_indexed = excluded.not_indexed,
-        recorded_at = current_timestamp`
+    // A Registry with no keyword targets at all still records a row of zeros:
+    // "nothing is planned here" is a reading, and a missing day would read as a
+    // sync that never ran.
+    const recordIndexCoverageI = (keywordTargets: ReadonlyArray<string>) =>
+      Effect.gen(function* () {
+        const urls = [...new Set(keywordTargets)]
+        type Tally = { indexed: number; notIndexed: number }
+        const rows =
+          urls.length > 0
+            ? yield* sql<Tally>`
+                select
+                  count(*) filter (where status = 'indexed') as indexed,
+                  count(*) filter (where status = 'not-indexed') as "notIndexed"
+                from page_index_status where target_url in ${sql.in(urls)}`
+            : []
+        const tally = rows[0] ?? { indexed: 0, notIndexed: 0 }
+        yield* sql`
+          insert into index_coverage (date, keyword_targets, indexed, not_indexed)
+          values (date('now'), ${urls.length}, ${tally.indexed}, ${tally.notIndexed})
+          on conflict(date) do update set
+            keyword_targets = excluded.keyword_targets,
+            indexed = excluded.indexed,
+            not_indexed = excluded.not_indexed,
+            recorded_at = current_timestamp`
+      })
 
     const indexCoverageHistoryI = (limit = 180) =>
       Effect.gen(function* () {
         const rows = yield* sql<IndexCoverageDay>`
-          select date, tracked, indexed, not_indexed as "notIndexed"
+          select date, keyword_targets as "keywordTargets", indexed,
+                 not_indexed as "notIndexed"
           from index_coverage order by date`
         return rows.slice(-limit) as ReadonlyArray<IndexCoverageDay>
       })
@@ -2139,8 +2156,8 @@ export const layer = Layer.effect(
         saveDailyTotalsI(totals, fetchedDates).pipe(mapErr("saveDailyTotals")),
       savePageIndexStatuses: (statuses) =>
         savePageIndexStatusesI(statuses).pipe(mapErr("savePageIndexStatuses")),
-      recordIndexCoverage: (tracked) =>
-        recordIndexCoverageI(tracked).pipe(
+      recordIndexCoverage: (keywordTargets) =>
+        recordIndexCoverageI(keywordTargets).pipe(
           Effect.asVoid,
           mapErr("recordIndexCoverage"),
         ),
