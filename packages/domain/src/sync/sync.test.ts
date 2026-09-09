@@ -67,6 +67,11 @@ const registryEntry = {
   status: "",
 }
 
+// An inventory-only page: tracked with a blank keyword, so it is inspected like
+// any other page and aims at no Keyword. Here to hold the two apart — see the
+// Indexed tally test below.
+const inventoryEntry = { ...registryEntry, keyword: "", targetUrl: "/login" }
+
 // --- mock SearchConsole that records the dates it is asked to fetch ---------
 
 interface Recorder {
@@ -235,7 +240,7 @@ const failingAnalyticsMock = Layer.mock(Analytics.Service)({
 })
 
 const registryMock = Layer.mock(Registry.Service)({
-  loadRegistry: () => Effect.succeed([registryEntry]),
+  loadRegistry: () => Effect.succeed([registryEntry, inventoryEntry]),
 })
 
 const sitemapMock = Layer.mock(Sitemap.Service)({
@@ -338,18 +343,23 @@ test("a first sync writes the tracked window to Storage", async () => {
   expect(recorder.snapshotFetches[0]).toHaveLength(28)
   const summaryDb = await run(Storage.use.snapshotSummary())
   expect(summaryDb).toEqual({ rows: 28, dates: 28 })
-  // Index statuses were inspected for the registry target and saved.
+  // Index statuses were inspected for every tracked page and saved — the
+  // inventory-only page included: a page is inspected because it is tracked.
   expect(recorder.inspectFetches[0]).toEqual([
     "https://example.com/widgets",
+    "https://example.com/login",
   ])
   expect(summary).toContain("Saved 28 Search Console rows across 28 finalized days")
 })
 
-test("a sync records the day's Indexed tally over its target pages", async () => {
+test("a sync records the day's Indexed tally over its keyword targets", async () => {
   await run(Sync.use.syncSearchConsole())
 
+  // Two pages were inspected and the stub called both indexed, and the tally
+  // counts one: the inventory-only page aims at no Keyword, so Google's verdict
+  // on it cannot move a reading about the plan.
   expect(await run(Storage.use.indexCoverageHistory())).toEqual([
-    { date: expect.any(String), tracked: 1, indexed: 1, notIndexed: 0 },
+    { date: expect.any(String), keywordTargets: 1, indexed: 1, notIndexed: 0 },
   ])
 
   // The second run inspects nothing (every status is fresh) and still records
@@ -365,11 +375,13 @@ test("keyword candidates are the Registry's plan plus this run's own Queries", a
 
   // One offer per sync.
   expect(recorder.keywordCandidates).toHaveLength(1)
-  // Two candidates from two sources: the Registry keyword ("widget") and the
-  // observed Query ("widget"). They happen to be the same term here, so the
-  // count is what proves both sources contributed — folding and
-  // de-duplication are KeywordMetrics' job, and are tested there.
-  expect(recorder.keywordCandidates[0]).toEqual(["widget", "widget"])
+  // Candidates from two sources: the Registry keywords and the observed Query
+  // ("widget"). The Registry keyword and the Query happen to be the same term
+  // here, so the count is what proves both sources contributed — folding and
+  // de-duplication are KeywordMetrics' job, and are tested there. The blank is
+  // the inventory-only row, which KeywordMetrics drops rather than ask the
+  // vendor about; Sync offers the plan as it stands.
+  expect(recorder.keywordCandidates[0]).toEqual(["widget", "", "widget"])
 })
 
 test("keyword candidates are read after this run's rows are saved", async () => {
@@ -383,7 +395,7 @@ test("keyword candidates are read after this run's rows are saved", async () => 
   // The second sync fetches nothing new, so the ledger it reads is the first
   // run's — and the Query is still there.
   await run(Sync.use.syncSearchConsole())
-  expect(recorder.keywordCandidates[1]).toEqual(["widget", "widget"])
+  expect(recorder.keywordCandidates[1]).toEqual(["widget", "", "widget"])
 })
 
 test("a failing keyword-metrics refresh does not fail the Search Console sync", async () => {

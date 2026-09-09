@@ -381,6 +381,16 @@ export const layer = Layer.effect(
       const targetUrls = [
         ...new Set(entries.map((entry) => `${site.origin}${entry.targetUrl}`)),
       ]
+      // The pages at least one Keyword aims at. Inspected with the rest — a page
+      // is inspected because it is tracked — but counted apart by the Indexed
+      // series below.
+      const keywordTargetUrls = [
+        ...new Set(
+          entries
+            .filter((entry) => entry.keyword.trim())
+            .map((entry) => `${site.origin}${entry.targetUrl}`),
+        ),
+      ]
       const freshUrls = new Set(
         yield* storage.recentlyInspectedUrls(targetUrls, inspectionTtlHours),
       )
@@ -395,7 +405,11 @@ export const layer = Layer.effect(
       // is recorded even when every target was fresh and nothing was inspected:
       // the reading is about the day, not about this run's calls, and a run that
       // skipped the vendor still knows what the ledger says today.
-      yield* storage.recordIndexCoverage(targetUrls.length)
+      //
+      // Counted over the keyword targets only, and not over every inspected
+      // page: an inventory-only page has no Keyword to rank, so Google's verdict
+      // on it cannot block the plan the series is about.
+      yield* storage.recordIndexCoverage(keywordTargetUrls)
 
       // Keyword metrics run last and in sequence, not forked with the others,
       // because they are the one third-party call that depends on this run's

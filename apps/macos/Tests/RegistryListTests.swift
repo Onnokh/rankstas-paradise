@@ -113,12 +113,43 @@ final class RegistryListTests: XCTestCase {
         XCTAssertEqual(totals.pages, 4)
         XCTAssertEqual(totals.withKeywords, 3)
         XCTAssertEqual(totals.keywords, 4)
-        XCTAssertEqual(totals.indexed, 2)
+        // Counted over the three keyword pages: the indexed inventory-only page is in
+        // neither the numerator nor the denominator.
+        XCTAssertEqual(totals.indexed, 1)
         XCTAssertEqual(totals.notIndexed, 1)
         // The page Google answered "unknown" about is neither indexed nor not indexed.
         XCTAssertEqual(totals.unknown, 1)
-        XCTAssertEqual(totals.indexedShare, 0.5)
+        XCTAssertEqual(totals.indexedShare, 1.0 / 3.0)
+        // The keyword share is the one measured over every page the registry holds.
         XCTAssertEqual(totals.keywordShare, 0.75)
+    }
+
+    func testAnIndexedInventoryOnlyPageCannotFlatterThePlan() {
+        // The reason the two shares have different denominators. Nine tracked pages Google
+        // holds, one keyword page it does not: the plan is 0% indexed, and a share over
+        // every page would have called the same registry 90%.
+        var targets = [target("/waiting", indexed: "not-indexed", keywords: ["one"])]
+        targets += (1...9).map { target("/page-\($0)", indexed: "indexed") }
+
+        let totals = RegistryList.totals(targets)
+
+        XCTAssertEqual(totals.pages, 10)
+        XCTAssertEqual(totals.indexedShare, 0)
+        XCTAssertEqual(totals.notIndexed, 1)
+        // The list below still dims all of them; only the strip narrows.
+        XCTAssertEqual(RegistryList.unindexedCount(targets), 1)
+    }
+
+    func testARegistryAimingAtNothingHasNoIndexedShare() {
+        // A registry of nothing but inventory-only pages plans no ranking, so there is no
+        // share to print: a dash, not 0%. The keyword share is a real 0% — every page the
+        // registry holds does lack a keyword.
+        let totals = RegistryList.totals([target("/login", indexed: "not-indexed")])
+
+        XCTAssertEqual(totals.pages, 1)
+        XCTAssertNil(totals.indexedShare)
+        XCTAssertEqual(totals.keywordShare, 0)
+        XCTAssertEqual(totals.unknown, 0)
     }
 
     func testAnEmptyRegistryHasNoSharesRatherThanZeroOnes() {
@@ -134,7 +165,7 @@ final class RegistryListTests: XCTestCase {
 
     func testAPageFromAnOlderServerCountsAsNeitherIndexedNorNot() {
         // No verdict at all is the same reading as "unknown": Google has not spoken.
-        let totals = RegistryList.totals([target("/older-server")])
+        let totals = RegistryList.totals([target("/older-server", keywords: ["one"])])
 
         XCTAssertEqual(totals.indexed, 0)
         XCTAssertEqual(totals.notIndexed, 0)
@@ -144,16 +175,17 @@ final class RegistryListTests: XCTestCase {
 
     func testCoverageDaysKeepTheServersOrderAndDropWhatIsNotADay() {
         let days = [
-            IndexCoverageDay(date: "2026-09-07", tracked: 27, indexed: 3, notIndexed: 24),
-            IndexCoverageDay(date: "not-a-day", tracked: 27, indexed: 9, notIndexed: 18),
-            IndexCoverageDay(date: "2026-09-09", tracked: 30, indexed: 12, notIndexed: 15),
+            IndexCoverageDay(date: "2026-09-07", keywordTargets: 27, indexed: 3, notIndexed: 24),
+            IndexCoverageDay(date: "not-a-day", keywordTargets: 27, indexed: 9, notIndexed: 18),
+            IndexCoverageDay(date: "2026-09-09", keywordTargets: 30, indexed: 12, notIndexed: 15),
         ]
 
         let plotted = RegistryList.coverageDays(days)
 
         XCTAssertEqual(plotted.map(\.date), ["2026-09-07", "2026-09-09"])
         XCTAssertEqual(plotted.first?.indexedShare, 3.0 / 27.0)
-        // Tracked is the denominator, so the pages Google said nothing about are the rest.
+        // The keyword pages are the denominator, so the pages Google said nothing about are
+        // the rest.
         XCTAssertEqual(plotted.last?.unknown, 3)
     }
 

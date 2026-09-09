@@ -614,13 +614,18 @@ struct LogEntry: Codable, Sendable, Equatable, Identifiable {
 struct RegistryListReport: Codable, Sendable {
     let generatedAt: String
     let targets: [RegistryTarget]
-    /// How many of those targets Google reported as indexed, day by day, oldest first. Nil
-    /// for a server that predates the series; empty for a site that has not synced since it
-    /// began recording. Neither is a zero — see `IndexCoverageDay`.
+    /// How many of the pages a keyword aims at Google reported as indexed, day by day,
+    /// oldest first. Nil for a server that predates the series; empty for a site that has
+    /// not synced since it began recording. Neither is a zero — see `IndexCoverageDay`.
     var coverage: [IndexCoverageDay]? = nil
 }
 
-/// One day's Indexed tally over the registry's target pages, as the server recorded it.
+/// One day's Indexed tally over the registry's keyword targets, as the server recorded it.
+///
+/// Inventory-only pages are not counted, though they are inspected like any other tracked
+/// page: they have no keyword to rank, so Google's verdict on them cannot block a plan — and
+/// a site's `/login` and `/privacy` are pages Google is right never to index, which counted
+/// in would hold the share down for ever.
 ///
 /// The series cannot be backfilled: Google's URL Inspection answers only for the present, so
 /// a day nobody recorded is a day nobody can recover. A short series is therefore a young
@@ -629,8 +634,8 @@ struct RegistryListReport: Codable, Sendable {
 struct IndexCoverageDay: Codable, Sendable, Equatable, Identifiable {
     /// The calendar day the reading was taken, "2026-09-09".
     let date: String
-    /// The pages the registry held that day: the denominator of the two counts below.
-    let tracked: Int
+    /// The pages a keyword aimed at that day: the denominator of the two counts below.
+    let keywordTargets: Int
     let indexed: Int
     let notIndexed: Int
 
@@ -638,13 +643,13 @@ struct IndexCoverageDay: Codable, Sendable, Equatable, Identifiable {
 
     /// The pages Google said nothing usable about that day — never inspected, or inspected
     /// and answered "unknown". Not a zero and not a verdict.
-    var unknown: Int { max(tracked - indexed - notIndexed, 0) }
+    var unknown: Int { max(keywordTargets - indexed - notIndexed, 0) }
 
-    /// The share of the registry Google held that day, 0…1. Nil for a day the registry was
-    /// empty, where a share would be a division by nothing.
+    /// The share of the plan Google held that day, 0…1. Nil for a day the registry aimed at
+    /// nothing, where a share would be a division by nothing.
     var indexedShare: Double? {
-        guard tracked > 0 else { return nil }
-        return Double(indexed) / Double(tracked)
+        guard keywordTargets > 0 else { return nil }
+        return Double(indexed) / Double(keywordTargets)
     }
 
     /// The day as a point in time (noon UTC), for plotting. Nil if the server sent something

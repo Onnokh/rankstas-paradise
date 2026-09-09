@@ -200,7 +200,7 @@ final class RankingStoreTests: XCTestCase {
         await store.load("site", period: .d28)
 
         XCTAssertEqual(store.coverage["site"]?.count, 2)
-        XCTAssertEqual(store.coverage["site"]?.last?.tracked, 2)
+        XCTAssertEqual(store.coverage["site"]?.last?.keywordTargets, 2)
         XCTAssertEqual(store.coverage["site"]?.last?.indexedShare, 1)
     }
 
@@ -366,8 +366,8 @@ private enum StubServer {
         case "/api/registry":
             json = """
             {"generatedAt":"2026-09-08T07:00:00Z",
-             "coverage":[{"date":"2026-09-07","tracked":2,"indexed":1,"notIndexed":1},
-                         {"date":"2026-09-08","tracked":2,"indexed":2,"notIndexed":0}],
+             "coverage":[{"date":"2026-09-07","keywordTargets":2,"indexed":1,"notIndexed":1},
+                         {"date":"2026-09-08","keywordTargets":2,"indexed":2,"notIndexed":0}],
              "targets":[{"targetUrl":"/","phase":"live","status":"published",
                          "window":{"impressions":10,"clicks":1,"ctr":0.1,"position":5}}]}
             """

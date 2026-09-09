@@ -101,11 +101,16 @@ struct RegistryScreen: View {
     /// The registry's figures in one row, plain on the panel, read like the dashboard's: a
     /// label over a large number. How many pages the plan holds, then the two shares that
     /// say what is true of them — how much of the registry aims at a keyword at all, and how
-    /// much of it Google holds — and the pages Google reports it does not hold.
+    /// much of the plan Google holds — and the pages Google reports it does not hold.
     ///
     /// The shares are shown as shares, with their count under them. The count alone left the
     /// reader dividing two numbers to answer the only question the strip is asked: is this
     /// most of the registry, or a corner of it.
+    ///
+    /// Everything about indexing here is measured over the keyword-carrying pages, and its
+    /// footnote names that denominator. The list below still dims every unindexed page and
+    /// its filter still keeps them all — see the Not-indexed tooltip, which names the wider
+    /// number so the two cannot read as a contradiction.
     ///
     /// A hairline separates those from the market, as on the planning screen: the market
     /// describes the SITE and not this plan, and it is what every search volume in the rows
@@ -122,14 +127,14 @@ struct RegistryScreen: View {
             Metric(
                 title: "With keywords",
                 value: percent(totals.keywordShare),
-                footnote: pagesFootnote(totals.withKeywords)
+                footnote: "\(totals.withKeywords) of \(totals.pages) \(totals.pages == 1 ? "page" : "pages")"
             )
             .help("How much of the registry aims at a keyword at all. The rest are inventory-only pages — tracked, and judged on every query they draw, with nothing planned to rank on them.")
             gap
             Metric(
                 title: "Indexed",
                 value: percent(totals.indexedShare),
-                footnote: pagesFootnote(totals.indexed)
+                footnote: keywordPagesFootnote(totals.indexed)
             )
             .help(indexedHelp)
             gap
@@ -142,9 +147,9 @@ struct RegistryScreen: View {
                 // ones a reader would otherwise take for indexed.
                 footnote: totals.unknown > 0
                     ? "\(totals.unknown) unanswered"
-                    : "of \(totals.pages) \(totals.pages == 1 ? "page" : "pages")"
+                    : keywordPagesFootnote(totals.notIndexed)
             )
-            .help("Pages Google reports it has NOT indexed. These are the dimmed rows below, and the checkbox beside the search keeps only them.")
+            .help(notIndexedHelp)
 
             if let market = overview.site.market, RegistryList.hasDemand(targets) {
                 gap
@@ -176,22 +181,41 @@ struct RegistryScreen: View {
     }
 
     /// The denominator, in the footnote rather than the figure: the large number answers
-    /// "how much of it", and the count under it says of what.
-    private func pagesFootnote(_ count: Int) -> String {
-        "\(count) of \(totals.pages) \(totals.pages == 1 ? "page" : "pages")"
+    /// "how much of it", and the count under it says of what. Named "keyword pages" and not
+    /// "pages", because it is not every page the registry holds.
+    private func keywordPagesFootnote(_ count: Int) -> String {
+        "\(count) of \(totals.withKeywords) keyword \(totals.withKeywords == 1 ? "page" : "pages")"
     }
 
     private var indexedHelp: String {
-        var help = "How much of the registry Google reports as in its index, from its last inspection of each page."
+        var help = "How much of the plan Google reports as in its index, from its last inspection of each page."
+        if totals.withKeywords < totals.pages {
+            help += " Measured over the \(totals.withKeywords) pages a keyword aims at, not all \(totals.pages): an inventory-only page has nothing planned to rank, and a page like /login is one Google is right never to index."
+        }
         if totals.unknown > 0 {
             help += " The \(totals.unknown) Google has said nothing about count against this share, not beside it: a page nobody has checked earns no more than one Google left out."
         }
         return help
     }
 
+    /// What the backlog figure counts, and the wider number beside it. Without the second
+    /// sentence a reader who ticks "Not indexed only" and counts the rows finds a different
+    /// number from the one the strip just gave them.
+    private var notIndexedHelp: String {
+        let all = RegistryList.unindexedCount(targets)
+        var help = "Pages Google reports it has NOT indexed, among the pages a keyword aims at."
+        if all != totals.notIndexed {
+            help += " \(all) in all counting the inventory-only pages — those are the dimmed rows below, and the checkbox beside the search keeps every one of them."
+        } else {
+            help += " These are the dimmed rows below, and the checkbox beside the search keeps only them."
+        }
+        return help
+    }
+
     // MARK: Indexing over time
 
-    /// How much of the registry Google held, day by day.
+    /// How much of the plan Google held, day by day, over the same keyword-carrying pages
+    /// the strip's Indexed share is measured on.
     ///
     /// The server records one reading a day and cannot backfill it — URL Inspection answers
     /// only for the present — so the series is worth exactly as many days as it has been
@@ -229,7 +253,7 @@ struct RegistryScreen: View {
     private var legend: some View {
         HStack(spacing: 14) {
             ForEach(
-                [("Indexed", IndexingChart.indexedColor), ("Pages tracked", IndexingChart.trackedColor)],
+                [("Indexed", IndexingChart.indexedColor), ("Keyword pages", IndexingChart.trackedColor)],
                 id: \.0
             ) { label, color in
                 HStack(spacing: 6) {
@@ -251,7 +275,7 @@ struct RegistryScreen: View {
         guard let only = coverage.last else {
             return "No day recorded yet. The daily sync writes one reading a day from here on, and the chart appears once there are two — the series is written a day at a time and cannot be backfilled."
         }
-        return "One day recorded so far: \(only.indexed) of \(only.tracked) \(only.tracked == 1 ? "page" : "pages") indexed. The chart appears once there are two — the series is written a day at a time and cannot be backfilled."
+        return "One day recorded so far: \(only.indexed) of \(only.keywordTargets) keyword \(only.keywordTargets == 1 ? "page" : "pages") indexed. The chart appears once there are two — the series is written a day at a time and cannot be backfilled."
     }
 
     private var controls: some View {
@@ -351,12 +375,13 @@ struct RegistryScreen: View {
 
 // MARK: - Indexing chart
 
-/// How many of the registry's pages Google held, day by day, against how many the registry
-/// tracked that day.
+/// How many of the plan's pages Google held, day by day, against how many pages a keyword
+/// aimed at that day. Inventory-only pages are in neither line: the server leaves them out
+/// of the series, for the reason given on `IndexCoverageDay`.
 ///
 /// Two lines and not one percentage: a share that fell can mean Google dropped a page or that
-/// the registry gained one, and those call for opposite work. The gap between the lines is
-/// the backlog, and the tooltip prints the share for the day the reader is on.
+/// the plan gained one, and those call for opposite work. The gap between the lines is the
+/// backlog, and the tooltip prints the share for the day the reader is on.
 private struct IndexingChart: View {
     let days: [IndexCoverageDay]
 
@@ -410,13 +435,13 @@ private struct IndexingChart: View {
                     .foregroundStyle(Self.indexedColor)
                     .lineStyle(StrokeStyle(lineWidth: 1.5, lineJoin: .round))
 
-                    // The registry itself, as a dashed ceiling: it is a count of rows and
-                    // not a measurement, so it is drawn as the boundary of the plot rather
-                    // than as a second reading beside the first.
+                    // The plan itself, as a dashed ceiling: it is a count of rows and not
+                    // a measurement, so it is drawn as the boundary of the plot rather than
+                    // as a second reading beside the first.
                     LineMark(
                         x: .value("Date", date),
-                        y: .value("Pages tracked", day.tracked),
-                        series: .value("Series", "Pages tracked")
+                        y: .value("Keyword pages", day.keywordTargets),
+                        series: .value("Series", "Keyword pages")
                     )
                     .foregroundStyle(Self.trackedColor.opacity(0.8))
                     .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
@@ -442,9 +467,9 @@ private struct IndexingChart: View {
             }
         }
         .chartLegend(.hidden)
-        // Zero to the whole registry, always: a chart scaled to the readings alone turned
+        // Zero to the whole plan, always: a chart scaled to the readings alone turned
         // "3 of 27 indexed" into a line across the top of the card.
-        .chartYScale(domain: 0...Double(max(days.map(\.tracked).max() ?? 1, 1)))
+        .chartYScale(domain: 0...Double(max(days.map(\.keywordTargets).max() ?? 1, 1)))
         // The baseline is the only horizontal rule: a hairline at zero, as on the dashboard.
         .chartYAxis {
             AxisMarks(values: [0]) { _ in
@@ -518,7 +543,7 @@ private struct IndexingTooltip: View {
                 Text(date.formatted(.dateTime.day().month(.abbreviated)))
                     .font(.callout.weight(.semibold))
             }
-            Text("Indexed : \(day.indexed) of \(day.tracked)\(share)")
+            Text("Indexed : \(day.indexed) of \(day.keywordTargets)\(share)")
             if day.unknown > 0 {
                 Text("\(day.unknown) unanswered")
                     .font(.caption)
