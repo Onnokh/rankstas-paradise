@@ -70,20 +70,16 @@ struct RootView: View {
                 chrome: chrome
             )
             let pane = layout.contentFrame
-            // The rail stands beside a site's pane and takes its strip off the pane's width.
-            // The overview has one screen and no rail, so it keeps the full width.
-            let railSiteID: Site.ID? = if case .site(let siteID) = workspace.activeTabID { siteID } else { nil }
-            let railWidth: CGFloat = railSiteID == nil ? 0 : ScreenRail.width
+            // The rail stands beside every tab's pane and takes its strip off the pane's width.
+            let railWidth = ScreenRail.width
 
             ZStack(alignment: .topLeading) {
                 Palette.void
 
-                if let railSiteID {
-                    ScreenRail(state: workspace.state(for: railSiteID))
-                        .frame(width: railWidth, height: pane.height, alignment: .top)
-                        .offset(x: pane.minX, y: pane.minY + layout.contentOffset)
-                        .allowsHitTesting(!workspace.isPeeking)
-                }
+                ScreenRail(workspace: workspace) { select(.overview) }
+                    .frame(width: railWidth, height: pane.height, alignment: .top)
+                    .offset(x: pane.minX, y: pane.minY + layout.contentOffset)
+                    .allowsHitTesting(!workspace.isPeeking)
 
                 TabContentStack(
                     workspace: workspace,
@@ -95,9 +91,9 @@ struct RootView: View {
                     log: log,
                     favicons: favicons,
                     actions: actions,
+                    width: pane.width - railWidth,
                     height: pane.height
                 )
-                    .frame(width: pane.width - railWidth, height: pane.height)
                     .allowsHitTesting(!workspace.isPeeking)
                     .overlay {
                         if workspace.isPeeking {

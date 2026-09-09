@@ -77,6 +77,8 @@ xcodegen generate
 - `Sources/Gesture` — three-finger trackpad drag recogniser streaming travel and velocity.
 - `Sources/UI` — `RootView`, `TabBar`, `PeekOverlay`, `TabContentStack`, `ScreenRail`, and `PeekLayout`, the pure struct that turns window size plus peek progress into every frame.
 - `Sources/UI/Screens` — one screen per tab kind, rendered from tab state. A site's peek preview always shows its dashboard.
+  The rail stands beside every tab's pane: the app icon at the top, the Overview right under it so it can be
+  reached from any tab, a site's own screens centred below, and a stand-in account icon at the bottom.
   A site tab has four screens, peers chosen from the rail beside the pane: Dashboard; Registry, which lists
   every target page with its window, phase and keywords; Planning, which judges the plan's keywords on
   demand; and Log, the site's work record as a timeline of days. Pages Google reports as not indexed are
