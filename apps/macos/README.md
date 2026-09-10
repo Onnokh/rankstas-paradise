@@ -45,7 +45,7 @@ xcodebuild -project RankstasParadise.xcodeproj \
   -destination 'platform=macOS' \
   -derivedDataPath "$HOME/Library/Developer/Xcode/DerivedData/RankstasParadise" \
   build
-open "$HOME/Library/Developer/Xcode/DerivedData/RankstasParadise/Build/Products/Debug/RankstasParadise.app"
+open "$HOME/Library/Developer/Xcode/DerivedData/RankstasParadise/Build/Products/Debug/Ranksta's Paradise.app"
 ```
 
 For representative launch performance, build the optimized configuration:
@@ -57,8 +57,13 @@ xcodebuild -project RankstasParadise.xcodeproj \
   -destination 'platform=macOS' \
   -derivedDataPath "$HOME/Library/Developer/Xcode/DerivedData/RankstasParadise" \
   build
-open "$HOME/Library/Developer/Xcode/DerivedData/RankstasParadise/Build/Products/Release/RankstasParadise.app"
+open "$HOME/Library/Developer/Xcode/DerivedData/RankstasParadise/Build/Products/Release/Ranksta's Paradise.app"
 ```
+
+The product is `Ranksta's Paradise.app`: the bundle, the menu bar and the Dock carry the
+real name, and only the module keeps the identifier `RankstasParadise` so `import
+RankstasParadise` in the tests stays valid (see `project.yml`). Quote the path — it holds an
+apostrophe and a space.
 
 Keeping DerivedData outside a Documents-synced checkout also prevents Finder or
 file-provider metadata from being attached to generated bundles before signing.
@@ -68,6 +73,27 @@ Regenerate the Xcode project after changing `project.yml` with:
 ```sh
 xcodegen generate
 ```
+
+## Install
+
+To keep the app around — in the Dock, in Spotlight — build the Release configuration above and
+copy the product into `/Applications`. `ditto` rather than `cp`, so the bundle's signature and
+extended attributes survive the copy:
+
+```sh
+ditto "$HOME/Library/Developer/Xcode/DerivedData/RankstasParadise/Build/Products/Release/Ranksta's Paradise.app" \
+  "/Applications/Ranksta's Paradise.app"
+open -a "/Applications/Ranksta's Paradise.app"
+```
+
+The bundle is ad-hoc signed and names no development team, which is all a local install needs:
+`codesign --verify --deep --strict` passes, and a bundle that was never downloaded carries no
+quarantine flag for Gatekeeper to act on. It would not open on another Mac, though — that needs
+a Developer ID signature and notarisation.
+
+A copy already in `/Applications` is replaced by the same command, so quit the running app
+first. Its data lives in `~/Library/Application Support/com.rankstasparadise.mac`, outside the
+bundle, and a replacement leaves it alone.
 
 ## Layout
 
@@ -94,5 +120,5 @@ Refreshing and loading never blank the screen. Every store keeps what it shows u
 Use a Release build. Debug builds run SwiftUI unoptimised and drop frames during the peek:
 
 ```bash
-xcodebuild -project RankstasParadise.xcodeproj -scheme RankstasParadise -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath /tmp/rankstas-paradise-derived build && open /tmp/rankstas-paradise-derived/Build/Products/Release/RankstasParadise.app
+xcodebuild -project RankstasParadise.xcodeproj -scheme RankstasParadise -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath /tmp/rankstas-paradise-derived build && open "/tmp/rankstas-paradise-derived/Build/Products/Release/Ranksta's Paradise.app"
 ```
