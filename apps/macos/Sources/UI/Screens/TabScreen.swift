@@ -26,6 +26,30 @@ extension EnvironmentValues {
     }
 }
 
+/// A screen's reading column: it scrolls on screen, and does not in a preview or a still.
+///
+/// `ImageRenderer` draws nothing inside a ScrollView, so a still of a scrolling screen came
+/// out as the header and then blank. A preview cannot be scrolled anyway.
+struct ReadingColumn: ViewModifier {
+    @Environment(\.isTabPreview) private var isPreview
+
+    func body(content: Content) -> some View {
+        if isPreview {
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .clipped()
+        } else {
+            ScrollView { content }
+        }
+    }
+}
+
+extension View {
+    func readingColumn() -> some View {
+        modifier(ReadingColumn())
+    }
+}
+
 /// What a screen can ask the workspace to do. Previews get no-ops.
 struct TabActions {
     var activate: (TabID) -> Void
@@ -41,7 +65,7 @@ struct TabActions {
 /// The same view backs the mounted screen and the peek previews. A site's preview always
 /// shows its dashboard: a card is for picking a site, and following the live screen made
 /// every rail click build the chosen screen a second time inside a card nobody had open.
-struct TabScreen: View {
+struct TabScreen: View, Equatable {
     let tab: TabID
     let workspace: Workspace
     let model: OverviewModel
@@ -53,6 +77,25 @@ struct TabScreen: View {
     let favicons: FaviconStore
     let actions: TabActions
 
+    /// Equal by what the screen is drawn from, ignoring `actions`, whose closures cannot be
+    /// compared and only ever act on the tab they were made for. The stores are compared by
+    /// identity: the screens observe them directly, so a finished load still invalidates the
+    /// rows that read it without passing through here. The same bargain `TabContentStack`
+    /// and `ScreenSlot` make — without it, `TabContentStack`'s body re-running for a click
+    /// re-evaluated all nine mounted screens, because each got a fresh `actions`.
+    nonisolated static func == (lhs: TabScreen, rhs: TabScreen) -> Bool {
+        lhs.tab == rhs.tab
+            && lhs.workspace === rhs.workspace
+            && lhs.model === rhs.model
+            && lhs.history === rhs.history
+            && lhs.rankings === rhs.rankings
+            && lhs.preferences === rhs.preferences
+            && lhs.live === rhs.live
+            && lhs.log === rhs.log
+            && lhs.favicons === rhs.favicons
+    }
+
+    @ViewBuilder
     var body: some View {
         switch tab {
         case .overview:
@@ -76,7 +119,8 @@ struct TabScreen: View {
                     log: log,
                     icon: favicons.image(for: siteID),
                     isRefreshing: model.isRefreshing,
-                    onRefresh: { actions.refresh(tab) }
+                    onRefresh: { actions.refresh(tab) },
+                    paneIsAtRest: { workspace.isPeekAtRest() }
                 )
             } else {
                 ContentUnavailableView(

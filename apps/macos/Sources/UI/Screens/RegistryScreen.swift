@@ -43,43 +43,41 @@ struct RegistryScreen: View {
     private var loading: Bool { rankings.loading.contains(overview.id) }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                // The registry's numbers lead the screen, as the plan's do on the
-                // planning screen and the site's on the dashboard. With no targets in
-                // hand there is nothing to count, and a strip of zeros would be a claim
-                // about a registry the screen has not read — so those states say so in a
-                // line of prose instead.
-                Group {
-                    if targets.isEmpty {
-                        header
-                    } else {
-                        numbers
-                    }
-                }
-                .padding(.top, SiteTabScreen.screenInset)
-                .padding(.bottom, 24)
-
-                if !targets.isEmpty {
-                    indexing
-                        .padding(.bottom, 24)
-                }
-
-                controls
-                    .padding(.bottom, 20)
-
-                list
-
-                if let error = rankings.errors[overview.id] {
-                    Text(error)
-                        .foregroundStyle(Palette.coral)
-                        .padding(.top, 16)
+        VStack(alignment: .leading, spacing: 0) {
+            // The registry's numbers lead the screen, as the plan's do on the
+            // planning screen and the site's on the dashboard. With no targets in
+            // hand there is nothing to count, and a strip of zeros would be a claim
+            // about a registry the screen has not read — so those states say so in a
+            // line of prose instead.
+            Group {
+                if targets.isEmpty {
+                    header
+                } else {
+                    numbers
                 }
             }
-            .column()
-            .padding(.bottom, SiteTabScreen.columnInset)
+            .padding(.top, SiteTabScreen.screenInset)
+            .padding(.bottom, 24)
+
+            if !targets.isEmpty {
+                indexing
+                    .padding(.bottom, 24)
+            }
+
+            controls
+                .padding(.bottom, 20)
+
+            list
+
+            if let error = rankings.errors[overview.id] {
+                Text(error)
+                    .foregroundStyle(Palette.coral)
+                    .padding(.top, 16)
+            }
         }
-        .scrollDisabled(isPreview)
+        .column()
+        .padding(.bottom, SiteTabScreen.columnInset)
+        .readingColumn()
     }
 
     // MARK: Header

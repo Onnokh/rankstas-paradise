@@ -12,6 +12,9 @@ struct SiteTabScreen: View {
     let icon: Image?
     let isRefreshing: Bool
     let onRefresh: () -> Void
+    /// Whether the pane stands still. Asked before each screen is warmed, and again each beat
+    /// until it answers yes, so a build never lands in a frame that is moving. See `screens`.
+    var paneIsAtRest: @MainActor () -> Bool = { true }
 
     @Environment(\.isTabPreview) private var isPreview
     /// The screens this tab holds a view for. The one it opens on is mounted at once; the
@@ -104,10 +107,19 @@ struct SiteTabScreen: View {
         }
         // Warm the other screens once the first frame is up, one per beat, so the work lands
         // between the reader's glances and never in front of a click. A preview stays one screen.
+        //
+        // And never in a frame that is moving. A project chosen from the grid for the first
+        // time in a session is built on the click, so its first frame was up while the peek
+        // was closing, and the warming fell inside that animation: the registry and the plan
+        // each held the main thread for 100-190 ms, and the close lost 300-430 ms over four
+        // frames. That was the freeze on picking a project from the grid.
         .task(id: overview.id) {
             guard !isPreview else { return }
             for screen in SiteScreen.allCases where !mounted.contains(screen) {
                 try? await Task.sleep(for: .milliseconds(120))
+                while !Task.isCancelled, !paneIsAtRest() {
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
                 guard !Task.isCancelled else { return }
                 mounted.insert(screen)
             }
@@ -1459,23 +1471,24 @@ private struct SiteDashboard: View {
     }
 
     var body: some View {
-        // The screen scrolls: the two ranked lists under the chart can outgrow the pane.
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                if state.period == .today {
-                    todayBody
-                } else {
-                    periodBody
-                }
+        column.readingColumn()
+    }
 
-                footer
-                    .column()
-                    .padding(.top, 24)
-                    .padding(.bottom, SiteTabScreen.columnInset)
+    /// The same content either way, so a still is the screen and not a thinner copy of it.
+    private var column: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if state.period == .today {
+                todayBody
+            } else {
+                periodBody
             }
-            .padding(.top, SiteTabScreen.screenInset)
+
+            footer
+                .column()
+                .padding(.top, 24)
+                .padding(.bottom, SiteTabScreen.columnInset)
         }
-        .scrollDisabled(isPreview)
+        .padding(.top, SiteTabScreen.screenInset)
     }
 
     /// A stored period: Search Console figures and chart, then the provider's cards.

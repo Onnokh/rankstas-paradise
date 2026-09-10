@@ -59,42 +59,40 @@ struct PlanningScreen: View {
     private var loading: Bool { rankings.loading.contains(overview.id) }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                // The plan's numbers lead the screen, the way the dashboard's do. No strip
-                // without a report: zeros are a statement about the plan, and an
-                // unanswered request is not entitled to make one — so the screens with
-                // nothing to count say so in a line of prose instead.
-                Group {
-                    if planningState == .plan {
-                        numbers
-                    } else {
-                        header
-                    }
-                }
-                .padding(.top, SiteTabScreen.screenInset)
-                .padding(.bottom, 24)
-
-                controls
-                    .padding(.bottom, 20)
-
-                list
-
+        VStack(alignment: .leading, spacing: 0) {
+            // The plan's numbers lead the screen, the way the dashboard's do. No strip
+            // without a report: zeros are a statement about the plan, and an
+            // unanswered request is not entitled to make one — so the screens with
+            // nothing to count say so in a line of prose instead.
+            Group {
                 if planningState == .plan {
-                    proposed
-                        .padding(.top, 20)
-                }
-
-                if let error = rankings.errors[overview.id] {
-                    Text(error)
-                        .foregroundStyle(Palette.coral)
-                        .padding(.top, 16)
+                    numbers
+                } else {
+                    header
                 }
             }
-            .column()
-            .padding(.bottom, SiteTabScreen.columnInset)
+            .padding(.top, SiteTabScreen.screenInset)
+            .padding(.bottom, 24)
+
+            controls
+                .padding(.bottom, 20)
+
+            list
+
+            if planningState == .plan {
+                proposed
+                    .padding(.top, 20)
+            }
+
+            if let error = rankings.errors[overview.id] {
+                Text(error)
+                    .foregroundStyle(Palette.coral)
+                    .padding(.top, 16)
+            }
         }
-        .scrollDisabled(isPreview)
+        .column()
+        .padding(.bottom, SiteTabScreen.columnInset)
+        .readingColumn()
     }
 
     // MARK: Header
