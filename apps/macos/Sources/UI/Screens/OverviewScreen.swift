@@ -95,47 +95,45 @@ struct OverviewScreen: View {
         } else {
             // The same page as a site's tab: one reading column, centred, header at the top,
             // the numbers under it, the cards below, the footer last.
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    header
-                        .column()
-                        .padding(.top, SiteTabScreen.columnInset)
-                        .padding(.bottom, 40)
-
-                    OverviewStrip(sites: shownSites, live: live)
-                        .column()
-
-                    SiteTiles(
-                        overviews: shownOverviews,
-                        live: live,
-                        favicons: favicons,
-                        selection: state.selectedSiteID,
-                        onSelect: { state.selectedSiteID = $0 },
-                        onOpen: onOpenSite
-                    )
+            VStack(alignment: .leading, spacing: 0) {
+                header
                     .column()
-                    .padding(.top, 36)
+                    .padding(.top, SiteTabScreen.columnInset)
+                    .padding(.bottom, 40)
 
-                    FeedCard(
-                        rows: rows,
-                        // One site kept means every row is that site's; the name would only
-                        // repeat the header.
-                        showsSite: shownSites.count != 1,
-                        kinds: $state.feedKinds,
-                        windowMinutes: windowMinutes,
-                        waiting: live.feeds.isEmpty && live.feedErrors.isEmpty,
-                        now: now
-                    )
+                OverviewStrip(sites: shownSites, live: live)
                     .column()
-                    .padding(.top, 20)
 
-                    footer(now: now)
-                        .column()
-                        .padding(.top, 24)
-                        .padding(.bottom, SiteTabScreen.columnInset)
-                }
+                SiteTiles(
+                    overviews: shownOverviews,
+                    live: live,
+                    favicons: favicons,
+                    selection: state.selectedSiteID,
+                    onSelect: { state.selectedSiteID = $0 },
+                    onOpen: onOpenSite
+                )
+                .column()
+                .padding(.top, 36)
+
+                FeedCard(
+                    rows: rows,
+                    // One site kept means every row is that site's; the name would only
+                    // repeat the header.
+                    showsSite: shownSites.count != 1,
+                    kinds: $state.feedKinds,
+                    windowMinutes: windowMinutes,
+                    waiting: live.feeds.isEmpty && live.feedErrors.isEmpty,
+                    now: now
+                )
+                .column()
+                .padding(.top, 20)
+
+                footer(now: now)
+                    .column()
+                    .padding(.top, 24)
+                    .padding(.bottom, SiteTabScreen.columnInset)
             }
-            .scrollDisabled(isPreview)
+            .readingColumn()
         }
     }
 

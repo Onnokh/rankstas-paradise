@@ -1,6 +1,32 @@
 import Combine
 import SwiftUI
 
+/// Slides a subtree vertically as one transform, instead of as a position change SwiftUI
+/// pushes down to the leaves.
+///
+/// This is what makes the pane's travel affordable. An animated `.offset` on the pane made
+/// every row, mark and label in it resolve a new frame on every frame of the travel — Apple's
+/// own `geometryGroup()` docs say position changes are pushed down "so that only leaf views
+/// apply the current animation to their frame rectangles". A `GeometryEffect` marked
+/// `ignoredByLayout()` takes no part in layout, so animating it cannot cause a layout pass:
+/// the pane is composited at an offset and costs one transform per frame.
+///
+/// It follows that the pane's hit region stays where layout put it while the travel is on.
+/// Nothing can be clicked there in that moment: the peek's own catcher covers the pane area
+/// while the peek is open, and the travel is over by the time it is not.
+struct SlideY: GeometryEffect {
+    var y: CGFloat
+
+    var animatableData: CGFloat {
+        get { y }
+        set { y = newValue }
+    }
+
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        ProjectionTransform(CGAffineTransform(translationX: 0, y: y))
+    }
+}
+
 /// Hosts the tab bar, the mounted tab screens, and the peek.
 ///
 /// Tab switches are instant pane swaps; the peek offset is the only thing that moves the
@@ -19,6 +45,8 @@ struct RootView: View {
     @State private var preferences = PlanningPreferences()
     @State private var live = LiveStore()
     @State private var log = LogStore()
+    /// One rendered still per tab, which is what the peek's cards show. See `TabSnapshots`.
+    @State private var snapshots = TabSnapshots()
     @State private var drag: DragSession?
 
     /// One live three-finger gesture.
@@ -72,13 +100,15 @@ struct RootView: View {
             let pane = layout.contentFrame
             // The rail stands beside every tab's pane and takes its strip off the pane's width.
             let railWidth = ScreenRail.width
+            let paneSize = CGSize(width: pane.width - railWidth, height: pane.height)
 
             ZStack(alignment: .topLeading) {
                 Palette.void
 
                 ScreenRail(workspace: workspace) { select(.overview) }
                     .frame(width: railWidth, height: pane.height, alignment: .top)
-                    .offset(x: pane.minX, y: pane.minY + layout.contentOffset)
+                    .offset(x: pane.minX, y: pane.minY)
+                    .modifier(SlideY(y: paneTravel(layout)).ignoredByLayout())
                     .allowsHitTesting(!workspace.isPeeking)
 
                 TabContentStack(
@@ -91,20 +121,28 @@ struct RootView: View {
                     log: log,
                     favicons: favicons,
                     actions: actions,
-                    width: pane.width - railWidth,
-                    height: pane.height
+                    width: paneSize.width,
+                    height: paneSize.height
                 )
-                    .allowsHitTesting(!workspace.isPeeking)
-                    .overlay {
-                        if workspace.isPeeking {
-                            // The pushed-down content is inert; clicking it closes the peek.
-                            Color.clear
-                                .contentShape(.rect)
-                                .onTapGesture(perform: closePeek)
-                                .accessibilityHidden(true)
-                        }
-                    }
-                    .offset(x: pane.minX + railWidth, y: pane.minY + layout.contentOffset)
+                    .equatable()
+                    .offset(x: pane.minX + railWidth, y: pane.minY)
+                    .modifier(SlideY(y: paneTravel(layout)).ignoredByLayout())
+
+                // The pushed-down content is inert; clicking where it sits closes the peek.
+                // A sibling over the pane rather than an overlay inside it, and always
+                // present: an overlay that came and went, and a hit-testing gate on the
+                // stack, both rebuilt the hit-test and accessibility trees of all nine
+                // mounted screens on the one frame that has to be cheap — the frame a tab is
+                // chosen, where `isPeeking` turns false. It keeps its place while the pane
+                // travels, because the travel is a transform layout takes no part in, so it
+                // also keeps clicks off the pane, which is what that gate was for.
+                Color.clear
+                    .frame(width: paneSize.width, height: paneSize.height)
+                    .contentShape(.rect)
+                    .onTapGesture(perform: closePeek)
+                    .allowsHitTesting(workspace.isPeeking)
+                    .accessibilityHidden(true)
+                    .offset(x: pane.minX + railWidth, y: pane.minY)
 
                 TabBar(layout: layout, onPeek: advancePeek)
 
@@ -113,12 +151,8 @@ struct RootView: View {
                     layout: layout,
                     workspace: workspace,
                     model: model,
-                    history: history,
-                    rankings: rankings,
-                    preferences: preferences,
-                    live: live,
-                    log: log,
                     favicons: favicons,
+                    snapshots: snapshots,
                     showsShortcuts: isCommandHeld,
                     onSelect: select
                 )
@@ -143,17 +177,84 @@ struct RootView: View {
         .task {
             await model.start()
         }
+        // Stills wait for the peek to be closed before they are drawn. See `TabSnapshots`.
+        .onAppear {
+            snapshots.canRender = { [workspace] in workspace.isPeekAtRest() }
+        }
         // A site added, changed, or removed in Settings shows up here without a manual refresh.
         .onReceive(NotificationCenter.default.publisher(for: .settingsDidChangeSites)) { _ in
             Task { await model.refresh() }
         }
         .onChange(of: model.sites.map(\.id), initial: true) { _, siteIDs in
             workspace.reconcile(siteIDs: siteIDs)
+            snapshots.scheduleAll(workspace.tabs) { cardContent(for: $0) }
+        }
+        // Mount every tab in the idle moments after launch, one per beat, so the first visit
+        // to a project is a swap and not a build. See `Workspace.mount`. Each build lands
+        // with the pane at rest — never in a frame of the peek — and after the stills, which
+        // the peek needs first. A mounted tab warms its own screens (see `SiteTabScreen`),
+        // so the beat leaves room for those before the next tab.
+        .task(id: workspace.tabs) {
+            try? await Task.sleep(for: Self.premountDelay)
+            for tab in workspace.tabs where !workspace.mountedTabIDs.contains(tab) {
+                while !Task.isCancelled, !workspace.isPeekAtRest() {
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+                guard !Task.isCancelled else { return }
+                workspace.mount(tab)
+                try? await Task.sleep(for: Self.premountBeat)
+            }
+        }
+        // A tab is rasterised a beat after the reader leaves it, so its card shows what was
+        // last on screen there. See `TabSnapshots` for why a card cannot hold a live screen.
+        .onChange(of: workspace.activeTabID) { left, _ in
+            snapshots.scheduleCard(left) { cardContent(for: left) }
         }
         .task(id: model.sites.map(\.id)) {
             await favicons.load(model.sites)
         }
     }
+
+    /// When mounting the tabs begins after launch: past the stills, which `TabSnapshots`
+    /// draws from 1.8 s. And the gap between one tab and the next: room for the tab's build
+    /// and the three screens it warms 120 ms apart.
+    private static let premountDelay: Duration = .seconds(3)
+    private static let premountBeat: Duration = .milliseconds(700)
+
+    /// How far the pane stands below its place: the peek's own push. Closing the peek
+    /// carries the pane and the rail back up the whole way, which is the push reversed.
+    private func paneTravel(_ layout: PeekLayout) -> CGFloat {
+        layout.contentOffset
+    }
+
+
+    /// What a tab's card still is drawn from: the screen that tab shows, as a preview, at the
+    /// still's size. Built here rather than read off the screen, so a tab nobody has opened
+    /// yet gets a still too.
+    private func cardContent(for tab: TabID) -> AnyView {
+        AnyView(
+            TabScreen(
+                tab: tab,
+                workspace: workspace,
+                model: model,
+                history: history,
+                rankings: rankings,
+                preferences: preferences,
+                live: live,
+                log: log,
+                favicons: favicons,
+                actions: .none
+            )
+            .environment(\.isTabPreview, true)
+            .frame(
+                width: TabSnapshots.cardSize.width,
+                height: TabSnapshots.cardSize.height,
+                alignment: .top
+            )
+            .background(Palette.panel)
+        )
+    }
+
 
     // MARK: Gesture
 
@@ -208,13 +309,49 @@ struct RootView: View {
 
     // MARK: Actions
 
-    /// Swaps the pane instantly, then closes the peek. From a pill or the strip the new pane
-    /// is simply there as the strip retracts. From the grid the pane was pushed out of view,
-    /// so closing the peek carries the new pane back up: the push, reversed.
+    /// Turns of the runloop between the tab swapping and the peek starting to close.
+    ///
+    /// Bringing a tab to the front costs 60-100 ms of work whatever else is happening —
+    /// measured with the peek closed, where nobody can tell, because a late frame is only a
+    /// freeze when something is moving. Started in the same breath as the close, that work
+    /// landed inside the animation and was the freeze. Given the runloop two turns first, it
+    /// lands while the grid is still standing still. Two turns is enough; five measured no
+    /// better.
+    private static let holdTurns = 2
+
+    /// Swaps the pane instantly, then closes the peek. The grid pushed the pane out of the
+    /// window, so closing it carries the pane back up the whole way with the chosen tab
+    /// already in it: the push, reversed, and the swap happens where nobody can see it.
+    ///
+    /// The travel is a transform, not a position — see `SlideY`. An animated `.offset` on
+    /// the pane made every row, mark and label resolve a new frame on every frame of the
+    /// close, and cost 180-350 ms of over-budget frames per click; none of `geometryGroup`,
+    /// `compositingGroup`, `drawingGroup` or `visualEffect` moved that number. A short
+    /// 72-point rise instead of the full travel was the same bargain more cheaply (126-406
+    /// ms per click, worst frame 88-228) and read as two motions at once, because the pane
+    /// landed while the cards were still flying. As one transform the whole travel costs
+    /// 0-135 ms per click with a worst frame of 0-47, so the pane and the cards move
+    /// together on the same spring and most clicks drop no frame at all.
     private func select(_ tab: TabID) {
+        // A switch with the peek closed — ⌘1…⌘9, the rail, ⌘← and ⌘→ — has nothing to close.
+        let fromPeek = workspace.isPeeking
         workspace.activate(tab)
-        withAnimation(settle) {
-            workspace.peekProgress = PeekProgress.closed
+        guard fromPeek else { return }
+
+        // Nothing about the peek changes until the swap's own work is done, so the pane
+        // stays where the peek put it and the grid holds still through that frame.
+        let close = settle
+        hop(Self.holdTurns) {
+            withAnimation(close) { workspace.peekProgress = PeekProgress.closed }
+        }
+    }
+
+    /// Runs `work` after `count` turns of the runloop, so the frames in between are
+    /// committed first.
+    private func hop(_ count: Int, then work: @escaping @MainActor () -> Void) {
+        guard count > 0 else { return work() }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { hop(count - 1, then: work) }
         }
     }
 

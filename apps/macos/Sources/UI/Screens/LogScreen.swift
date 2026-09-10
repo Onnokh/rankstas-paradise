@@ -35,29 +35,27 @@ struct LogScreen: View {
     private var loading: Bool { log.loading.contains(overview.id) }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                header
-                    .padding(.top, SiteTabScreen.screenInset)
-                    .padding(.bottom, 24)
+        VStack(alignment: .leading, spacing: 0) {
+            header
+                .padding(.top, SiteTabScreen.screenInset)
+                .padding(.bottom, 24)
 
-                if !entries.isEmpty {
-                    controls
-                        .padding(.bottom, 20)
-                }
-
-                timeline
-
-                if let error = log.errors[overview.id] {
-                    Text(error)
-                        .foregroundStyle(Palette.coral)
-                        .padding(.top, 16)
-                }
+            if !entries.isEmpty {
+                controls
+                    .padding(.bottom, 20)
             }
-            .column()
-            .padding(.bottom, SiteTabScreen.columnInset)
+
+            timeline
+
+            if let error = log.errors[overview.id] {
+                Text(error)
+                    .foregroundStyle(Palette.coral)
+                    .padding(.top, 16)
+            }
         }
-        .scrollDisabled(isPreview)
+        .column()
+        .padding(.bottom, SiteTabScreen.columnInset)
+        .readingColumn()
         // The screen loads its own record, unlike the Registry and Planning screens, whose
         // rows come down with the site's dashboard. Nothing outside this screen shows the
         // Log, so a site tab that is never taken here costs no request at all. The tab

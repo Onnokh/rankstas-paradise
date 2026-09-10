@@ -8,12 +8,9 @@ struct PeekOverlay: View {
     let layout: PeekLayout
     let workspace: Workspace
     let model: OverviewModel
-    let history: HistoryStore
-    let rankings: RankingStore
-    let preferences: PlanningPreferences
-    let live: LiveStore
-    let log: LogStore
     let favicons: FaviconStore
+    /// A tab's card shows its still. See `TabSnapshots`.
+    let snapshots: TabSnapshots
     /// While Command is held, each card shows its ⌘-number shortcut.
     let showsShortcuts: Bool
     let onSelect: (TabID) -> Void
@@ -46,7 +43,6 @@ struct PeekOverlay: View {
                             isActive: isActive,
                             layout: layout,
                             size: frame.size,
-                            scalesContent: false,
                             action: { onSelect(tab) }
                         ) {
                             OverviewSummaryCard(model: model)
@@ -60,10 +56,9 @@ struct PeekOverlay: View {
                             isActive: isActive,
                             layout: layout,
                             size: frame.size,
-                            scalesContent: true,
                             action: { onSelect(tab) }
                         ) {
-                            TabScreen(tab: tab, workspace: workspace, model: model, history: history, rankings: rankings, preferences: preferences, live: live, log: log, favicons: favicons, actions: .none)
+                            TabSnapshotView(image: snapshots.card(for: tab))
                         }
                     }
                 }
@@ -85,13 +80,8 @@ private struct PeekCard<Screen: View>: View {
     let isActive: Bool
     let layout: PeekLayout
     let size: CGSize
-    /// Scaled screens render at a fixed logical size and shrink; native content lays itself
-    /// out for the area the card offers.
-    let scalesContent: Bool
     let action: () -> Void
     @ViewBuilder let screen: () -> Screen
-
-    @State private var isHovering = false
 
     private var reveal: CGFloat { layout.reveal }
     private var previewWidth: CGFloat { size.width - layout.cardInset * 2 }
@@ -117,14 +107,8 @@ private struct PeekCard<Screen: View>: View {
                 // Always mounted, hidden by the card's clip while closed. Mounting it on the
                 // first drag sample made every preview fill in over a few frames, which read
                 // as a flash across the whole bar.
-                Group {
-                    if scalesContent {
-                        ScreenPreview(width: previewWidth, height: previewHeight, screen: screen)
-                    } else {
-                        screen()
-                            .frame(width: previewWidth, height: previewHeight)
-                    }
-                }
+                screen()
+                    .frame(width: previewWidth, height: previewHeight)
                 .clipShape(.rect(cornerRadius: 6))
                 .padding(.horizontal, layout.cardInset)
                 .padding(.bottom, layout.cardInset)
@@ -148,42 +132,20 @@ private struct PeekCard<Screen: View>: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
         .accessibilityLabel(title)
         .accessibilityHint("Open this project")
         .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
-    /// The active pill keeps its fill; inactive pills show a hover fill and gain a faint card
-    /// fill as they grow.
+    /// The active pill keeps its fill; the others gain a faint card fill as they grow.
+    ///
+    /// No hover fill, and no `.onHover`: a card asking for hover made SwiftUI re-resolve the
+    /// window's responder node on every frame of the peek — `enqueueHoverUpdateIfNeeded` ->
+    /// `responderNode` -> `AG::Graph::update_attribute` was the second largest cost in a
+    /// profile of clicking a card, because the cards sweep under a cursor that is not moving.
     private var fillOpacity: Double {
         if isActive { return 0.12 }
-        let hover = isHovering ? 0.05 : 0
-        return max(hover, Double(min(reveal, 1)) * (isHovering ? 0.08 : 0.05))
+        return Double(min(reveal, 1)) * 0.05
     }
 }
 
-/// A non-interactive, scaled-down live render of a tab's screen.
-private struct ScreenPreview<Screen: View>: View {
-    /// Logical size a screen is rendered at before it is scaled into a card.
-    static var renderSize: CGSize { CGSize(width: 980, height: 560) }
-
-    let width: CGFloat
-    let height: CGFloat
-    @ViewBuilder let screen: () -> Screen
-
-    var body: some View {
-        let render = Self.renderSize
-        let scale = width / render.width
-
-        screen()
-            .environment(\.isTabPreview, true)
-            .frame(width: render.width, height: render.height, alignment: .top)
-            .background(Palette.panel)
-            .scaleEffect(scale, anchor: .topLeading)
-            .frame(width: width, height: max(height, 0), alignment: .topLeading)
-            .clipped()
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-    }
-}
