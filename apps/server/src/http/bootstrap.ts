@@ -16,6 +16,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { BunHttpServer } from "@effect/platform-bun"
 
 import { Api } from "./api.ts"
+import { authRoute } from "./auth-route.ts"
 import { makeApiGroup } from "./handlers.ts"
 import { healthRoute } from "./health.ts"
 import { bearerLayer } from "./middleware.ts"
@@ -49,10 +50,19 @@ export const bootstrap = async (): Promise<Boot> => {
     )
 
   // The API routes + their handlers, the raw `/mcp` mount, the unauthenticated
-  // `/health` liveness route, and a global bearer middleware that wraps every
-  // route so nothing (bar `/health`) is served unauthenticated.
+  // `/health` liveness route, Better Auth's own `/api/auth/*` subtree, and a
+  // global bearer middleware that wraps every route so nothing (bar `/health`
+  // and the sign-in routes) is served unauthenticated.
   const apiLayer = HttpApiBuilder.layer(Api).pipe(Layer.provide(makeApiGroup(ctx)))
-  const appLayer = Layer.mergeAll(apiLayer, mcpRoute, healthRoute, bearerLayer(ctx.debug, ctx.auth))
+  const appLayer = Layer.mergeAll(
+    apiLayer,
+    mcpRoute,
+    healthRoute,
+    // Before the middleware in the list, but exempted by it either way; the
+    // sign-in routes cannot sit behind the credential they hand out.
+    authRoute(ctx.authInstance),
+    bearerLayer(ctx.debug, ctx.auth),
+  )
 
   // Bind 0.0.0.0 — the container sits behind Coolify's TLS proxy, so it must
   // listen on all interfaces rather than loopback (ported from the legacy serve).
