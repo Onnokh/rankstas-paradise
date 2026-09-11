@@ -97,18 +97,8 @@ export const layer = Layer.effect(
             : clientsError(operation)(error as SqlError.SqlError),
         )
 
-    yield* sql
-      .unsafe(
-        `create table if not exists client_token (
-          id text primary key,
-          label text not null,
-          token_hash text not null unique,
-          created_at text not null,
-          last_used_at text,
-          revoked_at text
-        )`,
-      )
-      .pipe(mapErr("initialize"))
+    // `client_token` is created by the AppDatabase migrations, which have run
+    // by the time this layer is built.
 
     const listI = Effect.map(
       sql<Row>`select id, label, created_at, last_used_at, revoked_at

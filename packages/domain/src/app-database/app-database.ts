@@ -2,17 +2,22 @@
 // `<app home>/rankstas-paradise.sqlite` (`.debug.sqlite` in debug mode, like the
 // per-site ledgers, so a debug run never touches the real one). Process-global
 // and not site-scoped: it holds what is the same for every site — the Catalog
-// of sites and the Secrets vault. Each of those services owns its own tables
-// and runs its own `create table if not exists` on acquisition; this service
-// only opens the file.
+// of sites, the Secrets vault, and the Clients' token hashes.
+//
+// This service owns the schema for all three. Every app-level table is created
+// by the ordered migrations in migrations.ts, applied here on acquisition and
+// therefore before any of those services is built, so none of them carries DDL
+// of its own. The per-site ledgers are a separate database and keep theirs.
 import { mkdirSync } from "node:fs"
 
 import { Context, Effect, Layer } from "effect"
 import { Reactivity } from "effect/unstable/reactivity"
-import { SqliteClient } from "@effect/sql-sqlite-bun"
+import { SqlClient } from "effect/unstable/sql"
+import { SqliteClient, SqliteMigrator } from "@effect/sql-sqlite-bun"
 
 import { Config } from "../config/config.ts"
 import { serviceUse } from "../service-use.ts"
+import { migrations, migrationTable } from "./migrations.ts"
 import { AppDatabaseError } from "./schema.ts"
 
 export interface Interface {
@@ -42,6 +47,44 @@ export const layer = Layer.effect(
     const client = yield* SqliteClient.make({ filename: databasePath }).pipe(
       Effect.provide(Reactivity.layer),
     )
+
+    // The client puts the file in WAL mode itself. WAL lets a reader and a
+    // writer work at once but still allows only one writer, and SQLite's own
+    // default is to fail a blocked statement immediately rather than wait. One
+    // handle is served in turn, so nothing in this process needs the wait
+    // today; a second handle on the same file — another process, or a library
+    // that opens its own — would see SQLITE_BUSY without it. Five seconds is
+    // long enough for any statement this app writes and short enough to
+    // surface a real deadlock.
+    yield* client
+      .unsafe(`pragma busy_timeout = 5000`)
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new AppDatabaseError({
+              message: `Could not configure ${databasePath}`,
+              cause,
+            }),
+        ),
+      )
+
+    // Every app-level table exists after this line, and the run is recorded in
+    // `rp_migration`. A failure here fails the layer on purpose: a half-built
+    // schema must stop the server at start, not at the first read.
+    yield* SqliteMigrator.run({
+      loader: SqliteMigrator.fromRecord(migrations),
+      table: migrationTable,
+    }).pipe(
+      Effect.provideService(SqlClient.SqlClient, client),
+      Effect.mapError(
+        (cause) =>
+          new AppDatabaseError({
+            message: `Could not migrate ${databasePath}`,
+            cause,
+          }),
+      ),
+    )
+
     return { client }
   }),
 )

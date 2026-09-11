@@ -87,21 +87,8 @@ export const layer = Layer.effect(
             : catalogError(operation)(error as SqlError.SqlError),
         )
 
-    const ddl = [
-      `create table if not exists site (
-        id text primary key,
-        position integer not null,
-        settings text not null,
-        updated_at text not null default current_timestamp
-      )`,
-      `create table if not exists catalog_meta (
-        key text primary key,
-        value text not null
-      )`,
-    ]
-    yield* Effect.forEach(ddl, (statement) => sql.unsafe(statement)).pipe(
-      mapErr("initialize"),
-    )
+    // `site` and `catalog_meta` are created by the AppDatabase migrations,
+    // which have run by the time this layer is built.
 
     // --- internal implementations (fail with SqlError; wrapped at the
     // boundary below). ---
