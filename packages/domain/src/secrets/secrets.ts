@@ -175,28 +175,8 @@ export const layer = Layer.effect(
             : secretsError(operation)(error as SqlError.SqlError),
         )
 
-    yield* sql
-      .unsafe(
-        `create table if not exists secret (
-          scope text not null,
-          purpose text not null,
-          nonce text not null,
-          ciphertext text not null,
-          key_version integer not null,
-          last4 text not null,
-          updated_at text not null,
-          primary key (scope, purpose)
-        )`,
-      )
-      .pipe(mapErr("initialize"))
-    yield* sql
-      .unsafe(
-        `create table if not exists secret_meta (
-          key text primary key,
-          value text not null
-        )`,
-      )
-      .pipe(mapErr("initialize"))
+    // `secret` and `secret_meta` are created by the AppDatabase migrations,
+    // which have run by the time this layer is built.
 
     const storedScope = (scope: string | null) => scope ?? appScope
     const publicScope = (scope: string) => (scope === appScope ? null : scope)

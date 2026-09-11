@@ -97,7 +97,7 @@ Notes:
 
 ## 4b. Migrating existing local data
 
-If you already run RP locally (history, registry, logged actions), migrate it instead of starting empty — it's a **plain file copy**, lossless, no transform. The storage schema is `create table if not exists …` with no versioning or migrations, so the deployed code opens the copied DBs directly.
+If you already run RP locally (history, registry, logged actions), migrate it instead of starting empty — it's a **plain file copy**, lossless, no transform. The deployed code opens the copied DBs directly: the per-site ledgers are `create table if not exists …` with no versioning, and the app-level `rankstas-paradise.sqlite` is brought up to date on start by the migrations in [packages/domain/src/app-database/migrations.ts](../packages/domain/src/app-database/migrations.ts), which record what they applied in its `rp_migration` table. A copied database that predates that table adopts it on the first start, unchanged.
 
 Copy the app home into `/data/rankstas-paradise/`, preserving structure:
 

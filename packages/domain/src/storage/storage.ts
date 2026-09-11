@@ -488,6 +488,13 @@ export const layer = Layer.effect(
       <A, R>(effect: Effect.Effect<A, SqlError.SqlError, R>) =>
         Effect.mapError(effect, storageError(operation))
 
+    // The client puts the file in WAL mode itself, which allows one writer at
+    // a time; SQLite's own default is to fail a blocked statement at once
+    // rather than wait for that writer. A site is synced by a job while a
+    // report reads it, so give a blocked statement five seconds — long enough
+    // for anything written here, short enough to surface a real deadlock.
+    yield* sql.unsafe(`pragma busy_timeout = 5000`).pipe(mapErr("initialize"))
+
     // --- schema: run every `create table if not exists` + the synced_day
     // backfill once, on acquisition. ---
     const ddl = [

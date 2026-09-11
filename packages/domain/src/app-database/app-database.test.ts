@@ -1,0 +1,173 @@
+// AppDatabase tests: the migrator that owns the app-level schema. What matters
+// is not that a fresh file gets its tables — it is that a database built by the
+// code that came before the migrator adopts it without losing a row, and that
+// the recorded id really gates the run.
+import { afterEach, beforeEach, expect, test } from "bun:test"
+import { Database } from "bun:sqlite"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
+import { Effect, Layer, ManagedRuntime } from "effect"
+
+import { Config } from "../config/config.ts"
+import { AppDatabase } from "./app-database.ts"
+
+const fakeConfig = (dataDirectory: string) =>
+  Layer.succeed(
+    Config.Service,
+    Config.Service.of({
+      load: () => Effect.succeed({ siteUrl: "sc-domain:example.com" }),
+      dataDirectory: () => Effect.succeed(dataDirectory),
+      serviceAccountPath: () =>
+        Effect.succeed(`${dataDirectory}/google-service-account.json`),
+      debugMode: () => Effect.succeed(false),
+      ensureDataDirectory: () => Effect.void,
+    }),
+  )
+
+const makeRuntime = (dir: string) =>
+  ManagedRuntime.make(AppDatabase.layer.pipe(Layer.provide(fakeConfig(dir))))
+
+let dir: string
+let runtime: ReturnType<typeof makeRuntime> | null = null
+
+const dbPath = () => `${dir}/rankstas-paradise.sqlite`
+
+// Acquire the layer, then let go of it, so assertions read the closed file.
+const acquire = async () => {
+  runtime = makeRuntime(dir)
+  await runtime.runPromise(
+    Effect.gen(function* () {
+      yield* AppDatabase.Service
+    }),
+  )
+  await runtime.dispose()
+  runtime = null
+}
+
+const openFile = () => new Database(dbPath())
+
+const tableNames = (db: Database) =>
+  (
+    db
+      .query(`select name from sqlite_master where type = 'table' order by name`)
+      .all() as Array<{ name: string }>
+  ).map((row) => row.name)
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), "rp-app-db-"))
+})
+
+afterEach(async () => {
+  if (runtime) await runtime.dispose()
+  runtime = null
+  rmSync(dir, { recursive: true, force: true })
+})
+
+test("a fresh database gets every app-level table and records the migration", async () => {
+  await acquire()
+
+  const db = openFile()
+  const names = tableNames(db)
+  for (const table of [
+    "site",
+    "catalog_meta",
+    "secret",
+    "secret_meta",
+    "client_token",
+    "rp_migration",
+  ]) {
+    expect(names).toContain(table)
+  }
+
+  const applied = db
+    .query(`select migration_id, name from rp_migration order by migration_id`)
+    .all() as Array<{ migration_id: number; name: string }>
+  expect(applied).toEqual([{ migration_id: 1, name: "initial" }])
+  db.close()
+})
+
+test("a database built before the migrator adopts it without losing a row", async () => {
+  // What every existing deployment holds: the tables the three services made
+  // themselves, and no `rp_migration`. The first run must record the id and
+  // change nothing else.
+  const db = openFile()
+  db.run(`create table site (
+    id text primary key,
+    position integer not null,
+    settings text not null,
+    updated_at text not null default current_timestamp
+  )`)
+  db.run(`create table catalog_meta (key text primary key, value text not null)`)
+  db.run(`create table secret (
+    scope text not null,
+    purpose text not null,
+    nonce text not null,
+    ciphertext text not null,
+    key_version integer not null,
+    last4 text not null,
+    updated_at text not null,
+    primary key (scope, purpose)
+  )`)
+  db.run(`create table secret_meta (key text primary key, value text not null)`)
+  db.run(`create table client_token (
+    id text primary key,
+    label text not null,
+    token_hash text not null unique,
+    created_at text not null,
+    last_used_at text,
+    revoked_at text
+  )`)
+  db.run(
+    `insert into site (id, position, settings) values ('shop', 0, '{"id":"shop"}')`,
+  )
+  db.close()
+
+  await acquire()
+
+  const after = openFile()
+  const sites = after.query(`select id, settings from site`).all() as Array<{
+    id: string
+    settings: string
+  }>
+  expect(sites).toEqual([{ id: "shop", settings: '{"id":"shop"}' }])
+  expect(
+    after.query(`select migration_id from rp_migration`).all(),
+  ).toEqual([{ migration_id: 1 }])
+  after.close()
+})
+
+test("a recorded id is skipped, so the run is gated on the migration table", async () => {
+  // Neuter the migrator: claim 0001 has run, but leave the file without its
+  // tables. If `site` appears anyway, something other than the migrator is
+  // creating it and the ordering this whole module rests on is not real.
+  const db = openFile()
+  db.run(`create table rp_migration (
+    migration_id integer primary key not null,
+    created_at datetime not null default current_timestamp,
+    name varchar(255) not null
+  )`)
+  db.run(`insert into rp_migration (migration_id, name) values (1, 'initial')`)
+  db.close()
+
+  await acquire()
+
+  const after = openFile()
+  expect(tableNames(after)).not.toContain("site")
+  after.close()
+})
+
+test("the file is left with a busy timeout so a blocked writer waits", async () => {
+  runtime = makeRuntime(dir)
+  const timeout = await runtime.runPromise(
+    Effect.gen(function* () {
+      const { client } = yield* AppDatabase.Service
+      const rows = yield* client.unsafe<{ timeout: number }>(
+        `pragma busy_timeout`,
+      )
+      return rows[0]?.timeout
+    }),
+  )
+  expect(timeout).toBe(5000)
+})
