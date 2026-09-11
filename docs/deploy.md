@@ -22,11 +22,16 @@ Without the volume the key and history are lost on every redeploy.
 
 | Var | Required | Notes |
 |---|---|---|
-| `RP_TOKEN` | yes (secret) | The shared bearer token: the bootstrap credential that creates the first client, and the break-glass one if every client token is revoked. Use a long random value. Per-client tokens (§3d) are accepted beside it. |
+| `RP_TOKEN` | yes (secret) | The shared bearer token: the bootstrap credential that creates the first client, and the break-glass one if every client key is revoked. Use a long random value. Per-client API keys (§3d) are accepted beside it. |
 | `XDG_CONFIG_HOME` | yes | Set to `/data` (see above). |
 | `GOOGLE_SERVICE_ACCOUNT_FILE` | no | Override the key path. Defaults to `<app home>/google-service-account.json`. |
 | `SITE_URL` | no | Legacy: the single property a fresh catalog is seeded with when there is no `config.json`. Ignored once the catalog has been imported. |
 | `SEO_PORT` | no | Defaults to 8790. |
+| `RP_BASE_URL` | no | The address the server is reached at, used to build the Google redirect. Defaults to `http://localhost:$SEO_PORT`, which is wrong for a hosted deploy that signs in — set it to the public URL. |
+| `RP_OWNER_EMAIL` | no | The single account every API key belongs to. Defaults to the first entry of `RP_ALLOWED_EMAILS`. Match it to the Google address you sign in with, so signing in adopts the same account. |
+| `RP_ALLOWED_EMAILS` | no | Comma-separated addresses allowed to sign in with Google. Empty means nobody may sign in, which is the default: a valid session opens the API, so an unlisted Google account must not create one. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | no (secret) | A **Web** OAuth client. Absent, Google sign-in is not offered and API keys are the only way in. See §3e. |
+| `RP_AUTH_SECRET` | no (secret) | Signs session cookies. Derived from `RP_MASTER_KEY` when unset. API keys are hashed without it, so changing it signs people out but leaves every machine working. |
 | `RP_MASTER_KEY` | yes for stored vendor keys (secret) | The key the vendor-key vault is encrypted with: 32 random bytes, base64 (`openssl rand -base64 32`). Without it the vault is read-only-empty, `GET /api/secrets` reports `encryption.configured: false`, and every key must still come from the environment. See §3c. |
 | `AHREFS_API_KEY` | no (secret) | Fallback when no `ahrefs` key is stored in the vault. Enables Ahrefs Domain Rating. Without it every site simply has no rating; nothing else changes. A free key covers the endpoint used ([domain-rating-free](https://docs.ahrefs.com/en/api/reference/public/get-domain-rating-free)). |
 | `DATAFORSEO_API_KEY` | no (secret) | Fallback when no `dataforseo` key is stored in the vault. Enables Keyword metrics: search volume, difficulty, cost per click, competition and intent for the Registry's keywords and the site's non-brand queries. The value is the base64 of `<login>:<password>` that the DataForSEO dashboard shows as the API key — one value, not two. Without it every site simply has no keyword demand data; Search Console is unaffected. Charged per request, so the sync asks only about keywords with no answer newer than 30 days, and never about a brand or operator query. |
@@ -52,11 +57,21 @@ Vendor keys (Polar, Rybbit, Ahrefs, DataForSEO) can be stored through the API in
 - **One-time import from the environment.** On the first start with `RP_MASTER_KEY` set, every slot the vault has nothing for is filled from the matching environment variable (each site's analytics and revenue providers, and Ahrefs and DataForSEO app-wide), and the server logs `Imported N vendor key(s) from the environment into the vault`. From then on the variables are fallbacks only and can be removed from Coolify.
 - **Rotation:** there is no re-encrypt yet. To change `RP_MASTER_KEY`, delete the stored keys, set the new master key, restart, and store them again.
 
-## 3d. Clients: per-client tokens
+## 3d. Clients: per-client API keys
 
-Instead of copying `RP_TOKEN` into every client, issue each one its own token: `POST /api/clients` with `{ "label": "Onno's MacBook" }` answers `201` with the client and its token, once. The server stores only the token's SHA-256 hash (the Clients service, [packages/domain/src/clients/clients.ts](../packages/domain/src/clients/clients.ts)). `GET /api/clients` lists clients with their last use; `DELETE /api/clients/<id>` revokes one, and its token stops working at the next request. The bearer middleware accepts `RP_TOKEN` and any active client token; it answers `503` only when neither exists.
+Instead of copying `RP_TOKEN` into every client, issue each one its own key: `POST /api/clients` with `{ "label": "Onno's MacBook" }` answers `201` with the client and its key, once. The key is hashed at rest; only its first characters are kept, so a list can name a key without holding one that works. Keys are minted and checked by Better Auth ([apps/server/src/auth/keys.ts](../apps/server/src/auth/keys.ts), [adr/0007](adr/0007-better-auth-and-api-keys.md)).
 
-Every client reads its token from `RP_API_URL`/`RP_TOKEN` or `~/.config/rankstas-paradise/client.json`; put a client token there instead of the shared one.
+`GET /api/clients` lists clients with their last use; `DELETE /api/clients/<id>` revokes one, and its key stops working at the next request. A revoked client stays on the list with the date. The bearer middleware accepts `RP_TOKEN`, then any live key, then a valid sign-in session; it answers `503` only when neither `RP_TOKEN` nor a live key exists.
+
+Every client reads its key from `RP_API_URL`/`RP_TOKEN` or `~/.config/rankstas-paradise/client.json`; put a client key there instead of the shared one.
+
+> **Upgrading from the old client tokens.** Keys issued before [adr/0007](adr/0007-better-auth-and-api-keys.md) do not carry over — their stored hashes cannot be migrated — so after this deploy every client must be re-issued. Use `RP_TOKEN` to issue them, and expect a `401` from any client still holding an old token.
+
+## 3e. Signing in with Google
+
+Optional, and not needed for machine access. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (a **Web** application client, with `<your base URL>/api/auth/callback/google` as the authorised redirect) and list who may sign in in `RP_ALLOWED_EMAILS`. Without those variables the social provider is simply not registered and the server runs on API keys alone.
+
+The sign-in grant asks for `openid`, `email` and `profile` and nothing more. That is deliberate: Google revokes refresh tokens after 7 days while the consent screen is External + Testing *unless* the grant is limited to name, email and profile, so adding a data scope here would make signing in itself break weekly until Google finished reviewing the app. Search Console and AdSense get their own separate authorization; see [adr/0007](adr/0007-better-auth-and-api-keys.md).
 
 ## 4. Google authentication — a service-account key
 

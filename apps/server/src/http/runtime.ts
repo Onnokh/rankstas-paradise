@@ -22,14 +22,13 @@
 // configured site's runtime. A truly process-global job view across many sites
 // is out of scope here (the golden fixture is single-site); this matches the
 // legacy single-lock behaviour for the common single-site deployment.
-import { ConfigProvider, Effect, Layer, ManagedRuntime, Option, Redacted } from "effect"
+import { ConfigProvider, Effect, Layer, ManagedRuntime, Redacted } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 
 import { Analytics } from "@rp/domain/analytics/analytics"
 import { AppDatabase } from "@rp/domain/app-database/app-database"
 import { Catalog } from "@rp/domain/catalog/catalog"
 import { type Client } from "@rp/domain/clients/schema"
-import { Clients } from "@rp/domain/clients/clients"
 import { Config } from "@rp/domain/config/config"
 import { type ConfigSite } from "@rp/domain/config/schema"
 import { Market } from "@rp/domain/keyword-metrics/market"
@@ -54,6 +53,8 @@ import { Sites } from "@rp/domain/sites/sites"
 import { Storage } from "@rp/domain/storage/storage"
 import { Sync } from "@rp/domain/sync/sync"
 
+import { type Auth, makeAuth } from "../auth/auth.ts"
+import { type AuthOperations, makeAuthOperations } from "../auth/keys.ts"
 import { Jobs } from "../jobs/jobs.ts"
 
 // The full per-site graph: every site-scoped service plus Jobs, wired onto a
@@ -157,9 +158,10 @@ export interface ClientOps {
   readonly revoke: (id: string) => Promise<Client>
 }
 
-// What the bearer middleware asks about per-client tokens.
+// What the bearer middleware asks about per-client keys and sessions.
 export interface AuthOps {
   readonly accepts: (token: string) => Promise<boolean>
+  readonly acceptsSession: (headers: Headers) => Promise<boolean>
   readonly hasActiveClient: () => Promise<boolean>
 }
 
@@ -188,6 +190,9 @@ export interface ServerContext {
   readonly secrets: SecretOps
   readonly clients: ClientOps
   readonly auth: AuthOps
+  // Better Auth itself, so the server can mount its routes. Nothing else should
+  // reach past `clients`/`auth` into it.
+  readonly authInstance: Auth
   // Store, once, every vendor key the environment holds for a slot the vault
   // has nothing for: the sites' analytics and revenue providers, and Ahrefs
   // app-wide. After it the environment variables can be removed.
@@ -204,13 +209,35 @@ export const makeServerContext = async (): Promise<ServerContext> => {
   // connection here; the settings and secrets routes write through the same
   // runtime.
   const appRuntime = ManagedRuntime.make(
-    Layer.mergeAll(Sites.layer, Secrets.layer, Clients.layer).pipe(
+    Layer.mergeAll(Sites.layer, Secrets.layer).pipe(
       Layer.provideMerge(Catalog.layer),
       Layer.provideMerge(AppDatabase.layer),
       Layer.provide(Config.defaultLayer),
     ),
   )
   const cache = new Map<string, Promise<SiteRuntime>>()
+
+  // Build the app database — and so RUN ITS MIGRATIONS — before Better Auth is
+  // constructed. Better Auth checks its tables when it first touches the
+  // database and caches that verdict, so an instance built against a file
+  // without them stays broken for the life of the process even after the tables
+  // appear. This await is the ordering that prevents it.
+  const databasePath = await configRuntime.runPromise(
+    Effect.map(
+      Config.use.dataDirectory(),
+      (directory) => `${directory}/rankstas-paradise${debug ? ".debug" : ""}.sqlite`,
+    ),
+  )
+  await appRuntime.runPromise(Effect.gen(function* () {
+    yield* AppDatabase.Service
+  }))
+
+  // Better Auth serves its own routes, so it has to know the address they are
+  // reached at: the callback URL Google is sent to is built from it.
+  const baseUrl =
+    Bun.env.RP_BASE_URL ?? `http://localhost:${Number(Bun.env.SEO_PORT ?? 8790)}`
+  const authInstance = makeAuth(databasePath, baseUrl)
+  const keys: AuthOperations = await makeAuthOperations(authInstance)
 
   // The site's ConfigProvider: its own stored keys over the app-wide ones, each
   // under the variable its adapter reads, over the real environment.
@@ -294,20 +321,17 @@ export const makeServerContext = async (): Promise<ServerContext> => {
   }
 
   const clients: ClientOps = {
-    list: () => appRuntime.runPromise(Clients.use.list()),
-    create: (label) => appRuntime.runPromise(Clients.use.create(label)),
-    revoke: (id) => appRuntime.runPromise(Clients.use.revoke(id)),
+    list: () => keys.list(),
+    create: (label) => keys.create(label),
+    revoke: (id) => keys.revoke(id),
   }
 
   // A lookup failure reads as "not accepted" rather than a crash of the
   // middleware; the request then gets its 401.
   const auth: AuthOps = {
-    accepts: (token) =>
-      appRuntime
-        .runPromise(Clients.use.authenticate(token))
-        .then(Option.isSome, () => false),
-    hasActiveClient: () =>
-      appRuntime.runPromise(Clients.use.hasActive()).catch(() => false),
+    accepts: (token) => keys.accepts(token).catch(() => false),
+    acceptsSession: (headers) => keys.acceptsSession(headers).catch(() => false),
+    hasActiveClient: () => keys.hasActiveClient().catch(() => false),
   }
 
   const importEnvironmentKeys = async (): Promise<EnvironmentImport> => {
@@ -347,6 +371,7 @@ export const makeServerContext = async (): Promise<ServerContext> => {
     secrets,
     clients,
     auth,
+    authInstance,
     importEnvironmentKeys,
   }
 }

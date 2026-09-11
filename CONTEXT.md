@@ -29,7 +29,19 @@ The API key a provider (Polar, Rybbit, Ahrefs, DataForSEO) is read with. Stored 
 _Avoid_: "secret" for the concept in prose (the code's name for the vault entry); "credential".
 
 **Client**:
-One program that talks to the server with its own bearer token: a Mac, a TUI, an agent. A client's token is shown once when the client is created; the server keeps its hash, and revoking the client ends the token. The shared `RP_TOKEN` is the bootstrap and break-glass token beside them.
+One program that talks to the server with its own API key: a Mac, a TUI, an agent. A client's key is shown once when the client is created; the server keeps only a hash and the key's first characters, and revoking the client ends the key. The shared `RP_TOKEN` is the bootstrap and break-glass token beside them.
+_Avoid_: "client token" (the keys are API keys now); "user" for a client — a client is a program, a user is a person.
+
+**API key**:
+The long-lived credential a Client carries. Minted and checked by Better Auth, prefixed `rp_`, hashed at rest, and revoked by disabling it rather than deleting it, so a revoked client stays on the list with the date. A machine never has a Session.
+
+**Session**:
+What a person gets by signing in with Google. Short-lived, carried in a cookie, and accepted by the bearer wall beside an API key. Who may sign in is fixed by an allowlist; a Session is never issued to a program.
+_Avoid_: using "session" for a Client's API key, or for an analytics visit.
+
+**Sign-in grant** / **data grant**:
+The two separate Google authorizations. The sign-in grant asks only for `openid`, `email` and `profile`; the data grant asks for Search Console and AdSense scopes. They are kept apart because a grant holding a sensitive scope expires every 7 days while the consent screen is in Testing, which would make signing in itself break weekly.
+_Avoid_: "the Google login" for both — say which grant.
 
 **Page**:
 A URL on a site — the Search Console "Page" dimension, and the unit measured by true totals.
