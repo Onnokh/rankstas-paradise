@@ -860,7 +860,7 @@ export const layer = Layer.effect(
         }
 
         const previousByKey = new Map(
-          previous.map((row) => [`${row.query} ${row.page}`, row]),
+          previous.map((row) => [`${row.query}\u0000${row.page}`, row]),
         )
         const registryKeywords = new Set(
           entries
@@ -880,7 +880,7 @@ export const layer = Layer.effect(
         }
         const signals: OpportunitySignal[] = []
         for (const row of current) {
-          const prior = previousByKey.get(`${row.query} ${row.page}`) ?? null
+          const prior = previousByKey.get(`${row.query}\u0000${row.page}`) ?? null
           const mapped = registryKeywords.has(row.query.toLowerCase())
           if (
             row.impressions >= 20 &&
@@ -1317,7 +1317,7 @@ export const layer = Layer.effect(
         const current = yield* windowRows(currentStart, latestDate)
         const previous = new Map(
           (yield* windowRows(previousStart, previousEnd)).map((row) => [
-            `${row.query} ${row.page}`,
+            `${row.query}\u0000${row.page}`,
             row,
           ]),
         )
@@ -1326,7 +1326,7 @@ export const layer = Layer.effect(
           .sort((left, right) => right.impressions - left.impressions)
           .slice(0, limit)
           .map(({ query, page: rowPage, ...metrics }) => {
-            const prior = previous.get(`${query} ${rowPage}`)
+            const prior = previous.get(`${query}\u0000${rowPage}`)
             return {
               query,
               page: rowPage,
