@@ -16,6 +16,14 @@ import SwiftUI
 //
 //   Current — the log, one row per Live event (as shipped)
 //
+// Round three — the log kept, one thing changed each (the log was still the clearest):
+//
+//   J — Grouped: one person's consecutive rows folded into a block, repeats counted
+//   K — Temperature: the same rows, cooling with age; a row that just landed flashes
+//   L — Per site: one newest-first column per site, so one site's flood stays in its lane
+//   M — Transcript: the blocks of J read as a chat, the flag for a face
+//   N — Head: the log untouched, with the window's actions pinned above it
+//
 // Round two — shapes that move, drawn from the clock rather than from the poll:
 //
 //   F — Pulse: the sites as rooms, the people in them as points of light that ring and fade
@@ -43,6 +51,7 @@ final class FeedPrototype {
     enum Variant: String, CaseIterable, Identifiable {
         // Declaration order is the order the floating bar cycles through.
         case current
+        case grouped, temperature, perSite, transcript, head
         case pulse, trace, now, stage
         case visits, lanes, pressure, paths, signals
 
@@ -51,6 +60,11 @@ final class FeedPrototype {
         var key: String {
             switch self {
             case .current: "Current"
+            case .grouped: "J"
+            case .temperature: "K"
+            case .perSite: "L"
+            case .transcript: "M"
+            case .head: "N"
             case .pulse: "F"
             case .trace: "G"
             case .now: "H"
@@ -66,6 +80,11 @@ final class FeedPrototype {
         var name: String {
             switch self {
             case .current: "The log, one row per event (as shipped)"
+            case .grouped: "Grouped: one person's rows as one block"
+            case .temperature: "Temperature: the log, cooling with age, flashing on arrival"
+            case .perSite: "Per site: one log column per site"
+            case .transcript: "Transcript: the blocks read as a chat"
+            case .head: "Head: the log untouched, actions pinned above"
             case .pulse: "Pulse: the sites as rooms, people as light"
             case .trace: "Trace: an instrument line per site, running to now"
             case .now: "Now: only the people here this minute"
@@ -82,6 +101,7 @@ final class FeedPrototype {
         var title: String {
             switch self {
             case .current: "Feed"
+            case .grouped, .temperature, .perSite, .transcript, .head: "Feed"
             case .pulse: "Pulse"
             case .trace: "Trace"
             case .now: "Now"
@@ -150,6 +170,16 @@ struct FeedPrototypeHost: View {
                 waiting: waiting,
                 now: now
             )
+        case .grouped:
+            logCard { FeedGroupedVariant(rows: rows, showsSite: showsSite, now: now) }
+        case .temperature:
+            logCard { FeedTemperatureVariant(rows: rows, showsSite: showsSite, now: now, isLive: isLive) }
+        case .perSite:
+            logCard { FeedPerSiteVariant(rows: rows, shapes: shapes, now: now) }
+        case .transcript:
+            logCard { FeedTranscriptVariant(rows: rows, showsSite: showsSite, now: now) }
+        case .head:
+            logCard { FeedHeadVariant(rows: rows, shapes: shapes, showsSite: showsSite, now: now) }
         case .pulse:
             FeedVariantCard(title: "Pulse", note: note, isEmpty: shapes.isEmpty) {
                 FeedPulseVariant(shapes: shapes, isLive: isLive)
@@ -187,6 +217,12 @@ struct FeedPrototypeHost: View {
                 FeedSignalsVariant(shapes: shapes, showsSite: showsSite)
             }
         }
+    }
+
+    /// The shipped Feed header around a round-three body: the kind switch still works, and
+    /// the empty states are the log's own.
+    private func logCard<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        FeedLogCard(title: "Feed", kinds: $kinds, isEmpty: rows.isEmpty, windowMinutes: windowMinutes, waiting: waiting, content: content)
     }
 
     /// Whether the moving variants may run: the Overview is in front, and this is not a

@@ -50,6 +50,7 @@
 		746ADF2B829571DEB19AD9DF /* Headband.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DC0C05A557F466F42DC086B /* Headband.swift */; };
 		785768F1D0685577D1855F64 /* SettingsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 180FE48DAA2E1B49D9795319 /* SettingsModels.swift */; };
 		7B63796B1698692B64A36D1F /* PeriodStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50CD5971030788D8D00BC8D9 /* PeriodStats.swift */; };
+		7B7C047506FBE929827269BF /* FeedLogVariants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DBCCB5220DEEB54FD2EA84 /* FeedLogVariants.swift */; };
 		85B4E755EBE5C81DEF17A7AA /* PeriodStatsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA98EFEB479445BEFCA726CD /* PeriodStatsTests.swift */; };
 		880942499CFC9F5FA863E04C /* TabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCE806538483AE3DC0C0C5DC /* TabBar.swift */; };
 		89D1C405DD817D3BCBCBB1C2 /* OverviewSummaryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D072C44E6ADEAC4BAEF98994 /* OverviewSummaryCard.swift */; };
@@ -139,6 +140,7 @@
 		8CC4E7D2903AC4572529357B /* PageParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageParts.swift; sourceTree = "<group>"; };
 		8DFE9D4C0CC1386C304172AE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		96296EA468BBA15D6D00024B /* FlowRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowRow.swift; sourceTree = "<group>"; };
+		98DBCCB5220DEEB54FD2EA84 /* FeedLogVariants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedLogVariants.swift; sourceTree = "<group>"; };
 		994D1775BFC4DA2409EE542D /* PaneTravelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneTravelTests.swift; sourceTree = "<group>"; };
 		99C05C79BE3B70FF6B960794 /* FaviconFetcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaviconFetcherTests.swift; sourceTree = "<group>"; };
 		99CF10FA929DAD1D5987DD20 /* RankstasParadiseApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RankstasParadiseApp.swift; sourceTree = "<group>"; };
@@ -263,6 +265,7 @@
 			isa = PBXGroup;
 			children = (
 				16381A884525B79878946278 /* FeedLiveVariants.swift */,
+				98DBCCB5220DEEB54FD2EA84 /* FeedLogVariants.swift */,
 				57A129511FE793E7F82D502A /* FeedPrototype.swift */,
 				8B39E839A2C84FF6275D7367 /* FeedShapes.swift */,
 				BF7F1F6CCB30576F1FB72825 /* FeedVariants.swift */,
@@ -481,6 +484,7 @@
 				4EB19731C7D64342D90C3020 /* CommandKeyMonitor.swift in Sources */,
 				0886B2DB9CA4455C65865FFC /* FaviconStore.swift in Sources */,
 				3D306A8D460A8BFAE0FCF8CE /* FeedLiveVariants.swift in Sources */,
+				7B7C047506FBE929827269BF /* FeedLogVariants.swift in Sources */,
 				3FFD9F8E3715FFB044773AD7 /* FeedPrototype.swift in Sources */,
 				1C58A6FCE82619C1EAAEBC34 /* FeedShapes.swift in Sources */,
 				16C86C08948F862BACB1C25A /* FeedVariants.swift in Sources */,

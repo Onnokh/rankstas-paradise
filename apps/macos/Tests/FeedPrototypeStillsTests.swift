@@ -30,7 +30,15 @@ final class FeedPrototypeStillsTests: XCTestCase {
         // The moving variants are drawn a beat after the newest event, which is where their
         // rings and fresh spikes are: a still at the exact instant shows nothing travelling.
         let beat = now.addingTimeInterval(1)
+        func log<Content: View>(@ViewBuilder _ content: () -> Content) -> AnyView {
+            AnyView(FeedLogCard(title: "Feed", kinds: .constant(.all), isEmpty: false, windowMinutes: 30, waiting: false, content: content))
+        }
         let stills: [(String, AnyView)] = [
+            ("j-grouped", log { FeedGroupedVariant(rows: rows, showsSite: true, now: now) }),
+            ("k-temperature", log { FeedTemperatureVariant(rows: rows, showsSite: true, now: now, isLive: false) }),
+            ("l-per-site", log { FeedPerSiteVariant(rows: rows, shapes: shapes, now: now) }),
+            ("m-transcript", log { FeedTranscriptVariant(rows: rows, showsSite: true, now: now) }),
+            ("n-head", log { FeedHeadVariant(rows: rows, shapes: shapes, showsSite: true, now: now) }),
             ("f-pulse", AnyView(FeedVariantCard(title: "Pulse", note: note, isEmpty: false) {
                 VStack(alignment: .leading, spacing: 10) {
                     FeedPulseField(shapes: shapes, at: beat).frame(height: 300)
