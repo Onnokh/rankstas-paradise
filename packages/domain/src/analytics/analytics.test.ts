@@ -10,7 +10,12 @@ import { CurrentSite } from "../sites/current-site.ts"
 import { Site } from "../sites/schema.ts"
 import { Analytics } from "./analytics.ts"
 import { type ProviderFactory } from "./providers.ts"
-import { AnalyticsError, type LiveEvent, type VisitsDays } from "./schema.ts"
+import {
+  AnalyticsError,
+  type LiveEvent,
+  type VisitorHistory,
+  type VisitsDays,
+} from "./schema.ts"
 
 const baseSite = {
   id: "test",
@@ -44,13 +49,54 @@ const httpStub = Layer.succeed(
   ),
 )
 
+// How the fake adapter behaves about visitor histories: it answers them, it
+// does not have them at all (the GA4 case — the method is simply absent), or it
+// fails answering them (a vendor route that is down).
+type History = "answers" | "cannot" | "fails"
+
 // A fake adapter that records the dates it is asked for and answers one site
 // row per date, and counts how often it is asked for live visitors.
 const fakeFactory = (
-  seen: { dates?: ReadonlyArray<string>; liveCalls?: number; eventCalls?: number },
+  seen: {
+    dates?: ReadonlyArray<string>
+    liveCalls?: number
+    eventCalls?: number
+    historyCalls?: number
+    historyLimit?: number
+  },
+  history: History = "answers",
 ): ProviderFactory =>
   () =>
     Effect.succeed({
+      ...(history === "cannot"
+        ? {}
+        : {
+            visitorHistory: (limit: number) =>
+              Effect.suspend(() => {
+                seen.historyCalls = (seen.historyCalls ?? 0) + 1
+                seen.historyLimit = limit
+                return history === "fails"
+                  ? Effect.fail(
+                      new AnalyticsError({ message: "the users route is down" }),
+                    )
+                  : Effect.succeed<ReadonlyArray<VisitorHistory>>([
+                      {
+                        visitor: "v1",
+                        visits: 7,
+                        firstSeen: "2026-08-12T08:04:11.000Z",
+                        lastSeen: "2026-09-08T10:13:40.000Z",
+                      },
+                      // Someone with no row in the window: still sent, because
+                      // a client keeps earlier rows on screen.
+                      {
+                        visitor: "v9",
+                        visits: 1,
+                        firstSeen: null,
+                        lastSeen: null,
+                      },
+                    ])
+              }),
+          }),
       fetchHours: () =>
         Effect.succeed([{ hour: 9, pageviews: 3, visits: 2, visitors: 2 }]),
       liveEvents: () =>
@@ -223,6 +269,54 @@ test("live events come from the adapter once per memo, and `since` trims the sam
   expect(newer?.events.map((event) => event.id)).toEqual(["b"])
   // A cut-off that is not an instant is ignored, not an error.
   expect(bad?.events).toHaveLength(2)
+})
+
+test("the feed carries the visitor histories, whole, whatever `since` trims", async () => {
+  const memo: { eventCalls?: number; historyCalls?: number; historyLimit?: number } = {}
+  const program = Effect.gen(function* () {
+    const whole = yield* Analytics.use.liveEvents()
+    const newer = yield* Analytics.use.liveEvents("2026-09-08T10:13:00.000Z")
+    return { whole, newer }
+  }).pipe(Effect.provide(buildLayer(withAnalytics, new Map([["fake", fakeFactory(memo)]]))))
+  const { whole, newer } = await Effect.runPromise(program)
+
+  // The histories have their own memo, asked once for the two reads, for the
+  // number of people the schema fixes.
+  expect(memo.historyCalls).toBe(1)
+  expect(memo.historyLimit).toBe(200)
+  expect(whole?.visitors?.map((history) => history.visitor)).toEqual(["v1", "v9"])
+  expect(whole?.visitors?.[0]?.visits).toBe(7)
+  expect(whole?.visitors?.[0]?.firstSeen).toBe("2026-08-12T08:04:11.000Z")
+  // `since` trims the rows and never the histories: the client still shows the
+  // rows of its earlier polls and has to be able to label them.
+  expect(newer?.events).toHaveLength(1)
+  expect(newer?.visitors).toHaveLength(2)
+})
+
+test("a provider that cannot answer histories still serves the feed", async () => {
+  const layer = buildLayer(
+    withAnalytics,
+    new Map([["fake", fakeFactory({}, "cannot")]]),
+  )
+  const events = await Effect.runPromise(
+    Analytics.use.liveEvents().pipe(Effect.provide(layer)),
+  )
+  expect(events?.events).toHaveLength(2)
+  expect(events?.visitors).toEqual([])
+})
+
+test("histories that fail cost the feed its counts, not its rows", async () => {
+  const memo: { historyCalls?: number } = {}
+  const layer = buildLayer(
+    withAnalytics,
+    new Map([["fake", fakeFactory(memo, "fails")]]),
+  )
+  const events = await Effect.runPromise(
+    Analytics.use.liveEvents().pipe(Effect.provide(layer)),
+  )
+  expect(memo.historyCalls).toBe(1)
+  expect(events?.events.map((event) => event.id)).toEqual(["b", "a"])
+  expect(events?.visitors).toEqual([])
 })
 
 test("a site without analytics has no live events", async () => {

@@ -16,7 +16,11 @@
 //     many were seen in each of those minutes;
 //   - `GET /events?since_timestamp=T` for what visitors did since T, newest
 //     first, at most 500 rows: the rows of the live feed. Rybbit's own realtime
-//     view polls this same route.
+//     view polls this same route;
+//   - `GET /users?sort_by=last_seen` for who those visitors are over their whole
+//     history — one call for the feed's whole cast, rather than one per person.
+//     It is asked with NO date parameters on purpose: Rybbit reads a missing
+//     window as all time, and all time is the point of the figure.
 //
 // Everything Rybbit-specific ends at this file: its envelope (`{ data }` around
 // the series, `{ data: { data, totalCount } }` around a metric page), its column
@@ -53,6 +57,7 @@ import {
   liveEventKinds,
   type PageVisitsDay,
   type SiteVisitsDay,
+  type VisitorHistory,
   type VisitsDays,
 } from "./schema.ts"
 
@@ -95,6 +100,12 @@ const MetricResponse = Schema.Struct({
   }),
 })
 const LiveCountResponse = Schema.Struct({ count: Schema.Unknown })
+// `/users` answers a flat page: the rows beside their total, not the nested
+// envelope `/metric` uses.
+const UsersResponse = Schema.Struct({
+  data: Schema.Array(Row),
+  totalCount: Schema.optional(Schema.Unknown),
+})
 // `/events` answers `{ data }` when polled since a timestamp, and adds a
 // `cursor` when paged; only the rows matter here.
 const EventsResponse = Schema.Struct({ data: Schema.Array(Row) })
@@ -209,6 +220,24 @@ const liveEventOf = (row: Record<string, unknown>): LiveEvent => {
     operatingSystem: textOrNull(row["operating_system"]),
     device: textOrNull(row["device_type"]),
     referrer: textOrNull(row["referrer"]),
+  }
+}
+
+// One `/users` row into the canonical shape. Rybbit's `sessions` is the count
+// of distinct session ids over the person's whole history — a Visit in this
+// domain's words. `first_seen` and `last_seen` are ClickHouse datetimes in UTC,
+// made instants the way an event's timestamp is; a row that carries neither is
+// still worth sending for its count.
+const visitorHistoryOf = (row: Record<string, unknown>): VisitorHistory => {
+  const seen = (value: unknown): string | null => {
+    const text = asText(value).trim()
+    return text === "" ? null : instantOf(text)
+  }
+  return {
+    visitor: asText(row["user_id"]),
+    visits: asCount(row["sessions"]),
+    firstSeen: seen(row["first_seen"]),
+    lastSeen: seen(row["last_seen"]),
   }
 }
 
@@ -496,6 +525,30 @@ export const makeWith =
             .map(liveEventOf)
             .sort((left, right) => right.at.localeCompare(left.at))
             .slice(0, limit)
+        }),
+        visitorHistory: Effect.fn("Rybbit.visitorHistory")(function* (limit) {
+          // The most recently active people first, so one page covers everyone
+          // the feed's window can hold. No start_date or end_date: Rybbit reads
+          // a request without a window as all time, which is what an all-time
+          // visit count needs. That makes this the most expensive call the
+          // adapter makes — it aggregates the site's whole event history — so
+          // the port memoises it for far longer than the feed itself.
+          const body = yield* request(
+            UsersResponse,
+            "/users",
+            {
+              sort_by: "last_seen",
+              sort_order: "desc",
+              page: "1",
+              page_size: String(limit),
+            },
+            "users",
+          )
+          return body.data
+            .map(visitorHistoryOf)
+            // A row without a user id cannot be joined to a feed row, and an
+            // identified user with no device id would join to the wrong one.
+            .filter((history) => history.visitor !== "")
         }),
         fetchVisits: Effect.fn("Rybbit.fetchVisits")(function* (dates) {
           const sorted = [...new Set(dates)].sort()

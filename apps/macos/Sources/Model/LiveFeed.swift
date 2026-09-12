@@ -11,14 +11,27 @@ struct LiveFeed: Equatable, Sendable {
     let windowMinutes: Int
     /// Newest first.
     private(set) var events: [LiveEvent]
+    /// What the server knows about the people behind those rows, by visitor token: how many
+    /// visits each has made, all time. Kept beside the rows rather than on them because one
+    /// person owns many rows and the figure is the same on every one.
+    private(set) var visitors: [String: VisitorHistory]
     /// When the server last asked the provider; nil before the first answer.
     private(set) var fetchedAt: Date?
 
-    init(windowMinutes: Int, events: [LiveEvent] = [], fetchedAt: Date? = nil) {
+    init(
+        windowMinutes: Int,
+        events: [LiveEvent] = [],
+        visitors: [String: VisitorHistory] = [:],
+        fetchedAt: Date? = nil
+    ) {
         self.windowMinutes = windowMinutes
         self.events = events
+        self.visitors = visitors
         self.fetchedAt = fetchedAt
     }
+
+    /// What the server knows about the person behind a row; nil when it said nothing.
+    func history(of event: LiveEvent) -> VisitorHistory? { visitors[event.visitor] }
 
     /// The cut-off for the next poll: the newest row's instant, so the server only sends
     /// what is newer. Nil until there is a row, which asks for the whole window.
@@ -26,6 +39,10 @@ struct LiveFeed: Equatable, Sendable {
 
     /// This feed with a poll's rows folded in. Rows older than the window, measured from the
     /// answer's `fetchedAt` (or `now` when that does not parse), are dropped.
+    ///
+    /// Visitor histories fold in the same way, and are then kept to the people who still have
+    /// a row: the server sends the window's whole cast on every poll, so a visitor with
+    /// nothing left on screen is one whose figures nothing can ask for again.
     func merging(_ update: LiveEvents, now: Date = .now) -> LiveFeed {
         let fetched = Instant.parse(update.fetchedAt) ?? now
         let cutoff = fetched.addingTimeInterval(-Double(update.windowMinutes) * 60)
@@ -44,7 +61,20 @@ struct LiveFeed: Equatable, Sendable {
             }
             .prefix(Self.limit)
             .map { $0.event }
-        return LiveFeed(windowMinutes: update.windowMinutes, events: Array(merged), fetchedAt: fetched)
+
+        // An older server sends no histories at all, which must not throw away the ones this
+        // feed already holds; it just means no poll adds to them.
+        var histories = visitors
+        for history in update.visitors ?? [] { histories[history.visitor] = history }
+        let shown = Set(merged.map(\.visitor))
+        histories = histories.filter { shown.contains($0.key) }
+
+        return LiveFeed(
+            windowMinutes: update.windowMinutes,
+            events: Array(merged),
+            visitors: histories,
+            fetchedAt: fetched
+        )
     }
 }
 
@@ -65,10 +95,17 @@ struct LiveFeedRow: Identifiable, Equatable, Sendable {
     let detail: String?
     /// Who, as far as it is said: a country, a browser and a device.
     let who: String
+    /// How many visits this person has made, all time — "×7" — on the rows of someone who
+    /// has been here before. Nil on a first visit, which is the ordinary case and needs no
+    /// label, and nil when the provider says nothing about them; the column is empty either
+    /// way, so an empty column is never a claim.
+    let visits: String?
+    /// The same figure in words, for the pointer: "7 visits since 12 August".
+    let visitsHelp: String?
 
     var id: String { "\(siteID)|\(event.id)" }
 
-    init(siteID: Site.ID, siteName: String, event: LiveEvent) {
+    init(siteID: Site.ID, siteName: String, event: LiveEvent, history: VisitorHistory? = nil) {
         self.siteID = siteID
         self.siteName = siteName
         self.event = event
@@ -78,6 +115,8 @@ struct LiveFeedRow: Identifiable, Equatable, Sendable {
         who = [event.country.map(Self.place), event.browser, event.device?.capitalized]
             .compactMap { $0 }
             .joined(separator: " · ")
+        visits = Self.visits(history)
+        visitsHelp = Self.visitsHelp(history)
     }
 
     /// Every site's feed as one stream, newest first, kept to the sites `only` names when it
@@ -94,8 +133,14 @@ struct LiveFeedRow: Identifiable, Equatable, Sendable {
         // Each instant is parsed once, beside its row, not once per comparison.
         var dated: [(row: LiveFeedRow, date: Date)] = []
         for site in sites where chosen.isEmpty || chosen.contains(site.id) {
-            for event in feeds[site.id]?.events ?? [] where !hidden.contains(event.kind) {
-                let row = LiveFeedRow(siteID: site.id, siteName: site.name, event: event)
+            let feed = feeds[site.id]
+            for event in feed?.events ?? [] where !hidden.contains(event.kind) {
+                let row = LiveFeedRow(
+                    siteID: site.id,
+                    siteName: site.name,
+                    event: event,
+                    history: feed?.history(of: event)
+                )
                 dated.append((row: row, date: event.date ?? .distantPast))
             }
         }
@@ -121,6 +166,23 @@ struct LiveFeedRow: Identifiable, Equatable, Sendable {
     }
 
     // MARK: Words
+
+    /// "×7" on the rows of someone here for the seventh time. Nil on a first visit and nil
+    /// when the provider does not count this person: only a return is worth a mark, and the
+    /// feed is dense enough that labelling the ordinary case would be noise. A count below
+    /// one is a vendor's own oddity, and reads as the first visit it must be.
+    static func visits(_ history: VisitorHistory?) -> String? {
+        guard let visits = history?.visits, visits > 1 else { return nil }
+        return "×\(visits)"
+    }
+
+    static func visitsHelp(_ history: VisitorHistory?) -> String? {
+        guard let visits = history?.visits, visits > 1 else { return nil }
+        let since = history?.firstSeenDate.map {
+            " since \($0.formatted(date: .abbreviated, time: .omitted))"
+        } ?? ""
+        return "\(visits) visits\(since)"
+    }
 
     static func primary(of event: LiveEvent) -> String {
         switch event.kind {

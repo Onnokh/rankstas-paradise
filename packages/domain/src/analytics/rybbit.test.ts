@@ -150,6 +150,45 @@ const healthy: Answer = (url) => {
         ],
       },
     }
+  if (url.pathname.endsWith("/users"))
+    return {
+      status: 200,
+      // The flat page `/users` sends, most recently seen first. ClickHouse
+      // quotes the session count of the first row and leaves the second bare;
+      // the third is a first-time visitor, and the fourth has no device id.
+      body: {
+        data: [
+          {
+            user_id: "u-1",
+            sessions: "7",
+            pageviews: 31,
+            events: 2,
+            first_seen: "2026-08-12 08:04:11",
+            last_seen: "2026-09-08 10:13:40",
+            country: "DE",
+          },
+          {
+            user_id: "u-2",
+            sessions: 1,
+            pageviews: 1,
+            events: 0,
+            first_seen: "2026-09-08 10:13:05",
+            last_seen: "2026-09-08 10:13:05",
+            country: "",
+          },
+          {
+            user_id: "u-3",
+            sessions: 2,
+            first_seen: "",
+            last_seen: "",
+          },
+          { user_id: "", sessions: 99, first_seen: "", last_seen: "" },
+        ],
+        totalCount: 4,
+        page: 1,
+        pageSize: 200,
+      },
+    }
   if (url.pathname.endsWith("/overview/time-series")) {
     const start = url.searchParams.get("start_date")!
     const end = url.searchParams.get("end_date")!
@@ -386,6 +425,43 @@ test("live events honour a lower cap", async () => {
     "2026-09-08T10:13:40.120Z",
     "2026-09-08T10:13:05.500Z",
   ])
+})
+
+test("visitor histories ask /users for the most recent people, over all time", async () => {
+  const seen: Seen = { requests: [] }
+  const exit = await Effect.runPromiseExit(
+    noRetries(source).pipe(
+      Effect.flatMap((provider) => provider.visitorHistory!(200)),
+      Effect.provide(
+        Layer.mergeAll(fakeHttp(seen, healthy), configLayer({ RYBBIT_API_KEY: "k" })),
+      ),
+    ),
+  )
+  if (!Exit.isSuccess(exit)) throw new Error("expected success")
+
+  expect(seen.requests).toHaveLength(1)
+  const call = seen.requests[0]!
+  expect(call.url.pathname).toBe("/api/sites/12/users")
+  expect(call.auth).toBe("Bearer k")
+  expect(call.url.searchParams.get("sort_by")).toBe("last_seen")
+  expect(call.url.searchParams.get("sort_order")).toBe("desc")
+  expect(call.url.searchParams.get("page_size")).toBe("200")
+  // No window at all: Rybbit reads that as all time, which is the whole point
+  // of the count. A date here would make every visitor look new.
+  expect(call.url.searchParams.get("start_date")).toBeNull()
+  expect(call.url.searchParams.get("end_date")).toBeNull()
+  expect(call.url.searchParams.get("past_minutes_start")).toBeNull()
+
+  // The row without a user id is dropped: it can join to no feed row.
+  expect(exit.value.map((history) => history.visitor)).toEqual(["u-1", "u-2", "u-3"])
+  // A quoted count and a bare one both arrive as numbers.
+  expect(exit.value.map((history) => history.visits)).toEqual([7, 1, 2])
+  expect(exit.value[0]!.firstSeen).toBe("2026-08-12T08:04:11.000Z")
+  expect(exit.value[0]!.lastSeen).toBe("2026-09-08T10:13:40.000Z")
+  // Blank instants are null, and the count still comes through.
+  expect(exit.value[2]!.firstSeen).toBeNull()
+  expect(exit.value[2]!.lastSeen).toBeNull()
+  expect(exit.value[2]!.visits).toBe(2)
 })
 
 test("hours ask one hourly time-series for the day in the site's zone", async () => {

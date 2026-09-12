@@ -11,10 +11,11 @@ final class LiveFeedTests: XCTestCase {
         at: String,
         kind: LiveEvent.Kind = .pageview,
         page: String = "/",
-        name: String? = nil
+        name: String? = nil,
+        visitor: String = "v"
     ) -> LiveEvent {
         LiveEvent(
-            id: id, at: at, kind: kind, name: name, page: page, properties: [:], visitor: "v",
+            id: id, at: at, kind: kind, name: name, page: page, properties: [:], visitor: visitor,
             country: nil, browser: nil, operatingSystem: nil, device: nil, referrer: nil
         )
     }
@@ -23,7 +24,11 @@ final class LiveFeedTests: XCTestCase {
         let report = try decode("""
         {"generatedAt":"2026-09-08T10:21:15.000Z","mode":"live",
          "analytics":{"provider":"rybbit","siteId":"12","ready":true,"reason":null},
-         "events":{"windowMinutes":30,"since":null,"fetchedAt":"2026-09-08T10:21:15.000Z","events":[
+         "events":{"windowMinutes":30,"since":null,"fetchedAt":"2026-09-08T10:21:15.000Z",
+          "visitors":[
+           {"visitor":"u1","visits":7,"firstSeen":"2026-08-12T08:04:11.000Z","lastSeen":"2026-09-08T10:21:10.000Z"},
+           {"visitor":"u2","visits":1,"firstSeen":null,"lastSeen":null}],
+          "events":[
            {"id":"a1","at":"2026-09-08T10:21:10.000Z","kind":"event","name":"purchase","page":"/pricing",
             "properties":{"plan":"pro","amount":"29"},"visitor":"u1","country":"ES","browser":"Chrome",
             "operatingSystem":"Windows","device":"desktop","referrer":null},
@@ -43,6 +48,19 @@ final class LiveFeedTests: XCTestCase {
         // A kind this build does not know reads as a plain event, not a decoding failure.
         XCTAssertEqual(events.events[1].kind, .event)
         XCTAssertNil(events.events[1].country)
+        XCTAssertEqual(events.visitors?.count, 2)
+        XCTAssertEqual(events.visitors?.first?.visits, 7)
+        XCTAssertEqual(events.visitors?.first?.firstSeenDate, Instant.parse("2026-08-12T08:04:11.000Z"))
+        XCTAssertNil(events.visitors?.last?.firstSeen)
+    }
+
+    func testAServerWithoutVisitorHistoriesStillDecodes() throws {
+        // The shape as it was before the histories: the feed must not need them.
+        let report = try decode("""
+        {"generatedAt":"2026-09-08T10:21:15.000Z","mode":"live","analytics":null,
+         "events":{"windowMinutes":30,"since":null,"fetchedAt":"2026-09-08T10:21:15.000Z","events":[]}}
+        """, as: LiveEventsReport.self)
+        XCTAssertNil(report.events?.visitors)
     }
 
     func testASiteWithoutAProviderHasNoFeed() throws {
@@ -91,6 +109,82 @@ final class LiveFeedTests: XCTestCase {
         XCTAssertEqual(feed.events.count, LiveFeed.limit)
         // The newest survive.
         XCTAssertEqual(feed.events.first?.id, "e\(LiveFeed.limit + 19)")
+    }
+
+    func testMergingFoldsHistoriesInAndForgetsThePeopleWhoseRowsAreGone() {
+        let visitor = { (id: String, visits: Int) in
+            VisitorHistory(visitor: id, visits: visits, firstSeen: nil, lastSeen: nil)
+        }
+        let first = LiveFeed(windowMinutes: 30).merging(
+            LiveEvents(
+                windowMinutes: 30, since: nil,
+                events: [
+                    event("b", at: "2026-09-08T10:20:00.000Z", visitor: "v1"),
+                    event("a", at: "2026-09-08T10:05:00.000Z", visitor: "v2"),
+                ],
+                visitors: [visitor("v1", 7), visitor("v2", 1)],
+                fetchedAt: "2026-09-08T10:30:00.000Z"
+            )
+        )
+        XCTAssertEqual(first.visitors.count, 2)
+        XCTAssertEqual(first.history(of: first.events[0])?.visits, 7)
+
+        // Five minutes on: v1 is back for another row with a higher count, and v2's only row
+        // has left the window, so nothing can ask for v2's figures again.
+        let second = first.merging(
+            LiveEvents(
+                windowMinutes: 30, since: "2026-09-08T10:20:00.000Z",
+                events: [event("c", at: "2026-09-08T10:35:00.000Z", visitor: "v1")],
+                visitors: [visitor("v1", 8)],
+                fetchedAt: "2026-09-08T10:36:00.000Z"
+            )
+        )
+        XCTAssertEqual(second.visitors.keys.sorted(), ["v1"])
+        XCTAssertEqual(second.history(of: second.events[0])?.visits, 8)
+
+        // An answer that carries no histories at all leaves the ones already held.
+        let third = second.merging(
+            LiveEvents(
+                windowMinutes: 30, since: "2026-09-08T10:35:00.000Z",
+                events: [event("d", at: "2026-09-08T10:37:00.000Z", visitor: "v1")],
+                fetchedAt: "2026-09-08T10:37:30.000Z"
+            )
+        )
+        XCTAssertEqual(third.history(of: third.events[0])?.visits, 8)
+    }
+
+    func testARowSaysHowManyVisitsThePersonHasMade() {
+        let seen = LiveEvent(
+            id: "p", at: "2026-09-08T10:21:10.000Z", kind: .pageview, name: nil, page: "/",
+            properties: [:], visitor: "v", country: nil, browser: nil, operatingSystem: nil,
+            device: nil, referrer: nil
+        )
+        let returning = LiveFeedRow(
+            siteID: "shadertown", siteName: "Shadertown", event: seen,
+            history: VisitorHistory(
+                visitor: "v", visits: 7, firstSeen: "2026-08-12T08:04:11.000Z", lastSeen: nil
+            )
+        )
+        XCTAssertEqual(returning.visits, "\u{00D7}7")
+        XCTAssertEqual(returning.visitsHelp?.hasPrefix("7 visits since "), true)
+
+        // A first visit is the ordinary case and carries no mark, so an empty column never
+        // says anything: it means "not a return", not "first time".
+        let firstTime = LiveFeedRow(
+            siteID: "shadertown", siteName: "Shadertown", event: seen,
+            history: VisitorHistory(visitor: "v", visits: 1, firstSeen: nil, lastSeen: nil)
+        )
+        XCTAssertNil(firstTime.visits)
+        XCTAssertNil(firstTime.visitsHelp)
+
+        // The same for a provider that cannot count visitors at all.
+        XCTAssertNil(LiveFeedRow(siteID: "shadertown", siteName: "Shadertown", event: seen).visits)
+        XCTAssertNil(
+            LiveFeedRow(
+                siteID: "shadertown", siteName: "Shadertown", event: seen,
+                history: VisitorHistory(visitor: "v", visits: nil, firstSeen: nil, lastSeen: nil)
+            ).visits
+        )
     }
 
     func testARowsWordsAreWorkedOutOnce() {

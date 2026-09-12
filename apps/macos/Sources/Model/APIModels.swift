@@ -309,7 +309,27 @@ struct LiveEvents: Codable, Sendable, Equatable {
     let since: String?
     /// Newest first.
     let events: [LiveEvent]
+    /// Everyone the provider knows anything about, whether or not their rows survived
+    /// `since` — the client keeps earlier rows on screen and has to label them too. Nil
+    /// against a server built before this shape, empty when the provider cannot say.
+    var visitors: [VisitorHistory]? = nil
     let fetchedAt: String
+}
+
+/// What the provider knows about one person of the feed over their whole history, not the
+/// half-hour window: what says a returning visitor from a first-time one. Joined to a row by
+/// the visitor token.
+struct VisitorHistory: Codable, Sendable, Equatable {
+    /// The same opaque token as `LiveEvent.visitor`.
+    let visitor: String
+    /// Their visits, all time. 1 is a first-time visitor: the visit in progress. Nil when
+    /// the provider does not count them.
+    let visits: Int?
+    /// ISO 8601 instants; nil when the provider does not say.
+    let firstSeen: String?
+    let lastSeen: String?
+
+    var firstSeenDate: Date? { firstSeen.flatMap(Instant.parse) }
 }
 
 /// One thing a visitor just did: a page they loaded, or a named action with its data.

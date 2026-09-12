@@ -185,6 +185,40 @@ export const LiveEvent = Schema.Struct({
 }).annotate({ identifier: "LiveEvent" })
 export interface LiveEvent extends Schema.Schema.Type<typeof LiveEvent> {}
 
+// What the provider knows about one person of the feed, over their whole
+// recorded history rather than the window: how many visits it has counted for
+// them, and when it first and last saw them. This is what says a visitor is
+// returning — a feed row on its own cannot, because the window is half an hour.
+//
+// `visits` is the vendor's session count, named as PageVisitsDay names it: a
+// Session in this domain is what someone gets by signing in, never an analytics
+// visit. The count is all-time, so it only grows.
+//
+// Nullable on purpose. Vendors differ here more than anywhere else in this file:
+// Rybbit and Umami count a visitor's sessions, GA4 reports only new-versus-
+// returning and no count at all. An adapter that cannot say a figure sends null
+// for it rather than guessing, and an adapter that knows nothing about a visitor
+// sends no row for them at all.
+export const VisitorHistory = Schema.Struct({
+  // The same opaque token as LiveEvent.visitor, which is how a row and its
+  // history are joined.
+  visitor: Schema.String,
+  // How many visits the provider has counted for this person, all time. 1 is a
+  // first-time visitor: the visit in progress. Null when the vendor cannot say.
+  visits: Schema.NullOr(Schema.Number),
+  // When the provider first and last saw them, as ISO 8601 instants; null when
+  // it does not say.
+  firstSeen: Schema.NullOr(Schema.String),
+  lastSeen: Schema.NullOr(Schema.String),
+}).annotate({ identifier: "VisitorHistory" })
+export interface VisitorHistory
+  extends Schema.Schema.Type<typeof VisitorHistory> {}
+
+// How many of the most recently active visitors a history fetch asks for. The
+// window holds at most `liveEventsLimit` rows and a busy minute is a handful of
+// people, so this covers every visitor a feed can show with room to spare.
+export const visitorHistoryLimit = 200
+
 // The live feed: every LiveEvent of the last `windowMinutes`, newest first,
 // capped at `liveEventsLimit`. `since` echoes the client's cut-off when it gave
 // one, so the rows are only those newer than it.
@@ -194,6 +228,13 @@ export const LiveEvents = Schema.Struct({
   windowMinutes: Schema.Number,
   since: Schema.NullOr(Schema.String),
   events: Schema.Array(LiveEvent),
+  // One entry per person the provider could say anything about, whether or not
+  // their rows survived `since`: a client keeps the rows of earlier polls on
+  // screen, so it must be able to label them too. Empty when the provider
+  // cannot answer for visitors at all. Optional on the wire, like
+  // LiveVisitors.series, so a client built against this shape still decodes an
+  // older server's answer.
+  visitors: Schema.optional(Schema.Array(VisitorHistory)),
   // When the provider was asked, as an ISO 8601 instant.
   fetchedAt: Schema.String,
 }).annotate({ identifier: "LiveEvents" })
