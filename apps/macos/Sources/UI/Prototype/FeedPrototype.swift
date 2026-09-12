@@ -16,6 +16,12 @@ import SwiftUI
 //
 //   Current — the log, one row per Live event (as shipped)
 //
+// Round four — the table stripped: one row height, greys only, no icons, flags, pills or tints:
+//
+//   Q — Quiet: the log's rows, stripped
+//   R — Quiet path: one row per person, their path as the row's words
+//   S — Quiet per site: R's rows, one column per site
+//
 // Round three — the log kept, one thing changed each (the log was still the clearest):
 //
 //   J — Grouped: one person's rows folded into a block, repeats counted
@@ -53,6 +59,7 @@ final class FeedPrototype {
     enum Variant: String, CaseIterable, Identifiable {
         // Declaration order is the order the floating bar cycles through.
         case current
+        case quiet, quietPath, quietPerSite
         case grouped, trail, folded, temperature, perSite, transcript, head
         case pulse, trace, now, stage
         case visits, lanes, pressure, paths, signals
@@ -62,6 +69,9 @@ final class FeedPrototype {
         var key: String {
             switch self {
             case .current: "Current"
+            case .quiet: "Q"
+            case .quietPath: "R"
+            case .quietPerSite: "S"
             case .grouped: "J"
             case .trail: "O"
             case .folded: "P"
@@ -84,6 +94,9 @@ final class FeedPrototype {
         var name: String {
             switch self {
             case .current: "The log, one row per event (as shipped)"
+            case .quiet: "Quiet: the log, stripped to type"
+            case .quietPath: "Quiet path: one line per person, the path as the line"
+            case .quietPerSite: "Quiet per site: one line per person, one column per site"
             case .grouped: "Grouped: one person's rows as one block"
             case .trail: "Trail: one row per person, their path as one dim line"
             case .folded: "Folded: one row per person, click for the path"
@@ -107,6 +120,7 @@ final class FeedPrototype {
         var title: String {
             switch self {
             case .current: "Feed"
+            case .quiet, .quietPath, .quietPerSite: "Feed"
             case .grouped, .trail, .folded, .temperature, .perSite, .transcript, .head: "Feed"
             case .pulse: "Pulse"
             case .trace: "Trace"
@@ -176,6 +190,12 @@ struct FeedPrototypeHost: View {
                 waiting: waiting,
                 now: now
             )
+        case .quiet:
+            logCard { FeedQuietVariant(rows: rows, showsSite: showsSite, now: now) }
+        case .quietPath:
+            logCard { FeedQuietPathVariant(rows: rows, showsSite: showsSite, now: now) }
+        case .quietPerSite:
+            logCard { FeedQuietPerSiteVariant(rows: rows, shapes: shapes, now: now) }
         case .grouped:
             logCard { FeedGroupedVariant(rows: rows, showsSite: showsSite, now: now) }
         case .trail:
