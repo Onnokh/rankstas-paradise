@@ -410,3 +410,155 @@ private struct FeedQuietNarrowRow: View {
         .help([line.who, line.returnsHelp ?? "first visit"].joined(separator: " · "))
     }
 }
+
+// MARK: - T · Hierarchy
+
+/// One row per person, two lines, every row the same. The first line is one thing only:
+/// what they are doing now — a page in grey, an action in the analytics colour, a link out
+/// with an arrow. The second line is one caption in one grey: the site, who they are, how
+/// often they have been here, and the steps that led here. The age is a gutter on the left.
+///
+/// R put six things on one line at four greys and three strengths of lilac, each row
+/// starting with a different one of them. Here a row has three tones and a fixed order,
+/// so the eye lands on the same thing in every row.
+struct FeedHierarchyVariant: View {
+    let rows: [LiveFeedRow]
+    let showsSite: Bool
+    let now: Date
+
+    var body: some View {
+        FeedHierarchyList(lines: FeedQuiet.lines(grouping: rows, now: now), showsSite: showsSite)
+    }
+}
+
+struct FeedHierarchyList: View {
+    let lines: [FeedQuietLine]
+    let showsSite: Bool
+
+    @Environment(\.isTabPreview) private var isPreview
+    @State private var hovered: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(lines) { line in
+                FeedHierarchyRow(line: line, showsSite: showsSite, isHovered: hovered == line.id)
+                    .onHover { inside in
+                        guard !isPreview else { return }
+                        if inside {
+                            hovered = line.id
+                        } else if hovered == line.id {
+                            hovered = nil
+                        }
+                    }
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: hovered)
+    }
+}
+
+struct FeedHierarchyRow: View {
+    let line: FeedQuietLine
+    let showsSite: Bool
+    var isHovered = false
+
+    static let height: CGFloat = 50
+    private static let gutter: CGFloat = 44
+    /// How many of the steps before the newest the caption names.
+    private static let shownEarlier = 2
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            Text(line.age)
+                .font(.callout)
+                .monospacedDigit()
+                .foregroundStyle(.tertiary)
+                .frame(width: Self.gutter, alignment: .trailing)
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 3) {
+                headline
+                    .font(.callout)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                caption
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(height: Self.height, alignment: .top)
+        .background(isHovered ? Palette.line.opacity(0.45) : Color.clear, in: .rect(cornerRadius: 6))
+        .contentShape(Rectangle())
+        .overlay(alignment: .topLeading) {
+            if isHovered {
+                FeedQuietTooltip(line: line)
+                    .fixedSize()
+                    .offset(x: 12 + Self.gutter + 16, y: Self.height + 2)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .zIndex(isHovered ? 1 : 0)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// What they are doing now, and nothing else. An action in the analytics colour; a link
+    /// out with an arrow, in grey, because leaving is navigation and not a thing done here.
+    @ViewBuilder private var headline: some View {
+        if let newest = line.newest {
+            HStack(spacing: 6) {
+                switch newest.kind {
+                case .event, .buttonClick, .copy, .formSubmit, .inputChange:
+                    Text(newest.primary)
+                        .fontWeight(.medium)
+                        .foregroundStyle(visitsColor)
+                case .outbound:
+                    Text("→ \(newest.primary)")
+                case .pageview:
+                    Text(newest.primary)
+                }
+                if newest.repeats > 1 {
+                    Text("×\(newest.repeats)")
+                        .monospacedDigit()
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        } else {
+            Text("—")
+        }
+    }
+
+    /// Everything else, in one grey: "Missingmounts · Czechia · Chrome · 3rd visit · after
+    /// search-character › /eu/drakthul/felmasakr".
+    private var caption: Text {
+        var parts: [Text] = []
+        if showsSite {
+            parts.append(Text(line.siteName))
+        }
+        parts.append(Text(line.country))
+        if let browser = line.who.split(separator: " · ").dropFirst().first {
+            parts.append(Text(String(browser)))
+        }
+        if let returns = line.returns, let count = Int(returns.dropFirst()) {
+            parts.append(Text("\(FeedShapes.ordinal(count)) visit"))
+        }
+        let earlier = Array(line.steps.dropLast())
+        if !earlier.isEmpty {
+            let shown = earlier.suffix(Self.shownEarlier).map { step in
+                FeedShapes.short(step.primary, limit: 28) + (step.repeats > 1 ? " ×\(step.repeats)" : "")
+            }
+            let rest = earlier.count - shown.count
+            parts.append(Text("after \(shown.joined(separator: " › "))\(rest > 0 ? " · +\(rest) earlier" : "")"))
+        }
+        var text = Text("")
+        for (index, part) in parts.enumerated() {
+            if index > 0 { text = text + Text("  ·  ") }
+            text = text + part
+        }
+        return text
+    }
+}

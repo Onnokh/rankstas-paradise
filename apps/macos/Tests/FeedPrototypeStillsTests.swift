@@ -34,6 +34,7 @@ final class FeedPrototypeStillsTests: XCTestCase {
             AnyView(FeedLogCard(title: "Feed", kinds: .constant(.all), isEmpty: false, windowMinutes: 30, waiting: false, content: content))
         }
         let stills: [(String, AnyView)] = [
+            ("t-hierarchy", log { FeedHierarchyVariant(rows: rows, showsSite: true, now: now) }),
             ("q-quiet", log { FeedQuietVariant(rows: rows, showsSite: true, now: now) }),
             ("r-quiet-path", log { FeedQuietPathVariant(rows: rows, showsSite: true, now: now) }),
             ("r-quiet-path-hover", log {
