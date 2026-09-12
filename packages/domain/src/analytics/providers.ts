@@ -14,6 +14,7 @@ import {
   type AnalyticsError,
   type AnalyticsSource,
   type LiveEvent,
+  type VisitorHistory,
   type VisitsDays,
   type SiteVisitsHour,
 } from "./schema.ts"
@@ -55,6 +56,18 @@ export interface Provider {
     windowMinutes: number,
     limit: number,
   ) => Effect.Effect<ReadonlyArray<LiveEvent>, AnalyticsError>
+
+  // What the vendor knows about its most recently active visitors, newest
+  // first, at most `limit` of them: the histories that say which of the feed's
+  // people are returning. OPTIONAL, unlike everything above it — this is the
+  // one question the vendors in scope do not all answer. Rybbit aggregates a
+  // visitor's sessions and Umami counts a session's visits, but GA4 has only a
+  // new-versus-returning dimension and no per-visitor count, so an adapter that
+  // cannot answer leaves this out and the port reports no histories rather than
+  // a wrong number.
+  readonly visitorHistory?: (
+    limit: number,
+  ) => Effect.Effect<ReadonlyArray<VisitorHistory>, AnalyticsError>
 }
 
 export interface LiveSample {

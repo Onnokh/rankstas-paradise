@@ -210,8 +210,8 @@ Answers are memoised for 30 seconds per site, so poll it on its own timer and
 never fold it into the dashboard read, which must stay served from disk.
 
 `GET /api/live/events` is the other read that reaches the provider: the live
-feed. It answers `{ analytics, events: { windowMinutes, since, events, fetchedAt }
-| null }`, where `events.events` is every pageview and event of the last 30
+feed. It answers `{ analytics, events: { windowMinutes, since, events, visitors,
+fetchedAt } | null }`, where `events.events` is every pageview and event of the last 30
 minutes, newest first, at most 500 rows: `{ id, at, kind, name, page,
 properties, visitor, country, browser, operatingSystem, device, referrer }`.
 `kind` is `pageview`, `event` (a named custom action) or one of Rybbit's
@@ -224,6 +224,24 @@ stable across polls for the same row. Pass `since=<ISO instant>` to get only the
 rows newer than it (echoed back as `since`); a value that is not an instant is a
 400. Answers are memoised for 5 seconds per site and `since` is applied to the
 memo, so poll it every few seconds and never fold it into another read.
+
+`events.visitors` says which of those people are returning — a row cannot, since
+the window is half an hour. One entry per person the provider knows anything
+about, `{ visitor, visits, firstSeen, lastSeen }`, joined to a row by `visitor`.
+`visits` is the all-time count of their visits, so 1 is a first-time visitor and
+more is a returning one; `firstSeen` and `lastSeen` are ISO instants. Any of the
+three is null when the provider does not say, and the whole list is `[]` — or
+absent, against an older server — when it cannot answer for visitors at all.
+
+Two things to hold on to when you draw it. `since` trims `events` and never
+`visitors`: a polling client keeps the earlier rows on screen and has to be able
+to label them too, so every poll carries the whole cast of the window. And a
+visitor is the provider's device fingerprint, not a person: one office network
+can read as one returning visitor, and the same person on a second browser reads
+as a new one. It is a good hint and a bad identity. Histories are memoised for a
+minute rather than the feed's five seconds, because an all-time count does not
+move between two polls, and a provider that fails to answer them costs the feed
+its counts and never its rows.
 
 `GET /api/today` is served from the ledger like every other read. The daily
 sync stops at yesterday, so the server re-fetches the day in progress from the

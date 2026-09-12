@@ -32,6 +32,8 @@ import {
   liveWindowMinutes,
   onlineWindowMinutes,
   type SiteVisitsHour,
+  type VisitorHistory,
+  visitorHistoryLimit,
   type VisitsDays,
 } from "./schema.ts"
 
@@ -42,6 +44,10 @@ const liveCacheTtl = Duration.seconds(30)
 // seconds, so its memo is short. Still one vendor call per five seconds however
 // many windows poll.
 const liveEventsCacheTtl = Duration.seconds(5)
+// A visitor's history is an all-time aggregate: it moves when they start a new
+// visit, not between two polls. Its own memo, a minute long, keeps the feed's
+// five-second poll from asking the vendor for it twelve times over.
+const visitorHistoryCacheTtl = Duration.minutes(1)
 
 // The provider's calendar day right now: its date, how far into it the site's
 // zone is, and the zone itself. What "today" means for a site.
@@ -127,6 +133,10 @@ export interface Interface {
   // With `since` (an ISO instant) only the rows newer than it are returned,
   // filtered from the same memo, so a polling client pays for one vendor call
   // per memo however often it asks. Reaches the network like liveVisitors.
+  // The answer carries `visitors`: what the provider knows about the people
+  // behind the rows, over their whole history rather than the window, which is
+  // what says a visitor is returning. Empty when the provider cannot say —
+  // never a reason for the feed itself to fail.
   readonly liveEvents: (
     since?: string,
   ) => Effect.Effect<LiveEvents | null, AnalyticsError>
@@ -217,6 +227,25 @@ const ready = (source: AnalyticsSource, provider: Provider) =>
           Effect.map((events) => ({ events, fetchedAt: new Date().toISOString() })),
         ),
     })
+    // The histories, on their own slower memo. A vendor that cannot answer them
+    // has no method to call, and one that fails answering them costs the feed
+    // its badges and nothing else: the rows matter, the labels on them do not
+    // matter enough to lose the rows over. So this lookup never fails.
+    const histories = yield* Cache.make<"visitors", ReadonlyArray<VisitorHistory>>({
+      capacity: 1,
+      timeToLive: visitorHistoryCacheTtl,
+      lookup: () =>
+        provider.visitorHistory === undefined
+          ? Effect.succeed<ReadonlyArray<VisitorHistory>>([])
+          : provider.visitorHistory(visitorHistoryLimit).pipe(
+              Effect.catchTag("AnalyticsError", (error) =>
+                Effect.logWarning(
+                  `Visitor histories could not be read for ${source.provider} site ` +
+                    `"${source.siteId}", so the feed shows no visit counts: ${error.message}`,
+                ).pipe(Effect.as<ReadonlyArray<VisitorHistory>>([])),
+              ),
+            ),
+    })
     const impl: Interface = {
       status: () =>
         Effect.succeed({
@@ -234,10 +263,15 @@ const ready = (source: AnalyticsSource, provider: Provider) =>
       }),
       liveEvents: Effect.fn("Analytics.liveEvents")(function* (since) {
         const sample = yield* Cache.get(feed, "events")
+        // Every history the memo holds, not only those of the rows that
+        // survived `since`: a polling client keeps the earlier rows on screen
+        // and has to be able to label them too.
+        const visitors = yield* Cache.get(histories, "visitors")
         return {
           windowMinutes: liveWindowMinutes,
           since: since ?? null,
           events: newerThan(sample.events, since),
+          visitors,
           fetchedAt: sample.fetchedAt,
         }
       }),

@@ -542,6 +542,7 @@ private struct FeedRow: View, Equatable {
 
     private var event: LiveEvent { row.event }
 
+
     nonisolated static func == (left: FeedRow, right: FeedRow) -> Bool {
         left.row == right.row && left.age == right.age && left.showsSite == right.showsSite
             && left.isHighlighted == right.isHighlighted && left.isLast == right.isLast
@@ -584,6 +585,23 @@ private struct FeedRow: View, Equatable {
             }
             .lineLimit(1)
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            // How many times this person has been here, all time, on the rows of someone who
+            // has been here before. The slot is always there, so no row shifts when one is
+            // marked; a first visit is the ordinary case and is left unmarked.
+            Group {
+                if let visits = row.visits {
+                    Text(visits)
+                        .monospacedDigit()
+                        .font(.caption)
+                        .foregroundStyle(visitsColor)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(visitsColor.opacity(0.12), in: .capsule)
+                        .help(row.visitsHelp ?? visits)
+                }
+            }
+            .frame(width: 52, alignment: .trailing)
 
             Text(row.who)
                 .foregroundStyle(.secondary)

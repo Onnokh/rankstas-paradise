@@ -218,6 +218,13 @@ One thing a visitor just did, as the provider recorded it: a Pageview, or an Eve
 **Live feed**:
 The Live events of every site, newest first, in one stream on the Overview. Filtered by site and by kind. A visitor shows as a country, a browser and a device, never as a made-up name.
 
+**Visitor history**:
+What the provider knows about one person of the Live feed over their whole recorded history, not the window: how many Visits it has counted for them, and when it first and last saw them. What says a returning visitor from a first-time one — a Live event on its own cannot, because the window is half an hour. Asked once a minute beside the feed, never stored.
+_Avoid_: "sessions" for the count (it is Visits); reading it as a person — it follows the provider's device fingerprint, so one office network can read as one returning visitor and one person on a second browser as a new one.
+
+**Returning visitor**:
+A visitor whose Visitor history counts more than one Visit. A screen's word for a number the provider reports; the API says how many Visits and never who is loyal.
+
 **Today**:
 The provider's current calendar day in the site's time zone, so far: totals, one row per hour, pages and events. Stored in the ledger like every other day and re-fetched from the provider every five minutes until the day ends; the daily sync fetches the finished day once more. Search Console lags days, so Today has no Search Console figures.
 

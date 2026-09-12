@@ -552,9 +552,14 @@ export const buildMcpServer = (run: RunTool, market: MarketTool): McpServer => {
         "What visitors did on the site in the last 30 minutes, newest first, from " +
         "its analytics provider: one row per pageview or event with the page, the " +
         "event name and properties, and the visitor's country, browser, OS and " +
-        "device. events is null when the site has no provider; analytics.ready " +
+        "device. events.visitors is what the provider knows about those people " +
+        "over their whole history, joined to a row by its visitor token: visits " +
+        "is their all-time count (1 is a first-time visitor, more is a returning " +
+        "one) and firstSeen when they were first seen. It is empty when the " +
+        "provider cannot say, and a visitor is a device fingerprint, not a " +
+        "person. events is null when the site has no provider; analytics.ready " +
         "false with a reason means the provider is configured but cannot be read. " +
-        "Answers are memoised for 5 seconds.",
+        "Answers are memoised for 5 seconds, the visitor histories for a minute.",
       inputSchema: { site },
     },
     async ({ site }) => {
