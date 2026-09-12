@@ -36,6 +36,15 @@ final class FeedPrototypeStillsTests: XCTestCase {
         let stills: [(String, AnyView)] = [
             ("q-quiet", log { FeedQuietVariant(rows: rows, showsSite: true, now: now) }),
             ("r-quiet-path", log { FeedQuietPathVariant(rows: rows, showsSite: true, now: now) }),
+            ("r-quiet-path-hover", log {
+                let lines = FeedQuiet.lines(grouping: rows, now: now)
+                VStack(spacing: 0) {
+                    ForEach(Array(lines.prefix(6).enumerated()), id: \.element.id) { index, line in
+                        FeedQuietRow(line: line, showsSite: true, isHovered: index == 2)
+                    }
+                    Color.clear.frame(height: 200)
+                }
+            }),
             ("s-quiet-per-site", log { FeedQuietPerSiteVariant(rows: rows, shapes: shapes, now: now) }),
             ("j-grouped", log { FeedGroupedVariant(rows: rows, showsSite: true, now: now) }),
             ("o-trail", log { FeedTrailVariant(rows: rows, showsSite: true, now: now) }),

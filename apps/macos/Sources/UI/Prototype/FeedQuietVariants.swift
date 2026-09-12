@@ -7,24 +7,27 @@ import SwiftUI
 // lilac bold words, a lilac tint, an acid mark, an eye, a referrer, three facts about the
 // visitor, and, in the grouped variants, two row heights. Together that reads as cheap.
 //
-// So these three strip rather than tune, under one rule: one row height, one type size,
-// greys only, no icons, no flags, no pills, no tints. An action differs from a page load by
-// weight and nothing else. Everything cut is on hover.
+// So these three strip rather than tune, under one rule: one row height, one type size, no
+// icons, no flags, no pills, no tints, and one colour with one meaning — an action is set in
+// the analytics colour, a page load in grey. Everything cut is on hover, in a real tooltip.
 
 // MARK: - The row
 
 /// A page or an action, in the quiet row's words: what, and the run of steps before it.
 struct FeedQuietLine: Identifiable, Equatable {
     let id: String
+    let siteID: Site.ID
     let siteName: String
     /// Oldest first, ending at the newest step. One entry for a plain row.
     let steps: [FeedLogStep]
     let country: String
-    /// "×3" for a returning visitor, as plain type; nil on a first visit.
+    /// "🇩🇪 Germany · Chrome · Desktop": the tooltip's first line.
+    let who: String
+    /// "×3" for a returning visitor; nil on a first visit.
     let returns: String?
+    /// "3 visits since 12 Aug", for the tooltip.
+    let returnsHelp: String?
     let age: String
-    /// Everything the row does not show: the pointer's text.
-    let help: String
 
     var newest: FeedLogStep? { steps.last }
 }
@@ -53,12 +56,14 @@ enum FeedQuiet {
             guard let head = byID[group.id] else { return nil }
             return FeedQuietLine(
                 id: group.id,
+                siteID: group.siteID,
                 siteName: group.siteName,
                 steps: group.steps.reversed(),
                 country: country(head.event),
+                who: head.who,
                 returns: head.visits,
-                age: age(head.event.date, now: now),
-                help: help(head, steps: group.steps.count)
+                returnsHelp: head.visitsHelp,
+                age: age(head.event.date, now: now)
             )
         }
     }
@@ -69,47 +74,52 @@ enum FeedQuiet {
         var lastKey: String?
         for row in rows {
             let key = "\(row.siteID)|\(row.event.visitor)|\(row.event.kind)|\(row.primary)"
-            if key == lastKey, var last = lines.last, var step = last.steps.last {
+            if key == lastKey, let last = lines.last, var step = last.steps.last {
                 step.repeats += 1
-                last = FeedQuietLine(
-                    id: last.id, siteName: last.siteName, steps: [step], country: last.country,
-                    returns: last.returns, age: last.age, help: last.help
+                lines[lines.count - 1] = FeedQuietLine(
+                    id: last.id, siteID: last.siteID, siteName: last.siteName, steps: [step],
+                    country: last.country, who: last.who, returns: last.returns,
+                    returnsHelp: last.returnsHelp, age: last.age
                 )
-                lines[lines.count - 1] = last
                 continue
             }
             lastKey = key
             lines.append(FeedQuietLine(
                 id: row.id,
+                siteID: row.siteID,
                 siteName: row.siteName,
                 steps: [FeedLogStep(
                     id: row.id, kind: row.event.kind, primary: row.primary, detail: row.detail,
                     time: row.time, age: age(row.event.date, now: now), repeats: 1
                 )],
                 country: country(row.event),
+                who: row.who,
                 returns: row.visits,
-                age: age(row.event.date, now: now),
-                help: help(row, steps: 1)
+                returnsHelp: row.visitsHelp,
+                age: age(row.event.date, now: now)
             ))
         }
         return lines
     }
-
-    private static func help(_ row: LiveFeedRow, steps: Int) -> String {
-        var parts = [row.time, row.who]
-        if let detail = row.detail { parts.append(detail) }
-        if let visits = row.visitsHelp { parts.append(visits) }
-        if steps > 1 { parts.append("\(steps) steps in the window") }
-        return parts.joined(separator: " · ")
-    }
 }
 
 /// The one row. Fixed height, no background, no hairline: the columns hold the lines.
+///
+/// The history is the two steps before the newest, and a count for the rest: a run of every
+/// step cut from the head left "…×2 ›" on the page, which is not a word. The whole path,
+/// with ages and data, is the tooltip's.
 struct FeedQuietRow: View {
     let line: FeedQuietLine
     let showsSite: Bool
+    /// Whether the pointer is on this row: the row lifts a little, and the tooltip opens.
+    var isHovered = false
 
     static let height: CGFloat = 32
+    /// How many steps before the newest the row shows in full.
+    static let shownEarlier = 2
+
+    /// Where the words column starts: where the tooltip hangs from.
+    private var wordsX: CGFloat { 12 + 40 + 16 + (showsSite ? 112 + 16 : 0) }
 
     var body: some View {
         HStack(spacing: 16) {
@@ -130,43 +140,132 @@ struct FeedQuietRow: View {
                 .truncationMode(.head)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(spacing: 8) {
-                if let returns = line.returns {
-                    Text(returns)
-                        .monospacedDigit()
-                        .foregroundStyle(.quaternary)
-                }
-                Text(line.country)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-            }
-            .frame(width: 150, alignment: .trailing)
+            // How many times this person has been here. Its own column, so the figure lines
+            // up down the page and a first visit is a visible blank, not a missing mark.
+            Text(line.returns ?? "")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 32, alignment: .trailing)
+
+            Text(line.country)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .frame(width: 120, alignment: .trailing)
         }
         .font(.callout)
         .frame(height: Self.height)
         .padding(.horizontal, 12)
+        .background(isHovered ? Palette.line.opacity(0.45) : Color.clear, in: .rect(cornerRadius: 6))
         .contentShape(Rectangle())
-        .help(line.help)
+        .overlay(alignment: .topLeading) {
+            if isHovered {
+                FeedQuietTooltip(line: line)
+                    .fixedSize()
+                    .offset(x: wordsX, y: Self.height + 4)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        // Over the rows below it, or the tooltip is painted under them.
+        .zIndex(isHovered ? 1 : 0)
         .accessibilityElement(children: .combine)
     }
 
-    /// The steps as one run of type. Earlier steps are tertiary, the newest is primary, and
-    /// an action is set in medium weight — the only mark it gets.
+    /// The steps as one run of type: "+3 › /shaders › search-character › /eu/emeriss".
+    /// Earlier steps are tertiary and the newest is primary. An action is set in medium
+    /// weight and in the analytics colour — the one colour on the row, so a page load and a
+    /// thing done on it can be told apart at a glance and nothing else competes.
     private var path: Text {
+        let earlier = Array(line.steps.dropLast())
+        let shown = Array(earlier.suffix(Self.shownEarlier))
         var text = Text("")
-        for (index, step) in line.steps.enumerated() {
-            let isNewest = index == line.steps.count - 1
-            if index > 0 {
-                text = text + Text("  ›  ").foregroundStyle(.quaternary)
-            }
-            var word = Text(step.primary).fontWeight(step.isAction ? .medium : .regular)
-            word = isNewest ? word.foregroundStyle(.primary) : word.foregroundStyle(.tertiary)
-            text = text + word
+        if earlier.count > shown.count {
+            text = text + Text("+\(earlier.count - shown.count)").monospacedDigit().foregroundStyle(.quaternary)
+                + Text("  ›  ").foregroundStyle(.quaternary)
+        }
+        for step in shown {
+            text = text + Text(FeedShapes.short(step.primary, limit: 30))
+                .fontWeight(step.isAction ? .medium : .regular)
+                .foregroundStyle(step.isAction ? AnyShapeStyle(visitsColor.opacity(0.55)) : AnyShapeStyle(.tertiary))
             if step.repeats > 1 {
                 text = text + Text(" ×\(step.repeats)").monospacedDigit().foregroundStyle(.quaternary)
             }
+            text = text + Text("  ›  ").foregroundStyle(.quaternary)
+        }
+        if let newest = line.newest {
+            text = text + Text(newest.primary)
+                .fontWeight(newest.isAction ? .medium : .regular)
+                .foregroundStyle(newest.isAction ? AnyShapeStyle(visitsColor) : AnyShapeStyle(.primary))
+            if newest.repeats > 1 {
+                text = text + Text(" ×\(newest.repeats)").monospacedDigit().foregroundStyle(.tertiary)
+            }
         }
         return text
+    }
+}
+
+/// What the row does not say, under the pointer: who this is, how often they have been
+/// here, and every step of the window with its age and data — oldest first, so it reads as
+/// it was walked. The same panel as the realtime bars' minute label.
+struct FeedQuietTooltip: View {
+    let line: FeedQuietLine
+
+    private static let limit = 12
+
+    var body: some View {
+        let shown = Array(line.steps.suffix(Self.limit))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text(line.who)
+                    .fontWeight(.medium)
+                if let returnsHelp = line.returnsHelp {
+                    Text("·").foregroundStyle(.tertiary)
+                    Text(returnsHelp)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("·").foregroundStyle(.tertiary)
+                    Text("first visit")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .font(.callout)
+
+            VStack(alignment: .leading, spacing: 4) {
+                if line.steps.count > shown.count {
+                    Text("\(line.steps.count - shown.count) earlier steps")
+                        .foregroundStyle(.quaternary)
+                }
+                ForEach(shown) { step in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(step.age)
+                            .monospacedDigit()
+                            .foregroundStyle(.tertiary)
+                            .frame(width: 60, alignment: .trailing)
+                        Text(step.primary)
+                            .fontWeight(step.isAction ? .medium : .regular)
+                            .foregroundStyle(step.isAction ? AnyShapeStyle(visitsColor) : AnyShapeStyle(.primary))
+                        if step.repeats > 1 {
+                            Text("×\(step.repeats)")
+                                .monospacedDigit()
+                                .foregroundStyle(.tertiary)
+                        }
+                        if let detail = step.detail {
+                            Text(detail)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .lineLimit(1)
+                }
+            }
+            .font(.callout)
+            .monospacedDigit()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: 520, alignment: .leading)
+        .background(.regularMaterial, in: .rect(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+        .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
     }
 }
 
@@ -181,11 +280,34 @@ struct FeedQuietVariant: View {
     let now: Date
 
     var body: some View {
+        FeedQuietList(lines: FeedQuiet.lines(rows, now: now), showsSite: showsSite)
+    }
+}
+
+/// The rows, with one of them under the pointer. The hover is by visitor, so the same
+/// person stays lit across a poll that gives their row a new id.
+struct FeedQuietList: View {
+    let lines: [FeedQuietLine]
+    let showsSite: Bool
+
+    @Environment(\.isTabPreview) private var isPreview
+    @State private var hovered: String?
+
+    var body: some View {
         VStack(spacing: 0) {
-            ForEach(FeedQuiet.lines(rows, now: now)) { line in
-                FeedQuietRow(line: line, showsSite: showsSite)
+            ForEach(lines) { line in
+                FeedQuietRow(line: line, showsSite: showsSite, isHovered: hovered == line.id)
+                    .onHover { inside in
+                        guard !isPreview else { return }
+                        if inside {
+                            hovered = line.id
+                        } else if hovered == line.id {
+                            hovered = nil
+                        }
+                    }
             }
         }
+        .animation(.easeOut(duration: 0.12), value: hovered)
     }
 }
 
@@ -200,11 +322,7 @@ struct FeedQuietPathVariant: View {
     let now: Date
 
     var body: some View {
-        VStack(spacing: 0) {
-            ForEach(FeedQuiet.lines(grouping: rows, now: now)) { line in
-                FeedQuietRow(line: line, showsSite: showsSite)
-            }
-        }
+        FeedQuietList(lines: FeedQuiet.lines(grouping: rows, now: now), showsSite: showsSite)
     }
 }
 
@@ -276,6 +394,7 @@ private struct FeedQuietNarrowRow: View {
             // A path is read from its end: "…/duotone" says more than "/shad…uotone".
             Text(line.newest?.primary ?? "—")
                 .fontWeight(line.newest?.isAction == true ? .medium : .regular)
+                .foregroundStyle(line.newest?.isAction == true ? AnyShapeStyle(visitsColor) : AnyShapeStyle(.primary))
                 .lineLimit(1)
                 .truncationMode(.head)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -288,6 +407,6 @@ private struct FeedQuietNarrowRow: View {
         .frame(height: FeedQuietRow.height)
         .padding(.horizontal, 12)
         .contentShape(Rectangle())
-        .help(line.help)
+        .help([line.who, line.returnsHelp ?? "first visit"].joined(separator: " · "))
     }
 }
