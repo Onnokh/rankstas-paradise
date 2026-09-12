@@ -15,6 +15,16 @@ import SwiftUI
 // shipped log is kept in the cycle as the baseline.
 //
 //   Current — the log, one row per Live event (as shipped)
+//
+// Round two — shapes that move, drawn from the clock rather than from the poll:
+//
+//   F — Pulse: the sites as rooms, the people in them as points of light that ring and fade
+//   G — Trace: one instrument trace per site, running right to left under a "now" edge
+//   H — Now: only the people here this minute, one tile each, cooling as they go quiet
+//   I — Stage: one moment at a time, in words, large, fading to the next
+//
+// Round one — arrangements of records, kept for the parts worth stealing:
+//
 //   A — Visits: one row per person, their path through the site with dwell between steps
 //   B — Lanes: the half hour as a time axis, one lane per person, a tick per Live event
 //   C — Pressure: no time axis — the window's pages as tiles, sized by load, per site
@@ -31,13 +41,20 @@ import SwiftUI
 @Observable
 final class FeedPrototype {
     enum Variant: String, CaseIterable, Identifiable {
-        case current, visits, lanes, pressure, paths, signals
+        // Declaration order is the order the floating bar cycles through.
+        case current
+        case pulse, trace, now, stage
+        case visits, lanes, pressure, paths, signals
 
         var id: String { rawValue }
 
         var key: String {
             switch self {
             case .current: "Current"
+            case .pulse: "F"
+            case .trace: "G"
+            case .now: "H"
+            case .stage: "I"
             case .visits: "A"
             case .lanes: "B"
             case .pressure: "C"
@@ -49,6 +66,10 @@ final class FeedPrototype {
         var name: String {
             switch self {
             case .current: "The log, one row per event (as shipped)"
+            case .pulse: "Pulse: the sites as rooms, people as light"
+            case .trace: "Trace: an instrument line per site, running to now"
+            case .now: "Now: only the people here this minute"
+            case .stage: "Stage: one moment at a time, in words"
             case .visits: "Visits: one row per person, with their path"
             case .lanes: "Lanes: the half hour as time, one lane per person"
             case .pressure: "Pressure: the window's pages as tiles, per site"
@@ -61,6 +82,10 @@ final class FeedPrototype {
         var title: String {
             switch self {
             case .current: "Feed"
+            case .pulse: "Pulse"
+            case .trace: "Trace"
+            case .now: "Now"
+            case .stage: "Stage"
             case .visits: "Visits"
             case .lanes: "Lanes"
             case .pressure: "Pressure"
@@ -69,6 +94,15 @@ final class FeedPrototype {
             }
         }
     }
+
+    /// Whether the Overview is the tab in front. The moving variants pause when it is not:
+    /// every tab stays mounted, so an animation schedule left running in a tab nobody can
+    /// see is a frame paid for nothing, for as long as the app is open.
+    ///
+    /// Held here rather than in the environment on purpose. An environment value flipping on
+    /// a tab switch re-evaluates every mounted screen on the one frame that has to be cheap;
+    /// observation reaches only the one view that reads this.
+    var isLive = true
 
     private static let defaultsKey = "prototype.feed.variant"
 
@@ -103,6 +137,7 @@ struct FeedPrototypeHost: View {
     let now: Date
 
     @Environment(FeedPrototype.self) private var prototype: FeedPrototype?
+    @Environment(\.isTabPreview) private var isPreview
 
     var body: some View {
         switch prototype?.variant ?? .current {
@@ -115,6 +150,22 @@ struct FeedPrototypeHost: View {
                 waiting: waiting,
                 now: now
             )
+        case .pulse:
+            FeedVariantCard(title: "Pulse", note: note, isEmpty: shapes.isEmpty) {
+                FeedPulseVariant(shapes: shapes, isLive: isLive)
+            }
+        case .trace:
+            FeedVariantCard(title: "Trace", note: note, isEmpty: shapes.isEmpty) {
+                FeedTraceVariant(shapes: shapes, isLive: isLive)
+            }
+        case .now:
+            FeedVariantCard(title: "Now", note: note, isEmpty: shapes.isEmpty) {
+                FeedNowVariant(shapes: shapes, isLive: isLive)
+            }
+        case .stage:
+            FeedVariantCard(title: "Stage", note: note, isEmpty: shapes.isEmpty) {
+                FeedStageVariant(shapes: shapes, isLive: isLive)
+            }
         case .visits:
             FeedVariantCard(title: "Visits", note: note, isEmpty: shapes.isEmpty) {
                 FeedVisitsVariant(shapes: shapes, showsSite: showsSite)
@@ -137,6 +188,10 @@ struct FeedPrototypeHost: View {
             }
         }
     }
+
+    /// Whether the moving variants may run: the Overview is in front, and this is not a
+    /// still of a tab.
+    private var isLive: Bool { (prototype?.isLive ?? true) && !isPreview }
 
     /// What the card says about the window, in the header's trailing place.
     private var note: String {

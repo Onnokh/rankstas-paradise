@@ -180,6 +180,15 @@ struct RootView: View {
             .clipped()
         }
         .environment(feedPrototype)  // PROTOTYPE
+        // PROTOTYPE: the moving variants only run while the Overview is the tab in front and
+        // the peek is closed. Every tab stays mounted, so a schedule left running behind
+        // another tab costs a frame for as long as the app is open.
+        .onChange(of: workspace.activeTabID, initial: true) { _, tab in
+            feedPrototype.isLive = tab == .overview && !workspace.isPeeking
+        }
+        .onChange(of: workspace.isPeeking) { _, peeking in
+            feedPrototype.isLive = workspace.activeTabID == .overview && !peeking
+        }
         // Extend under the title bar so the tab bar can take its place.
         .ignoresSafeArea(.container, edges: .top)
         // View > Refresh (⌘R) acts on this window's active tab. See `ViewCommands`.

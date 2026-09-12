@@ -27,7 +27,35 @@ final class FeedPrototypeStillsTests: XCTestCase {
         let rows = LiveFeedRow.rows(feeds: world.feeds, sites: world.sites, limit: 50)
         let note = "\(shapes.visits.count) people · \(shapes.eventCount) events · last \(shapes.windowMinutes)m"
 
+        // The moving variants are drawn a beat after the newest event, which is where their
+        // rings and fresh spikes are: a still at the exact instant shows nothing travelling.
+        let beat = now.addingTimeInterval(1)
         let stills: [(String, AnyView)] = [
+            ("f-pulse", AnyView(FeedVariantCard(title: "Pulse", note: note, isEmpty: false) {
+                VStack(alignment: .leading, spacing: 10) {
+                    FeedPulseField(shapes: shapes, at: beat).frame(height: 300)
+                    Text("A point is a person, newest on the outside. It dims as they go quiet, and rings when they do something.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            })),
+            ("g-trace", AnyView(FeedVariantCard(title: "Trace", note: note, isEmpty: false) {
+                VStack(spacing: 0) {
+                    ForEach(shapes.columns) { site in
+                        FeedTraceStrip(shapes: shapes, site: site, at: beat)
+                            .frame(height: 74)
+                            .overlay(alignment: .bottom) { Palette.line.frame(height: 1) }
+                    }
+                }
+            })),
+            ("h-now", AnyView(FeedVariantCard(title: "Now", note: note, isEmpty: false) {
+                FeedNowRoom(shapes: shapes, at: beat)
+            })),
+            ("i-stage", AnyView(FeedVariantCard(title: "Stage", note: note, isEmpty: false) {
+                // Stage cross-fades, so a still of any instant is likely to catch a fade.
+                // This lands the drawing in the middle of the newest moment's slot.
+                FeedStageCard(shapes: shapes, at: Self.stageMidpoint(after: beat, moments: shapes.moments.prefix(12).count))
+            })),
             ("current", AnyView(FeedCard(rows: rows, showsSite: true, kinds: .constant(.all), windowMinutes: 30, waiting: false, now: now))),
             ("a-visits", AnyView(FeedVariantCard(title: "Visits", note: note, isEmpty: false) {
                 FeedVisitsVariant(shapes: shapes, showsSite: true)
@@ -57,6 +85,15 @@ final class FeedPrototypeStillsTests: XCTestCase {
             print("STILL \(name) → \(url.path) — \(Int(image.size.width))x\(Int(image.size.height))")
             XCTAssertGreaterThan(image.size.height, 80, "\(name) came out empty")
         }
+    }
+
+    /// The instant at which `FeedStageCard` is holding its newest moment at full opacity.
+    private static func stageMidpoint(after date: Date, moments: Int) -> Date {
+        let hold = 3.4
+        var slot = (date.timeIntervalSinceReferenceDate / hold).rounded(.up)
+        let count = Double(max(moments, 1))
+        slot += (count - slot.truncatingRemainder(dividingBy: count)).truncatingRemainder(dividingBy: count)
+        return Date(timeIntervalSinceReferenceDate: slot * hold + hold / 2)
     }
 
     /// Renders a card the way the app would: dark, on the panel, at the column's width.
@@ -98,6 +135,19 @@ final class FeedPrototypeStillsTests: XCTestCase {
             shaderEvents.append(view(page: page, visitor: "us-chrome", at: now.addingTimeInterval(-minute * 60), country: "US", browser: "Chrome", device: "desktop"))
             minute -= 0.6
         }
+        // Three things that happened in the last seconds: what the moving variants are for.
+        shaderEvents.append(view(page: "/shaders/ferro", visitor: "dk-samsung", at: now.addingTimeInterval(-2), country: "DK", browser: "Samsung Internet", device: "mobile"))
+        shaderEvents.append(view(page: "/shaders/strata", visitor: "us-chrome", at: now.addingTimeInterval(-6), country: "US", browser: "Chrome", device: "desktop"))
+        mountEvents.append(action(
+            name: "update-character",
+            page: "/eu/silvermoon/dirith",
+            visitor: "gb-opera",
+            at: now.addingTimeInterval(-4),
+            country: "GB",
+            browser: "Opera",
+            device: "desktop",
+            properties: ["region": "eu", "result": "saved"]
+        ))
         shaderEvents.append(view(page: "/", visitor: "dk-samsung", at: now.addingTimeInterval(-70), country: "DK", browser: "Samsung Internet", device: "mobile"))
         shaderEvents.append(view(page: "/shaders", visitor: "dk-samsung", at: now.addingTimeInterval(-40), country: "DK", browser: "Samsung Internet", device: "mobile"))
         for (index, country) in ["FR", "JP", "BR", "SE", "ES", "IN"].enumerated() {

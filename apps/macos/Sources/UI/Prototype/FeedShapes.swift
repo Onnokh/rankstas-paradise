@@ -120,6 +120,32 @@ struct FeedSignal: Identifiable, Equatable, Sendable {
     let properties: [FeedProperty]
 }
 
+/// One thing that just happened, in words a sentence can be made of: who, what they did,
+/// and where. The moving variants say it rather than tabulate it.
+struct FeedMoment: Identifiable, Equatable, Sendable {
+    let id: String
+    let siteID: Site.ID
+    let siteName: String
+    let visitor: String
+    /// "🇩🇪 Germany · Chrome".
+    let who: String
+    let flag: String
+    /// "opened", "did", "left for": what the kind of Live event is in plain words.
+    let verb: String
+    /// The page for a page load, the action's name for an action.
+    let object: String
+    /// "on /eu/silvermoon/dirith", or where a page load came from. Nil when the object says
+    /// it all.
+    let place: String?
+    let at: Date
+    let age: String
+    /// "×7", for a mark beside the words.
+    let returns: String?
+    /// "their 7th visit", for the words themselves. Nil on a first visit.
+    let returnsPhrase: String?
+    let isAction: Bool
+}
+
 /// Everything the variants draw, worked out once per poll.
 struct FeedShapes: Equatable, Sendable {
     let windowMinutes: Int
@@ -134,6 +160,8 @@ struct FeedShapes: Equatable, Sendable {
     let transitions: [FeedTransition]
     /// Newest first.
     let signals: [FeedSignal]
+    /// Every Live event as a sentence, newest first, capped: what the moving variants speak.
+    let moments: [FeedMoment]
     /// Page loads per minute over the window, oldest first: the traffic behind the actions.
     let pulse: [Double]
     /// Every shown site's rows, however they are grouped.
@@ -308,6 +336,32 @@ struct FeedShapes: Equatable, Sendable {
                 )
             }
 
+        // MARK: Moments
+
+        let moments = dated
+            .reversed()
+            .prefix(24)
+            .map { row -> FeedMoment in
+                let words = LiveFeedRow(siteID: row.site.id, siteName: row.site.name, event: row.event, history: row.history)
+                return FeedMoment(
+                    id: "\(row.site.id)|\(row.event.id)",
+                    siteID: row.site.id,
+                    siteName: row.site.name,
+                    visitor: row.event.visitor,
+                    who: words.who,
+                    flag: row.event.country.map(flag) ?? "🌐",
+                    verb: verb(row.event.kind),
+                    // "opened /" is a sentence about a slash. Every other page is its path.
+                    object: row.event.kind == .pageview && words.primary == "/" ? "the home page" : words.primary,
+                    place: row.event.kind == .pageview ? words.detail : "on \(row.event.page)",
+                    at: row.date,
+                    age: RelativeAge.labelOrTime(from: row.date, to: now),
+                    returns: words.visits,
+                    returnsPhrase: (row.history?.visits).flatMap { $0 > 1 ? "their \(ordinal($0)) visit" : nil },
+                    isAction: row.event.kind != .pageview
+                )
+            }
+
         // MARK: Pulse
 
         var pulse = [Double](repeating: 0, count: max(windowMinutes, 1))
@@ -325,6 +379,7 @@ struct FeedShapes: Equatable, Sendable {
             columns: columns,
             transitions: transitions,
             signals: signals,
+            moments: Array(moments),
             pulse: pulse,
             eventCount: dated.count
         )
@@ -389,6 +444,31 @@ struct FeedShapes: Equatable, Sendable {
         if whole < 60 { return "\(whole)s" }
         if whole < 3600 { return "\(whole / 60)m" }
         return "\(whole / 3600)h \((whole % 3600) / 60)m"
+    }
+
+    /// "7th". Written out rather than asked of a `NumberFormatter`, which is one object per
+    /// moment per poll for four suffixes.
+    static func ordinal(_ count: Int) -> String {
+        switch (count % 100, count % 10) {
+        case (11...13, _): "\(count)th"
+        case (_, 1): "\(count)st"
+        case (_, 2): "\(count)nd"
+        case (_, 3): "\(count)rd"
+        default: "\(count)th"
+        }
+    }
+
+    /// What a kind of Live event is, as a verb: "Germany · Chrome opened /shaders".
+    static func verb(_ kind: LiveEvent.Kind) -> String {
+        switch kind {
+        case .pageview: "opened"
+        case .event: "did"
+        case .outbound: "left for"
+        case .buttonClick: "clicked"
+        case .copy: "copied"
+        case .formSubmit: "sent"
+        case .inputChange: "typed in"
+        }
     }
 
     /// "🇩🇪 Chrome · Desktop": the flag rather than the country's name, which is what a lane
