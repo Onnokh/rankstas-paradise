@@ -115,8 +115,11 @@ struct OverviewScreen: View {
                 .column()
                 .padding(.top, 36)
 
-                FeedCard(
+                // PROTOTYPE: the Feed card's slot, in whichever shape the floating bar names.
+                // `FeedPrototypeHost` with no prototype in the environment is `FeedCard`.
+                FeedPrototypeHost(
                     rows: rows,
+                    shapes: FeedShapes.make(feeds: live.feeds, sites: model.sites, only: state.siteFilter, now: now),
                     // One site kept means every row is that site's; the name would only
                     // repeat the header.
                     showsSite: shownSites.count != 1,
@@ -461,7 +464,7 @@ private struct HeatStrip: View {
 /// The rows are a plain stack, drawn in full and never animated. A lazy stack here kept the
 /// main thread busy re-phasing its items on every poll, and a layout animation over the rows
 /// every five seconds is what turned that into a hang; the rows are capped instead.
-private struct FeedCard: View {
+struct FeedCard: View {  // PROTOTYPE: internal so FeedPrototypeHost can keep it as the baseline.
     let rows: [LiveFeedRow]
     /// Whether a row names its site: not when the page is kept to one.
     let showsSite: Bool

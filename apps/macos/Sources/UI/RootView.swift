@@ -38,6 +38,8 @@ struct RootView: View {
     @State private var model: OverviewModel
     @State private var workspace: Workspace
     @State private var favicons = FaviconStore()
+    /// PROTOTYPE: which shape the Overview's Feed card is drawn in. See `FeedPrototype`.
+    @State private var feedPrototype = FeedPrototype()
     @State private var history = HistoryStore()
     @State private var rankings = RankingStore()
     /// The reader's own planning thresholds, per site. Owned here beside the stores so one
@@ -167,9 +169,17 @@ struct RootView: View {
                     .frame(width: 0, height: 0)
 
                 keyboardShortcuts
+
+                #if DEBUG
+                // PROTOTYPE: the floating variant switcher. Debug builds only.
+                FeedPrototypeSwitcher(prototype: feedPrototype)
+                    .frame(width: layout.size.width, height: layout.size.height, alignment: .bottom)
+                    .padding(.bottom, 28)
+                #endif
             }
             .clipped()
         }
+        .environment(feedPrototype)  // PROTOTYPE
         // Extend under the title bar so the tab bar can take its place.
         .ignoresSafeArea(.container, edges: .top)
         // View > Refresh (⌘R) acts on this window's active tab. See `ViewCommands`.
