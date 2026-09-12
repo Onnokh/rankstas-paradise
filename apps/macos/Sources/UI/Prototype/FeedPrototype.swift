@@ -18,7 +18,9 @@ import SwiftUI
 //
 // Round three — the log kept, one thing changed each (the log was still the clearest):
 //
-//   J — Grouped: one person's consecutive rows folded into a block, repeats counted
+//   J — Grouped: one person's rows folded into a block, repeats counted
+//   O — Trail: J, calmed — the person's newest step as the shipped row, the rest one dim line
+//   P — Folded: one shipped row per person, "+3" for the folded steps, click to lay them out
 //   K — Temperature: the same rows, cooling with age; a row that just landed flashes
 //   L — Per site: one newest-first column per site, so one site's flood stays in its lane
 //   M — Transcript: the blocks of J read as a chat, the flag for a face
@@ -51,7 +53,7 @@ final class FeedPrototype {
     enum Variant: String, CaseIterable, Identifiable {
         // Declaration order is the order the floating bar cycles through.
         case current
-        case grouped, temperature, perSite, transcript, head
+        case grouped, trail, folded, temperature, perSite, transcript, head
         case pulse, trace, now, stage
         case visits, lanes, pressure, paths, signals
 
@@ -61,6 +63,8 @@ final class FeedPrototype {
             switch self {
             case .current: "Current"
             case .grouped: "J"
+            case .trail: "O"
+            case .folded: "P"
             case .temperature: "K"
             case .perSite: "L"
             case .transcript: "M"
@@ -81,6 +85,8 @@ final class FeedPrototype {
             switch self {
             case .current: "The log, one row per event (as shipped)"
             case .grouped: "Grouped: one person's rows as one block"
+            case .trail: "Trail: one row per person, their path as one dim line"
+            case .folded: "Folded: one row per person, click for the path"
             case .temperature: "Temperature: the log, cooling with age, flashing on arrival"
             case .perSite: "Per site: one log column per site"
             case .transcript: "Transcript: the blocks read as a chat"
@@ -101,7 +107,7 @@ final class FeedPrototype {
         var title: String {
             switch self {
             case .current: "Feed"
-            case .grouped, .temperature, .perSite, .transcript, .head: "Feed"
+            case .grouped, .trail, .folded, .temperature, .perSite, .transcript, .head: "Feed"
             case .pulse: "Pulse"
             case .trace: "Trace"
             case .now: "Now"
@@ -172,6 +178,10 @@ struct FeedPrototypeHost: View {
             )
         case .grouped:
             logCard { FeedGroupedVariant(rows: rows, showsSite: showsSite, now: now) }
+        case .trail:
+            logCard { FeedTrailVariant(rows: rows, showsSite: showsSite, now: now) }
+        case .folded:
+            logCard { FeedFoldedVariant(rows: rows, showsSite: showsSite, now: now) }
         case .temperature:
             logCard { FeedTemperatureVariant(rows: rows, showsSite: showsSite, now: now, isLive: isLive) }
         case .perSite:

@@ -277,6 +277,157 @@ private struct FeedGroupBlock: View {
     }
 }
 
+// MARK: - O · Trail
+
+/// One block per person, and the block is one table row plus one dim line. The row is the
+/// shipped log's row for the person's newest step — the table stays the table — and the
+/// line under it is where they came from, oldest first, in the quietest type on the page,
+/// with no icons, no data and no ages: a trail, not a second table.
+///
+/// J put every step on its own full row, and on a site where every other step is an action
+/// that read as a wall. Here nothing below the header is allowed to compete with it.
+struct FeedTrailVariant: View {
+    let rows: [LiveFeedRow]
+    let showsSite: Bool
+    let now: Date
+
+    var body: some View {
+        let groups = FeedLogGroup.groups(rows, now: now)
+        let byID = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
+        VStack(spacing: 0) {
+            ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
+                if let head = byID[group.id] {
+                    VStack(alignment: .leading, spacing: 0) {
+                        FeedTemperatureRow(
+                            row: head,
+                            age: group.age,
+                            showsSite: showsSite,
+                            band: .warm,
+                            flash: 0,
+                            isLast: true
+                        )
+                        if group.steps.count > 1 {
+                            FeedTrailLine(group: group, showsSite: showsSite)
+                        }
+                    }
+                    .overlay(alignment: .bottom) {
+                        if index < groups.count - 1 {
+                            Palette.line.frame(height: 1).padding(.horizontal, 12)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// "/ ×9 › search-character › /eu/tyrande/carmandt   3 earlier · since 4m ago", under the
+/// words column of the row above it.
+struct FeedTrailLine: View {
+    let group: FeedLogGroup
+    let showsSite: Bool
+
+    /// Under the row's words: past the mark, the age, the site and the kind's symbol.
+    static func indent(showsSite: Bool) -> CGFloat {
+        12 + Headband.markerSize.width + 12 + 64 + 12 + (showsSite ? 104 + 12 : 0) + 16 + 12
+    }
+
+    var body: some View {
+        // Oldest first: a trail is read the way it was walked, and it ends at the row.
+        let earlier = Array(group.steps.dropFirst().reversed())
+        let oldest = group.steps.last
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            trail(earlier)
+                .lineLimit(1)
+                .truncationMode(.head)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let oldest {
+                Text("\(earlier.count) earlier · since \(oldest.age)")
+                    .monospacedDigit()
+                    .foregroundStyle(.tertiary)
+                    .fixedSize()
+            }
+        }
+        .font(.caption)
+        .padding(.leading, Self.indent(showsSite: showsSite))
+        .padding(.trailing, 12)
+        .padding(.bottom, 8)
+        .padding(.top, -2)
+    }
+
+    /// The steps as one run of text, so the line truncates as a line. An action keeps a
+    /// bolt and the accent, in the caption's weight; a repeated page keeps its count.
+    private func trail(_ steps: [FeedLogStep]) -> Text {
+        var text = Text("")
+        for (index, step) in steps.enumerated() {
+            if index > 0 {
+                text = text + Text("  ›  ").foregroundStyle(.quaternary)
+            }
+            if step.isAction {
+                text = text + Text(Image(systemName: "bolt.fill")).foregroundStyle(visitsColor.opacity(0.8))
+                    + Text(" \(step.primary)").foregroundStyle(visitsColor.opacity(0.85))
+            } else {
+                text = text + Text(step.primary).foregroundStyle(.secondary)
+            }
+            if step.repeats > 1 {
+                text = text + Text(" ×\(step.repeats)").foregroundStyle(.tertiary)
+            }
+        }
+        return text
+    }
+}
+
+// MARK: - P · Folded
+
+/// One table row per person and nothing else: the row for their newest step, with a small
+/// "+3" where earlier steps are folded behind it. Clicking the row lays the trail out under
+/// it; clicking again folds it. The least the feed can show and still be complete — every
+/// person is one line, and the history is a click away rather than on the page.
+struct FeedFoldedVariant: View {
+    let rows: [LiveFeedRow]
+    let showsSite: Bool
+    let now: Date
+
+    /// The people whose trail is open. By visitor, so the block stays open across polls.
+    @State private var open: Set<String> = []
+
+    var body: some View {
+        let groups = FeedLogGroup.groups(rows, now: now)
+        let byID = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
+        VStack(spacing: 0) {
+            ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
+                if let head = byID[group.id] {
+                    let key = "\(group.siteID)|\(head.event.visitor)"
+                    let isOpen = open.contains(key)
+                    VStack(alignment: .leading, spacing: 0) {
+                        FeedTemperatureRow(
+                            row: head,
+                            age: group.age,
+                            showsSite: showsSite,
+                            band: .warm,
+                            flash: 0,
+                            isLast: true,
+                            folded: group.steps.count > 1 ? group.steps.count - 1 : nil
+                        )
+                        .onTapGesture {
+                            guard group.steps.count > 1 else { return }
+                            if isOpen { open.remove(key) } else { open.insert(key) }
+                        }
+                        if isOpen, group.steps.count > 1 {
+                            FeedTrailLine(group: group, showsSite: showsSite)
+                        }
+                    }
+                    .overlay(alignment: .bottom) {
+                        if index < groups.count - 1 {
+                            Palette.line.frame(height: 1).padding(.horizontal, 12)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - K · Temperature
 
 /// The shipped table, row for row — and every row cools with age. The last minute is bright
@@ -385,12 +536,16 @@ private struct FeedTemperatureRow: View, Equatable {
     /// 1 as the row lands, 0 a few seconds later.
     let flash: Double
     let isLast: Bool
+    /// How many earlier steps of this person are folded behind the row; nil for none, and
+    /// for rows that do not fold. Drawn as a small pill after the words.
+    var folded: Int? = nil
 
     private var event: LiveEvent { row.event }
 
     nonisolated static func == (left: FeedTemperatureRow, right: FeedTemperatureRow) -> Bool {
         left.row == right.row && left.age == right.age && left.showsSite == right.showsSite
             && left.band == right.band && left.flash == right.flash && left.isLast == right.isLast
+            && left.folded == right.folded
     }
 
     var body: some View {
@@ -425,6 +580,16 @@ private struct FeedTemperatureRow: View, Equatable {
                 if let detail = row.detail {
                     Text("· \(detail)")
                         .foregroundStyle(.secondary)
+                }
+                if let folded, folded > 0 {
+                    Text("+\(folded)")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Palette.line.opacity(0.7), in: .capsule)
+                        .help("\(folded) earlier \(folded == 1 ? "step" : "steps") by this person — click to show")
                 }
             }
             .lineLimit(1)

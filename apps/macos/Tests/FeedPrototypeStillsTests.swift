@@ -35,6 +35,8 @@ final class FeedPrototypeStillsTests: XCTestCase {
         }
         let stills: [(String, AnyView)] = [
             ("j-grouped", log { FeedGroupedVariant(rows: rows, showsSite: true, now: now) }),
+            ("o-trail", log { FeedTrailVariant(rows: rows, showsSite: true, now: now) }),
+            ("p-folded", log { FeedFoldedVariant(rows: rows, showsSite: true, now: now) }),
             ("k-temperature", log { FeedTemperatureVariant(rows: rows, showsSite: true, now: now, isLive: false) }),
             ("l-per-site", log { FeedPerSiteVariant(rows: rows, shapes: shapes, now: now) }),
             ("m-transcript", log { FeedTranscriptVariant(rows: rows, showsSite: true, now: now) }),
