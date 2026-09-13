@@ -41,6 +41,7 @@ final class RankingStoreTests: XCTestCase {
         XCTAssertTrue(store.loading.contains("site"))
         XCTAssertEqual(store.keywords[key]?.first?.query, "old", "The old rows stay on screen while the fetch runs.")
         XCTAssertEqual(store.events[key]?.count, 1)
+        XCTAssertEqual(store.acquisition[key]?.count, 2)
         XCTAssertNotNil(store.revenue[key])
         XCTAssertEqual(store.registry["site"]?.count, 1)
 
@@ -48,16 +49,16 @@ final class RankingStoreTests: XCTestCase {
         await refresh.value
     }
 
-    func testTheSixReadsGoOutTogetherRatherThanOneAfterAnother() async {
+    func testTheSevenReadsGoOutTogetherRatherThanOneAfterAnother() async {
         // Held open long enough that overlapping requests are still open when the next
-        // one starts. Awaited in turn, six of these cost six delays end to end and the
+        // one starts. Awaited in turn, seven of these cost seven delays end to end and the
         // screens waited on the sum; sent together they cost one.
         StubServer.delay = .milliseconds(200)
         let store = makeStore()
 
         await store.load("site", period: .d28)
 
-        XCTAssertEqual(StubServer.requests.count, 6)
+        XCTAssertEqual(StubServer.requests.count, 7)
         XCTAssertGreaterThanOrEqual(
             StubServer.peakOpenRequests, 4,
             "Awaited one after another the peak is 1. Per-group concurrency alone is 3."
@@ -77,8 +78,8 @@ final class RankingStoreTests: XCTestCase {
         XCTAssertEqual(store.keywords[RankingStore.KeywordsKey(siteID: "site", period: .d28)]?.first?.query, "new")
         XCTAssertEqual(store.keywords[RankingStore.KeywordsKey(siteID: "site", period: .d7)]?.first?.query, "old",
                        "The other period keeps its rows: they are not shown, and a fetch of their own replaces them.")
-        XCTAssertEqual(StubServer.requests.count - requestsBefore, 6,
-                       "Keywords, events, revenue, the registry, the plan's health, and its proposals.")
+        XCTAssertEqual(StubServer.requests.count - requestsBefore, 7,
+                       "Keywords, events, sources, revenue, the registry, the plan's health, and its proposals.")
 
         await store.load("site", period: .d7)
         XCTAssertEqual(store.keywords[RankingStore.KeywordsKey(siteID: "site", period: .d7)]?.first?.query, "new",
@@ -219,6 +220,7 @@ final class RankingStoreTests: XCTestCase {
 
         XCTAssertEqual(store.keywords[key]?.first?.query, "cached")
         XCTAssertEqual(store.events[key]?.first?.name, "purchase")
+        XCTAssertEqual(store.acquisition[key]?.first?.value, "google.com")
         XCTAssertEqual(store.revenue[key]?.currency, "USD")
         XCTAssertEqual(store.registry["site"]?.first?.targetUrl, "/")
         // The Indexed series is cached with the registry: it cannot be recovered from
@@ -337,6 +339,12 @@ private enum StubServer {
             json = """
             {"generatedAt":"2026-09-08T07:00:00Z","windowDays":28,
              "events":[{"name":"purchase","current":12,"previous":9,"delta":3}]}
+            """
+        case "/api/acquisition":
+            json = """
+            {"generatedAt":"2026-09-08T07:00:00Z","windowDays":28,"limit":10,
+             "rows":[{"dimension":"referrer","value":"google.com","current":40,"previous":30,"delta":10},
+                     {"dimension":"channel","value":"Organic Search","current":42,"previous":31,"delta":11}]}
             """
         case "/api/revenue":
             json = """

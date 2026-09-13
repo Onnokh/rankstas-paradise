@@ -20,6 +20,7 @@ import {
 import {
   DashboardSnapshot,
   HistoryReport,
+  AcquisitionReport,
   EventsReport,
   LiveEventsReport,
   LiveReport,
@@ -201,6 +202,14 @@ export const apiGroup = HttpApiGroup.make("api")
     HttpApiEndpoint.get("events", "/api/events", {
       query: { site: S, window: S },
       success: enveloped(EventsReport.fields),
+    }),
+  )
+  .add(
+    // Where the visits came from: referrers, channels and UTM tags over the
+    // window, at most `limit` rows per dimension (default 50).
+    HttpApiEndpoint.get("acquisition", "/api/acquisition", {
+      query: { site: S, window: S, limit: S },
+      success: enveloped(AcquisitionReport.fields),
     }),
   )
   .add(

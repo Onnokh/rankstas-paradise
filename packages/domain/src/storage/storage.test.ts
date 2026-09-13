@@ -587,6 +587,12 @@ const visitsFor = (dates: ReadonlyArray<string>, pages: ReadonlyArray<string> = 
     pages.map((page) => ({ date, page, pageviews: 4, visits: 3 })),
   ),
   events: dates.map((date) => ({ date, name: "purchase", count: 1 })),
+  acquisition: dates.flatMap((date) => [
+    { date, dimension: "referrer" as const, value: "google.com", visits: 4 },
+    { date, dimension: "referrer" as const, value: "reddit.com", visits: 1 },
+    { date, dimension: "channel" as const, value: "Organic Search", visits: 4 },
+    { date, dimension: "utm_source" as const, value: "newsletter", visits: 2 },
+  ]),
 })
 
 test("saveVisits round-trips the rows and stamps every fetched date", async () => {
@@ -645,7 +651,7 @@ test("a day's rows and hours read back as written, and the day knows when it was
   expect((await run(Storage.use.hoursOfDay("2024-01-10"))).map((row) => row.hour)).toEqual([10])
 
   // A day never synced is empty, not an error.
-  expect(await run(Storage.use.visitsOfDay("2024-01-11"))).toEqual({ site: [], pages: [], events: [] })
+  expect(await run(Storage.use.visitsOfDay("2024-01-11"))).toEqual({ site: [], pages: [], events: [], acquisition: [] })
   expect(await run(Storage.use.hoursOfDay("2024-01-11"))).toEqual([])
   expect(await run(Storage.use.visitsSyncedAt("2024-01-11"))).toBeNull()
 })
@@ -710,6 +716,13 @@ test("pageVisitsOverview and eventWindow anchor on the end date given", async ()
   expect(await run(Storage.use.eventWindow(2, "2024-01-13"))).toEqual([
     { name: "purchase", current: 2, previous: 2 },
   ])
+  // Grouped by dimension, strongest first within it, the same windows.
+  expect(await run(Storage.use.acquisitionWindow(2, "2024-01-13"))).toEqual([
+    { dimension: "channel", value: "Organic Search", current: 8, previous: 8 },
+    { dimension: "referrer", value: "google.com", current: 8, previous: 8 },
+    { dimension: "referrer", value: "reddit.com", current: 2, previous: 2 },
+    { dimension: "utm_source", value: "newsletter", current: 4, previous: 4 },
+  ])
 
   // Without an end date the window ends on the newest visits day.
   const latest = await run(Storage.use.pageVisitsOverview(2))
@@ -718,10 +731,26 @@ test("pageVisitsOverview and eventWindow anchor on the end date given", async ()
 
 test("re-fetching a day replaces its page and event rows", async () => {
   await run(Storage.use.saveVisits(visitsFor(["2024-01-10"], ["/a", "/b"]), ["2024-01-10"], "fake"))
-  await run(Storage.use.saveVisits(visitsFor(["2024-01-10"], ["/a"]), ["2024-01-10"], "other"))
+  await run(
+    Storage.use.saveVisits(
+      // The second fetch names one referrer fewer: the first fetch's rows must
+      // not linger beside it.
+      { ...visitsFor(["2024-01-10"], ["/a"]), acquisition: [
+        { date: "2024-01-10", dimension: "referrer", value: "google.com", visits: 3 },
+      ] },
+      ["2024-01-10"],
+      "other",
+    ),
+  )
 
   const overview = await run(Storage.use.pageVisitsOverview(1, "2024-01-10"))
   expect(overview.rows.map((row) => row.page)).toEqual(["/a"])
+  expect(await run(Storage.use.acquisitionWindow(1, "2024-01-10"))).toEqual([
+    { dimension: "referrer", value: "google.com", current: 3, previous: 0 },
+  ])
+  expect((await run(Storage.use.visitsOfDay("2024-01-10"))).acquisition).toEqual([
+    { date: "2024-01-10", dimension: "referrer", value: "google.com", visits: 3 },
+  ])
   // The newest fetch names the provider that wrote it.
   expect((await run(Storage.use.visitsSummary())).source).toBe("other")
 })
@@ -736,6 +765,7 @@ test("visits reads are empty, not failures, for a site with no visits", async ()
   expect(await run(Storage.use.visitsHistory())).toEqual([])
   expect((await run(Storage.use.pageVisitsOverview())).latestDate).toBeNull()
   expect(await run(Storage.use.eventWindow())).toEqual([])
+  expect(await run(Storage.use.acquisitionWindow())).toEqual([])
   expect(await run(Storage.use.latestVisitsSyncedAt())).toBeNull()
 })
 

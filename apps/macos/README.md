@@ -116,7 +116,10 @@ bundle, and a replacement leaves it alone.
   the last half hour by the minute, today so far, and the feed of what visitors are doing — the one tab that polls.
   The rail stands beside every tab's pane: the app icon at the top, the Overview and the Realtime right under it so
   they can be reached from any tab, a site's own screens centred below, and a stand-in account icon at the bottom.
-  A site tab has four screens, peers chosen from the rail beside the pane: Dashboard; Registry, which lists
+  A site tab has four screens, peers chosen from the rail beside the pane: Dashboard, the period's Search
+  Console figures and chart with the provider's cards under them — realtime, visits, revenue, the period's
+  events, and where its visits came from as two cards, referrers and channels beside the UTM tags, each row
+  a count over a bar with its move against the period before; Registry, which lists
   every target page with its window, phase and keywords; Planning, which judges the plan's keywords on
   demand; and Log, the site's work record as a timeline of days. Pages Google reports as not indexed are
   dimmed in the Registry and in the ranking card. One header row — favicon, name, origin, people online, the

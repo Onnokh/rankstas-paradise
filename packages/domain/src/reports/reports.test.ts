@@ -499,6 +499,15 @@ const debugVisits: VisitsDays = {
     { date, page: "/visits-only", pageviews: 5, visits: 4 },
   ]),
   events: dates.map((date) => ({ date, name: "purchase", count: 2 })),
+  // Three referrers a day so a cap of two has something to cut, one channel,
+  // and one tagged link.
+  acquisition: dates.flatMap((date) => [
+    { date, dimension: "referrer" as const, value: "google.com", visits: 30 },
+    { date, dimension: "referrer" as const, value: "reddit.com", visits: 5 },
+    { date, dimension: "referrer" as const, value: "bing.com", visits: 1 },
+    { date, dimension: "channel" as const, value: "Organic Search", visits: 31 },
+    { date, dimension: "utm_source" as const, value: "newsletter", visits: 2 },
+  ]),
 }
 
 test("statusReport counts registry targets/keywords and sitemap pages", async () => {
@@ -1341,6 +1350,34 @@ test("eventsReport sums each event over the window and the one before", async ()
   expect(week.window.currentStart).toBe("2026-07-06")
 })
 
+test("acquisitionReport sums each source over the window and the one before, capped per dimension", async () => {
+  const report = await run(Reports.use.acquisitionReport())
+  expect(report.analytics?.provider).toBe("fake")
+  expect(report.windowDays).toBe(28)
+  expect(report.limit).toBe(50)
+  // The same anchor as the events report.
+  expect(report.window.currentEnd).toBe("2026-07-12")
+  expect(report.window.currentStart).toBe("2026-06-15")
+  // Flat, so both windows agree and every delta is zero.
+  expect(report.rows).toEqual([
+    { dimension: "channel", value: "Organic Search", current: 868, previous: 868, delta: 0 },
+    { dimension: "referrer", value: "google.com", current: 840, previous: 840, delta: 0 },
+    { dimension: "referrer", value: "reddit.com", current: 140, previous: 140, delta: 0 },
+    { dimension: "referrer", value: "bing.com", current: 28, previous: 28, delta: 0 },
+    { dimension: "utm_source", value: "newsletter", current: 56, previous: 56, delta: 0 },
+  ])
+
+  // The cap is per dimension, and keeps each dimension's strongest rows.
+  const capped = await run(Reports.use.acquisitionReport(7, 2))
+  expect(capped.limit).toBe(2)
+  expect(capped.rows.map((row) => [row.dimension, row.value, row.current])).toEqual([
+    ["channel", "Organic Search", 217],
+    ["referrer", "google.com", 210],
+    ["referrer", "reddit.com", 35],
+    ["utm_source", "newsletter", 14],
+  ])
+})
+
 test("todayReport reads the day in progress from the ledger", async () => {
   // Before the today sync has run: the day is zeros, not an error.
   const before = await run(Reports.use.todayReport())
@@ -1368,6 +1405,9 @@ test("todayReport reads the day in progress from the ledger", async () => {
           site: [{ date: "2026-07-13", pageviews: 40, visits: 25, visitors: 20 }],
           pages: [{ date: "2026-07-13", page: "/", pageviews: 40, visits: 25 }],
           events: [{ date: "2026-07-13", name: "purchase", count: 1 }],
+          acquisition: [
+            { date: "2026-07-13", dimension: "referrer", value: "google.com", visits: 9 },
+          ],
         },
         ["2026-07-13"],
         "fake",
@@ -1386,6 +1426,9 @@ test("todayReport reads the day in progress from the ledger", async () => {
   expect(report.today?.hours[11]).toEqual({ hour: 11, pageviews: 0, visits: 0, visitors: 0 })
   expect(report.today?.pages).toEqual([{ date: "2026-07-13", page: "/", pageviews: 40, visits: 25 }])
   expect(report.today?.events).toEqual([{ date: "2026-07-13", name: "purchase", count: 1 }])
+  expect(report.today?.acquisition).toEqual([
+    { date: "2026-07-13", dimension: "referrer", value: "google.com", visits: 9 },
+  ])
   expect(report.today?.syncedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
 
   // The events window still ends on the last FINISHED day, so today's partial
@@ -1393,6 +1436,10 @@ test("todayReport reads the day in progress from the ledger", async () => {
   const events = await run(Reports.use.eventsReport())
   expect(events.window.currentEnd).toBe("2026-07-12")
   expect(events.events).toEqual([{ name: "purchase", current: 56, previous: 56, delta: 0 }])
+  // And so does the acquisition window: today's nine google.com visits are
+  // not in the 840.
+  const acquisition = await run(Reports.use.acquisitionReport())
+  expect(acquisition.rows.find((row) => row.value === "google.com")?.current).toBe(840)
 })
 
 test("revenueReport sums the window and the one before from the ledger, ending on the last whole day", async () => {

@@ -148,6 +148,27 @@ struct EventRow: Codable, Sendable, Equatable, Identifiable {
     var id: String { name }
 }
 
+/// `/api/acquisition`: where the site's visits came from over a window against the window
+/// before, one row per referrer host, channel or UTM tag, strongest first within its dimension.
+struct AcquisitionReport: Codable, Sendable {
+    let generatedAt: String
+    let windowDays: Int
+    let rows: [AcquisitionRow]
+}
+
+struct AcquisitionRow: Codable, Sendable, Equatable, Identifiable {
+    /// The server's word for the dimension: `referrer`, `channel`, `utm_source`, `utm_medium` or
+    /// `utm_campaign`. A string rather than an enum, so a dimension this build does not know
+    /// decodes and is set aside (see `AcquisitionList`) rather than failing the whole list.
+    let dimension: String
+    let value: String
+    let current: Double
+    let previous: Double
+    let delta: Double
+
+    var id: String { "\(dimension)|\(value)" }
+}
+
 /// `/api/revenue`: the site's sales over a window against the window before, from the server's
 /// ledger. Amounts arrive in the currency's minor unit (cents); `Money` shows them.
 struct RevenueReport: Codable, Sendable, Equatable {
@@ -253,6 +274,8 @@ struct TodayVisits: Codable, Sendable, Equatable {
     let hours: [VisitsHour]
     let pages: [TodayPage]
     let events: [TodayEvent]
+    /// Where today's visits came from so far. Nil from a server that predates the series.
+    var acquisition: [TodayAcquisition]? = nil
     /// When the server last wrote today's rows; nil before its first sync of the day.
     let syncedAt: String?
 
@@ -281,6 +304,16 @@ struct TodayEvent: Codable, Sendable, Equatable, Identifiable {
     let count: Double
 
     var id: String { name }
+}
+
+/// One of today's sources so far: the same row as `AcquisitionRow` without a previous period,
+/// because there is no previous today.
+struct TodayAcquisition: Codable, Sendable, Equatable, Identifiable {
+    let dimension: String
+    let value: String
+    let visits: Double
+
+    var id: String { "\(dimension)|\(value)" }
 }
 
 /// `/api/live`: the people on the site right now. The one read that asks the analytics

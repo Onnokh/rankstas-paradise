@@ -32,6 +32,7 @@ import {
   type ApiError,
   ApiHttpError,
   DashboardSnapshot,
+  AcquisitionReport,
   EventsReport,
   RevenueReport,
   HistoryReport,
@@ -117,6 +118,13 @@ export interface Interface {
     window?: number,
     site?: SiteId,
   ) => Effect.Effect<EventsReport, ApiError>
+  // Where the visits came from over `window` days against the window before,
+  // at most `limit` rows per dimension (GET /api/acquisition).
+  readonly acquisition: (
+    window?: number,
+    limit?: number,
+    site?: SiteId,
+  ) => Effect.Effect<AcquisitionReport, ApiError>
   // Sales over `window` whole days against the window before (GET /api/revenue).
   readonly revenue: (
     window?: number,
@@ -384,6 +392,16 @@ export const layer = Layer.effect(
       ) {
         return yield* send("GET", "/api/events", EventsReport, {
           query: { window, site },
+        })
+      }),
+
+      acquisition: Effect.fn("ApiClient.acquisition")(function* (
+        window?: number,
+        limit?: number,
+        site?: SiteId,
+      ) {
+        return yield* send("GET", "/api/acquisition", AcquisitionReport, {
+          query: { window, limit, site },
         })
       }),
 

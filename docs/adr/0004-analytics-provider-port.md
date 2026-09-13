@@ -138,3 +138,12 @@ latest date so clicks and visits describe the same days.
 - Backfilling visits history is not wired yet; the first sync takes the last
   28 days and later syncs fill gaps forward. A provider that keeps long
   history can be backfilled through the same port later.
+- Amended, September 2026: a fourth series, **acquisition** — where each day's
+  visits came from, one row per value of `referrer` (host, `www.` stripped),
+  `channel` (the provider's own grouping) and `utm_source` / `utm_medium` /
+  `utm_campaign`. Still the intersection: Rybbit, Umami and GA4 all answer
+  these five; `utm_term` and `utm_content` are left out. Stored in
+  `analytics_acquisition_daily`, served by `GET /api/acquisition` and inside
+  `/api/today`. For Rybbit it costs five more metric calls per synced day, so
+  a first sync of 28 days is about 200 calls, which the adapter's concurrency
+  keeps under the cloud's rate limit.

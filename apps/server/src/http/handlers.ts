@@ -510,6 +510,22 @@ export const makeApiGroup = (ctx: ServerContext) => {
           return siteJson(query.site, Reports.use.eventsReport(windowDays ?? 28))
         }),
       )
+      .handle("acquisition", ({ query }) =>
+        Effect.promise(async () => {
+          let windowDays: number | undefined
+          let limit: number | undefined
+          try {
+            windowDays = numberParam(query.window, "window")
+            limit = numberParam(query.limit, "limit")
+          } catch (cause) {
+            return errorEnvelope(messageOf(cause), ctx.debug, 400)
+          }
+          return siteJson(
+            query.site,
+            Reports.use.acquisitionReport(windowDays ?? 28, limit ?? 50),
+          )
+        }),
+      )
       .handle("revenue", ({ query }) =>
         Effect.promise(async () => {
           let windowDays: number | undefined

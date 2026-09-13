@@ -1,8 +1,8 @@
 import Foundation
 import Observation
 
-/// The ranked lists under a site's chart: its keywords and events for the chosen period, its
-/// revenue over that period, and its registry targets. The lists are held in the server's
+/// The ranked lists under a site's chart: its keywords, events and sources (where its visits
+/// came from) for the chosen period, its revenue over that period, and its registry targets. The lists are held in the server's
 /// order; the cards rank them.
 ///
 /// Cache-first like the history: the last lists for a site are read from disk the first time
@@ -19,6 +19,9 @@ final class RankingStore {
 
     private(set) var keywords: [KeywordsKey: [QueryRow]] = [:]
     private(set) var events: [KeywordsKey: [EventRow]] = [:]
+    /// Where the period's visits came from, as the server ranks them: every dimension in one
+    /// list, at most `rowLimit` rows each. The cards cut it by dimension.
+    private(set) var acquisition: [KeywordsKey: [AcquisitionRow]] = [:]
     private(set) var revenue: [KeywordsKey: RevenueReport] = [:]
     private(set) var registry: [Site.ID: [RegistryTarget]] = [:]
     /// How much of each site's registry Google held, day by day. Comes with the registry, in
@@ -39,7 +42,7 @@ final class RankingStore {
     private(set) var loading: Set<Site.ID> = []
 
     /// Rows a card shows.
-    static let rowLimit = 10
+    nonisolated static let rowLimit = 10
     /// Keywords fetched per period: enough that the top ten by either metric are in the set.
     static let keywordLimit = 50
 
@@ -84,8 +87,8 @@ final class RankingStore {
         do {
             let client = try makeClient()
             let key = KeywordsKey(siteID: siteID, period: period)
-            // The six reads are independent, so they go out together. Awaited one after
-            // another they cost six round trips end to end, and opening a site tab waited
+            // The seven reads are independent, so they go out together. Awaited one after
+            // another they cost seven round trips end to end, and opening a site tab waited
             // on the sum of them; now it waits on the slowest.
             async let periodLists = lists
                 ? Self.periodLists(client, siteID: siteID, period: period, limit: Self.keywordLimit)
@@ -95,6 +98,7 @@ final class RankingStore {
             if let fetched = try await periodLists {
                 keywords[key] = fetched.queries
                 events[key] = fetched.events
+                acquisition[key] = fetched.acquisition
                 revenue[key] = fetched.revenue
                 freshPeriods.insert(key)
             }
@@ -128,10 +132,11 @@ final class RankingStore {
 
     // MARK: Reads
 
-    /// One period's three lists, read together.
+    /// One period's four lists, read together.
     private struct PeriodRead: Sendable {
         let queries: [QueryRow]
         let events: [EventRow]
+        let acquisition: [AcquisitionRow]
         let revenue: RevenueReport
     }
 
@@ -165,10 +170,14 @@ final class RankingStore {
     ) async throws -> PeriodRead {
         async let queries = client.queries(siteID: siteID, windowDays: period.days, limit: limit)
         async let events = client.events(siteID: siteID, windowDays: period.days)
+        // The cards show `rowLimit` rows per dimension and rank them again on the client, so
+        // the server's own cap is the card's: a quarter's referrer list is hundreds of hosts.
+        async let acquisition = client.acquisition(siteID: siteID, windowDays: period.days, limit: RankingStore.rowLimit)
         async let revenue = client.revenue(siteID: siteID, windowDays: period.days)
         return PeriodRead(
             queries: try await queries.queries,
             events: try await events.events,
+            acquisition: try await acquisition.rows,
             revenue: try await revenue
         )
     }
@@ -247,6 +256,10 @@ final class RankingStore {
     private struct SiteCache: Codable {
         var keywords: [Period.RawValue: [QueryRow]] = [:]
         var events: [Period.RawValue: [EventRow]] = [:]
+        /// Optional, unlike the lists before it: a cache written before this list existed has
+        /// no key for it, and a required key would throw the whole cache away on the first
+        /// launch after the update rather than only lack this one list.
+        var acquisition: [Period.RawValue: [AcquisitionRow]]?
         var revenue: [Period.RawValue: RevenueReport] = [:]
         var registry: [RegistryTarget]?
         var coverage: [IndexCoverageDay]?
@@ -264,6 +277,7 @@ final class RankingStore {
             let key = KeywordsKey(siteID: siteID, period: period)
             if keywords[key] == nil, let rows = cached.keywords[period.rawValue] { keywords[key] = rows }
             if events[key] == nil, let rows = cached.events[period.rawValue] { events[key] = rows }
+            if acquisition[key] == nil, let rows = cached.acquisition?[period.rawValue] { acquisition[key] = rows }
             if revenue[key] == nil, let report = cached.revenue[period.rawValue] { revenue[key] = report }
         }
         if registry[siteID] == nil, let targets = cached.registry {
@@ -300,6 +314,10 @@ final class RankingStore {
             let key = KeywordsKey(siteID: siteID, period: period)
             cache.keywords[period.rawValue] = keywords[key]
             cache.events[period.rawValue] = events[key]
+            if let rows = acquisition[key] {
+                cache.acquisition = cache.acquisition ?? [:]
+                cache.acquisition?[period.rawValue] = rows
+            }
             cache.revenue[period.rawValue] = revenue[key]
         }
         try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)

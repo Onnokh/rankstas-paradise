@@ -13,6 +13,7 @@ import { Schema } from "effect"
 
 import { Site } from "@rp/domain/sites/schema"
 import {
+  AcquisitionReport,
   DashboardSnapshot,
   EventsReport,
   HistoryReport,
@@ -37,6 +38,7 @@ import {
 // Re-export the report DTOs the client decodes against, so consumers get the
 // wire contract from one place without reaching into the domain package.
 export {
+  AcquisitionReport,
   DashboardSnapshot,
   EventsReport,
   HistoryReport,

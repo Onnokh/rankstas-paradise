@@ -264,6 +264,31 @@ test("events: window maps to the wire query param", async () => {
   expect(http.calls[0]!.url.searchParams.get("site")).toBe("sleevy")
 })
 
+test("acquisition: window and limit map to the wire query params", async () => {
+  const http = fakeHttp(() => ({
+    status: 200,
+    body: {
+      analytics: null,
+      windowDays: 7,
+      limit: 5,
+      window: { currentStart: null, currentEnd: null, previousStart: null, previousEnd: null },
+      rows: [
+        { dimension: "referrer", value: "google.com", current: 3, previous: 1, delta: 2 },
+      ],
+    },
+  }))
+
+  const result = await ApiClient.use
+    .acquisition(7, 5, siteId)
+    .pipe(Effect.provide(buildLayer(http.layer)), Effect.runPromise)
+
+  expect(result.rows[0]?.dimension).toBe("referrer")
+  expect(http.calls[0]!.url.pathname).toBe("/api/acquisition")
+  expect(http.calls[0]!.url.searchParams.get("window")).toBe("7")
+  expect(http.calls[0]!.url.searchParams.get("limit")).toBe("5")
+  expect(http.calls[0]!.url.searchParams.get("site")).toBe("sleevy")
+})
+
 test("revenue: window maps to the wire query param", async () => {
   const zero = { orders: 0, revenue: 0, net: 0 }
   const http = fakeHttp(() => ({

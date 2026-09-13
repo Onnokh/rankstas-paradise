@@ -227,12 +227,42 @@ const healthy: Answer = (url) => {
       status: 200,
       body: metricEnvelope([{ value: "purchase", count: 2, percentage: 100 }]),
     }
+  if (parameter === "referrer")
+    return {
+      status: 200,
+      body: metricEnvelope([
+        // Rybbit answers domainWithoutWWW(referrer): a bare host.
+        { value: "google.com", count: 30, pageviews: 45, percentage: 50 },
+        // A direct visit has a blank referrer, and is not a row.
+        { value: "", count: 25, pageviews: 40, percentage: 41.6 },
+        { value: "reddit.com", count: 5, pageviews: 6, percentage: 8.3 },
+      ]),
+    }
+  if (parameter === "channel")
+    return {
+      status: 200,
+      body: metricEnvelope([
+        { value: "Organic Search", count: 30, pageviews: 45, percentage: 50 },
+        { value: "Direct", count: 25, pageviews: 40, percentage: 41.6 },
+      ]),
+    }
+  if (parameter === "utm_source")
+    return {
+      status: 200,
+      body: metricEnvelope([
+        // Untagged visits come back as a blank value, and are not a row either.
+        { value: "", count: 58, pageviews: 90, percentage: 96.6 },
+        { value: "newsletter", count: 2, pageviews: 3, percentage: 3.3 },
+      ]),
+    }
+  if (parameter === "utm_medium" || parameter === "utm_campaign")
+    return { status: 200, body: metricEnvelope([]) }
   return { status: 404, body: { error: "unknown route" } }
 }
 
 const noRetries = Rybbit.makeWith({ transientRetries: 0, concurrency: 1 })
 
-test("fetches the series once and the two metrics once per day, with the key", async () => {
+test("fetches the series once and the seven metrics once per day, with the key", async () => {
   const seen: Seen = { requests: [] }
   const exit = await fetchWith(
     noRetries,
@@ -241,8 +271,9 @@ test("fetches the series once and the two metrics once per day, with the key", a
   )
 
   expect(Exit.isSuccess(exit)).toBe(true)
-  // 1 time-series + 2 days × (pathname + event_name) = 5 requests, all bearer.
-  expect(seen.requests).toHaveLength(5)
+  // 1 time-series + 2 days × (pathname + event_name + five acquisition
+  // dimensions) = 15 requests, all bearer.
+  expect(seen.requests).toHaveLength(15)
   for (const { auth } of seen.requests) expect(auth).toBe("Bearer rb_org_test")
 
   const series = seen.requests.find((r) => r.url.pathname.endsWith("/time-series"))!
@@ -257,7 +288,7 @@ test("fetches the series once and the two metrics once per day, with the key", a
 
   // Each metric call covers exactly one day: the endpoint sums over its range.
   const metrics = seen.requests.filter((r) => r.url.pathname.endsWith("/metric"))
-  expect(metrics).toHaveLength(4)
+  expect(metrics).toHaveLength(14)
   for (const { url } of metrics) {
     expect(url.searchParams.get("start_date")).toBe(url.searchParams.get("end_date"))
     expect(url.searchParams.get("time_zone")).toBe("Europe/Amsterdam")
@@ -265,7 +296,15 @@ test("fetches the series once and the two metrics once per day, with the key", a
   }
   expect(
     metrics.map((r) => r.url.searchParams.get("parameter")).sort(),
-  ).toEqual(["event_name", "event_name", "pathname", "pathname"])
+  ).toEqual([
+    "channel", "channel",
+    "event_name", "event_name",
+    "pathname", "pathname",
+    "referrer", "referrer",
+    "utm_campaign", "utm_campaign",
+    "utm_medium", "utm_medium",
+    "utm_source", "utm_source",
+  ])
 })
 
 test("maps Rybbit's rows to the canonical shapes and keeps only the days asked", async () => {
@@ -295,6 +334,17 @@ test("maps Rybbit's rows to the canonical shapes and keeps only the days asked",
     { date: "2026-09-01", name: "purchase", count: 2 },
     { date: "2026-09-03", name: "purchase", count: 2 },
   ])
+  // The acquisition dimensions: `count` is sessions → visits, the blank
+  // referrer (direct) and the blank utm_source (untagged) are skipped, and a
+  // dimension Rybbit has no rows for adds nothing.
+  expect(visits.acquisition.filter((row) => row.date === "2026-09-01")).toEqual([
+    { date: "2026-09-01", dimension: "referrer", value: "google.com", visits: 30 },
+    { date: "2026-09-01", dimension: "referrer", value: "reddit.com", visits: 5 },
+    { date: "2026-09-01", dimension: "channel", value: "Organic Search", visits: 30 },
+    { date: "2026-09-01", dimension: "channel", value: "Direct", visits: 25 },
+    { date: "2026-09-01", dimension: "utm_source", value: "newsletter", visits: 2 },
+  ])
+  expect(visits.acquisition).toHaveLength(10)
 })
 
 test("follows totalCount across metric pages", async () => {

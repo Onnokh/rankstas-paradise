@@ -181,6 +181,12 @@ const analyticsMock = (recorder: Recorder) =>
             visits: 6,
           })),
           events: dates.map((date) => ({ date, name: "purchase", count: 1 })),
+          acquisition: dates.map((date) => ({
+            date,
+            dimension: "referrer" as const,
+            value: "google.com",
+            visits: 4,
+          })),
         }
       }),
   })

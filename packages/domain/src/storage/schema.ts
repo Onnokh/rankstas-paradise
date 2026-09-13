@@ -4,6 +4,8 @@
 // Downstream tickets code against these exact types.
 import { Schema } from "effect"
 
+import { acquisitionDimensions } from "../analytics/schema.ts"
+
 import { RegistryEntry } from "../registry/schema.ts"
 
 // The four Search Console metrics, summed/weighted over some window.
@@ -315,6 +317,17 @@ export const EventWindowRow = Schema.Struct({
 }).annotate({ identifier: "EventWindowRow" })
 export interface EventWindowRow
   extends Schema.Schema.Type<typeof EventWindowRow> {}
+
+// How many visits one value of one acquisition dimension brought in the
+// current and previous window (see ../analytics/schema.ts, AcquisitionDay).
+export const AcquisitionWindowRow = Schema.Struct({
+  dimension: Schema.Literals(acquisitionDimensions),
+  value: Schema.String,
+  current: Schema.Number,
+  previous: Schema.Number,
+}).annotate({ identifier: "AcquisitionWindowRow" })
+export interface AcquisitionWindowRow
+  extends Schema.Schema.Type<typeof AcquisitionWindowRow> {}
 
 // How much of the visits series is in the ledger, and which provider wrote the
 // newest fetch — the visits counterpart of SnapshotSummary + SnapshotDateRange.
