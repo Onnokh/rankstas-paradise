@@ -25,13 +25,18 @@ The file is JSON:
 
 ## Settings (⌘,)
 
-Sites on the left; on the right the chosen site's settings (property, origin, sitemap, brand
-terms, and the analytics and revenue provider fields) with a Save button, and one row per
-vendor key showing where it comes from (`stored ····1234`, `server env`, or `not set`) with a
-field to store a new one. "App keys" holds the two account-wide vendor keys,
-Ahrefs and DataForSEO — the vendors no Site setting names, because each is one
-account serving every Site. Adding sites, clients, and
-removing keys are API-only for now (see [docs/http-api.md](../../docs/http-api.md)).
+One window without a title bar, two columns. Down the left, under a search field, the pages
+stand in three groups: **Account** is the server this Mac is signed in to (its address,
+whether a token is set, and where both were read from); **Sites** is one page per site,
+each with its favicon; **Vendors** holds *Keys*, the two account-wide vendor keys, Ahrefs
+and DataForSEO — the vendors no Site setting names, because each is one account serving
+every Site. A site's page shows its settings as rows — property, origin, sitemap, brand
+terms, and the analytics and revenue provider fields — with the words on the left and the
+field on the right, then one row per vendor key saying where it comes from (stored, the
+server's environment, or not set) with a field to store a new one. Edits go to the server
+with the Save button in the page's header, or Enter. The search narrows the pages and the
+rows on the open page. Adding sites, clients, and removing keys are API-only for now (see
+[docs/http-api.md](../../docs/http-api.md)).
 
 ## Run
 
