@@ -656,16 +656,20 @@ struct FeedOneLineRow: View {
     private static let siteWidth: CGFloat = 136
     /// The caption's zone. Fixed, so the headline's zone is fixed too.
     private static let captionWidth: CGFloat = 300
+    /// How far the hover's highlight reaches past the row's words on either side.
+    private static let overhang: CGFloat = 8
 
-    private var wordsX: CGFloat { 12 + Self.gutter + 16 + (showsSite ? Self.siteWidth + 16 : 0) }
+    private var wordsX: CGFloat { Self.gutter + 16 + (showsSite ? Self.siteWidth + 16 : 0) }
 
     var body: some View {
+        // Flush with the card: the age starts where the title starts, the flag ends where
+        // the kind switch ends. The row adds no padding of its own.
         HStack(alignment: .firstTextBaseline, spacing: 16) {
             Text(line.age)
                 .font(.caption)
                 .monospacedDigit()
                 .foregroundStyle(.tertiary)
-                .frame(width: Self.gutter, alignment: .trailing)
+                .frame(width: Self.gutter, alignment: .leading)
 
             if showsSite {
                 HStack(spacing: 8) {
@@ -688,7 +692,7 @@ struct FeedOneLineRow: View {
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(FeedHierarchyRow.caption(for: line))
+            Text(Self.caption(for: line))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
@@ -704,13 +708,14 @@ struct FeedOneLineRow: View {
                     .help(line.returnsHelp ?? "first visit")
                 Text(line.flag)
                     .font(.body)
-                    .frame(width: 24, alignment: .trailing)
+                    .frame(width: 20, alignment: .trailing)
                     .help(line.country)
             }
         }
-        .padding(.horizontal, 12)
         .frame(height: Self.height)
+        .padding(.horizontal, Self.overhang)
         .background(isHovered ? Palette.line.opacity(0.45) : Color.clear, in: .rect(cornerRadius: 6))
+        .padding(.horizontal, -Self.overhang)
         .contentShape(Rectangle())
         .overlay(alignment: .topLeading) {
             if isHovered {
@@ -723,6 +728,26 @@ struct FeedOneLineRow: View {
         }
         .zIndex(isHovered ? 1 : 0)
         .accessibilityElement(children: .combine)
+    }
+
+    /// The context, in one grey: "after /eu/drakthul/felmasakr · 5 steps", or "from
+    /// google.com" for a first step with a known referrer, or nothing. One line has no
+    /// empty slot to fill, so a first step with no referrer says nothing rather than
+    /// "arrived".
+    static func caption(for line: FeedQuietLine) -> String {
+        var parts: [String] = []
+        if let newest = line.newest, newest.repeats > 1 {
+            parts.append("loaded \(newest.repeats) times")
+        }
+        if line.steps.count > 1, let previous = line.steps.dropLast().last {
+            parts.append("after \(FeedQuiet.readable(previous.primary))")
+            if line.steps.count > 2 {
+                parts.append("\(line.steps.count) steps")
+            }
+        } else if let origin = line.origin {
+            parts.append(origin)
+        }
+        return parts.joined(separator: "  ·  ")
     }
 
     @ViewBuilder private var headline: some View {
