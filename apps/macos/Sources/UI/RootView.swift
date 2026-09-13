@@ -372,8 +372,12 @@ struct RootView: View {
         let siteIDs = model.sites.map(\.id)
         switch tab {
         case .overview:
+            // The cards read the series and the ranked lists — sales, registry — for every
+            // site, so both are fetched again for every site.
+            let period = workspace.overviewState.period
             for siteID in siteIDs {
                 Task { await history.refresh(siteID) }
+                Task { await rankings.refresh(siteID, period: period) }
             }
         case .realtime:
             Task { await live.refreshAll(siteIDs) }

@@ -103,14 +103,16 @@ bundle, and a replacement leaves it alone.
 ## Layout
 
 - `Sources/App` — the app entry and its menu bar additions (`ViewCommands`).
-- `Sources/Model` — API client, DTOs, cache-first repository, `OverviewModel`, `OverviewGlance` (the Overview's per-site arithmetic), `LiveStore` (live counts and the live feed, polled, never cached). Data only, shared by every tab.
+- `Sources/Model` — API client, DTOs, cache-first repository, `OverviewModel`, `OverviewGlance` and `ProjectTrajectory` (the Overview's per-site arithmetic: the strip's totals, and each project's period against the period before), `LiveStore` (live counts and the live feed, polled, never cached). Data only, shared by every tab.
 - `Sources/Workspace` — `Workspace` (tabs, active tab, bounded mounted set), per-tab state, `PeekProgress` (0 closed, 1 strip, 2 grid).
 - `Sources/Gesture` — three-finger trackpad drag recogniser streaming travel and velocity.
 - `Sources/UI` — `RootView`, `TabBar`, `PeekOverlay`, `TabContentStack`, `ScreenRail`, and `PeekLayout`, the pure struct that turns window size plus peek progress into every frame.
 - `Sources/UI/Screens` — one screen per tab kind, rendered from tab state. A site's peek preview always shows its dashboard.
-  The first two tabs are the same on every server. The Overview is the sites compared: one row per site with its
-  clicks, impressions, click-through rate, position and visits over a chosen period, each against the period
-  before, read from what is stored and never polled. The Realtime is the sites watched: who is on each site now,
+  The first two tabs are the same on every server. The Overview is the projects compared: the strip sums the
+  sites over a chosen period, and under it one card per project says how it does — the site in a zone of its own
+  with what it sold, then Search, Visitors and Plan, each the period against the period before as a percentage
+  with a word (Growing, Flat, Slipping at ten percent either way) and as two runs on one small chart, the period
+  in the source's colour over the period before in grey. Read from what is stored and never polled. The Realtime is the sites watched: who is on each site now,
   the last half hour by the minute, today so far, and the feed of what visitors are doing — the one tab that polls.
   The rail stands beside every tab's pane: the app icon at the top, the Overview and the Realtime right under it so
   they can be reached from any tab, a site's own screens centred below, and a stand-in account icon at the bottom.
