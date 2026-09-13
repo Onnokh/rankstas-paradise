@@ -157,6 +157,16 @@ struct ProtoCardHeader: View {
     }
 }
 
+/// Where a site's sales sit on the compact card.
+enum ProtoSalesPlacement {
+    /// Third of four columns, a dash where the site does not sell.
+    case column
+    /// Last of four columns, blank where the site does not sell.
+    case last
+    /// Under the site's name, in its zone; the columns are the three every site has.
+    case nameZone
+}
+
 /// How the period is set against the one before.
 enum ProtoCompareStyle {
     /// The period as a line and area in the source's colour, over the period before as a
@@ -274,13 +284,14 @@ struct ProtoTrajectoryVariant: View {
     let period: Period
     let style: ProtoCompareStyle
     var compact = false
+    var sales: ProtoSalesPlacement = .column
     let icon: (Site.ID) -> Image?
     let onOpen: (Site.ID) -> Void
 
     var body: some View {
         VStack(spacing: compact ? 12 : 20) {
             ForEach(sites) { site in
-                ProtoTrajectoryCard(site: site, period: period, style: style, compact: compact, icon: icon(site.id))
+                ProtoTrajectoryCard(site: site, period: period, style: style, compact: compact, sales: sales, icon: icon(site.id))
                     .onTapGesture(count: 2) { onOpen(site.id) }
                     .help(site.glance.errorMessage ?? "Double-click to open \(site.site.name)")
             }
@@ -295,7 +306,11 @@ struct ProtoTrajectoryCard: View {
     let period: Period
     let style: ProtoCompareStyle
     var compact = false
+    var sales: ProtoSalesPlacement = .column
     let icon: Image?
+
+    /// The name zone: wider when it also carries the sales.
+    private var nameWidth: CGFloat { sales == .nameZone ? 184 : 140 }
 
     /// The compact card's sizes: the figure at 20 points, the picture at 36.
     private var figureSize: CGFloat { compact ? 20 : 28 }
@@ -344,8 +359,12 @@ struct ProtoTrajectoryCard: View {
                                 .foregroundStyle(Palette.coral)
                                 .help(error)
                         }
+                        if sales == .nameZone, site.sells {
+                            salesColumn
+                                .padding(.top, 14)
+                        }
                     }
-                    .frame(width: 140, alignment: .leading)
+                    .frame(width: nameWidth, alignment: .leading)
                     columns
                 }
             } else {
@@ -362,48 +381,76 @@ struct ProtoTrajectoryCard: View {
     }
 
     private var columns: some View {
+        HStack(alignment: .top, spacing: compact ? 20 : 28) {
+            searchColumn
+            visitorsColumn
+            switch sales {
+            case .column:
+                salesColumn
+                planColumn
+            case .last:
+                planColumn
+                if site.sells {
+                    salesColumn
+                } else {
+                    // The zone stays, empty: the three columns before it keep their place
+                    // on every card, and the eye reads the blank as room, not as a hole.
+                    // One point tall: a clear colour takes every point it is offered, and
+                    // an empty zone must not set the card's height.
+                    Color.clear.frame(maxWidth: .infinity).frame(height: 1)
+                }
+            case .nameZone:
+                planColumn
+            }
+        }
+    }
+
+    private var searchColumn: some View {
         let clicks = ProtoGrowth.clicks(site)
+        return ProtoSourceColumn(
+            title: "Search",
+            growth: clicks,
+            line: "\(GlanceFigure.count(clicks.current)) clicks" + (clicks.previous.map { ", was \(GlanceFigure.count($0))" } ?? ""),
+            absent: nil,
+            figureSize: figureSize,
+            pictureHeight: pictureHeight
+        ) {
+            let run = runs(\.clicks)
+            ProtoCompareChart(current: run.now, previous: run.was, color: Palette.blue, style: style)
+        }
+    }
+
+    private var visitorsColumn: some View {
         let visits = ProtoGrowth.visits(site)
+        return ProtoSourceColumn(
+            title: "Visitors",
+            growth: visits,
+            line: visits.map { "\(GlanceFigure.count($0.current)) visits" + ($0.previous.map { ", was \(GlanceFigure.count($0))" } ?? "") } ?? "",
+            absent: "No analytics provider",
+            figureSize: figureSize,
+            pictureHeight: pictureHeight
+        ) {
+            let run = runs { $0.visits?.visits ?? 0 }
+            ProtoCompareChart(current: run.now, previous: run.was, color: visitsColor, style: style)
+        }
+    }
+
+    private var salesColumn: some View {
         let revenue = ProtoGrowth.revenue(site)
-        return HStack(alignment: .top, spacing: compact ? 20 : 28) {
-            ProtoSourceColumn(
-                title: "Search",
-                growth: clicks,
-                line: "\(GlanceFigure.count(clicks.current)) clicks" + (clicks.previous.map { ", was \(GlanceFigure.count($0))" } ?? ""),
-                absent: nil,
-                figureSize: figureSize,
-                pictureHeight: pictureHeight
-            ) {
-                let run = runs(\.clicks)
-                ProtoCompareChart(current: run.now, previous: run.was, color: Palette.blue, style: style)
-            }
-            ProtoSourceColumn(
-                title: "Visitors",
-                growth: visits,
-                line: visits.map { "\(GlanceFigure.count($0.current)) visits" + ($0.previous.map { ", was \(GlanceFigure.count($0))" } ?? "") } ?? "",
-                absent: "No analytics provider",
-                figureSize: figureSize,
-                pictureHeight: pictureHeight
-            ) {
-                let run = runs { $0.visits?.visits ?? 0 }
-                ProtoCompareChart(current: run.now, previous: run.was, color: visitsColor, style: style)
-            }
-            ProtoSourceColumn(
-                title: "Sales",
-                growth: revenue,
-                line: site.revenue.map { "\(Money.format($0.current.revenue, currency: $0.currency)), was \(Money.format($0.previous.revenue, currency: $0.currency))" } ?? "",
-                absent: "No commerce provider",
-                figureSize: figureSize,
-                pictureHeight: pictureHeight
-            ) {
-                // The revenue report carries only the window's days, and the period before
-                // as one total: that total is spread over the same days as a dashed line.
-                let now = shape((site.revenue?.days ?? []).map { $0.revenue / 100 })
-                let wasTotal = (site.revenue?.previous.revenue ?? 0) / 100
-                let was = now.isEmpty ? [] : Array(repeating: wasTotal / Double(now.count), count: now.count)
-                ProtoCompareChart(current: now, previous: was, color: Palette.mint, style: style, previousIsAverage: true)
-            }
-            planColumn
+        return ProtoSourceColumn(
+            title: "Sales",
+            growth: revenue,
+            line: site.revenue.map { "\(Money.format($0.current.revenue, currency: $0.currency)), was \(Money.format($0.previous.revenue, currency: $0.currency))" } ?? "",
+            absent: "No commerce provider",
+            figureSize: figureSize,
+            pictureHeight: pictureHeight
+        ) {
+            // The revenue report carries only the window's days, and the period before
+            // as one total: that total is spread over the same days as a dashed line.
+            let now = shape((site.revenue?.days ?? []).map { $0.revenue / 100 })
+            let wasTotal = (site.revenue?.previous.revenue ?? 0) / 100
+            let was = now.isEmpty ? [] : Array(repeating: wasTotal / Double(now.count), count: now.count)
+            ProtoCompareChart(current: now, previous: was, color: Palette.mint, style: style, previousIsAverage: true)
         }
     }
 

@@ -20,6 +20,15 @@ import SwiftUI
 // Three shapes, switchable from the floating bar at the bottom of the window (⌘⌥← / ⌘⌥→)
 // while the Overview is in front, with real data:
 //
+//   E1a-1 — Sales last: the columns run Search, Visitors, Plan, Sales, so a site without a
+//           commerce provider ends in a blank zone and the three columns every site has
+//           stand in the same place on every card
+//   E1a-2 — Sales in the name zone: the three shared columns only; a site that sells carries
+//           its sales under its name, in the zone that is otherwise empty below it
+//
+// (Round six's E1a was chosen: "sales is not always present, make sure we don't mess up the
+// rhythm because of that.")
+//
 //   E1a — Trajectory, toned down: the E1 card at two thirds — the site's name in a zone of
 //         its own on the left, the four sources beside it, the percentage at 20 points
 //   E1b — Trajectory, as rows: one card, one 64-point row per project, the four sources as
@@ -53,23 +62,23 @@ import SwiftUI
 final class OverviewPrototype {
     enum Variant: String, CaseIterable, Identifiable {
         // Declaration order is the order the floating bar cycles through.
-        case compact, rows, overlay
+        case salesLast, salesInName, compact
 
         var id: String { rawValue }
 
         var key: String {
             switch self {
+            case .salesLast: "E1a-1"
+            case .salesInName: "E1a-2"
             case .compact: "E1a"
-            case .rows: "E1b"
-            case .overlay: "E1"
             }
         }
 
         var name: String {
             switch self {
-            case .compact: "Trajectory, toned down: the card at two thirds, the name in its own zone"
-            case .rows: "Trajectory, as rows: one row per project in one card"
-            case .overlay: "Trajectory, as round five drew it (for comparison)"
+            case .salesLast: "Compact card, Sales last: blank where a site does not sell"
+            case .salesInName: "Compact card, Sales in the name zone: three shared columns"
+            case .compact: "Compact card as round six drew it (for comparison)"
             }
         }
     }
@@ -82,7 +91,7 @@ final class OverviewPrototype {
 
     init() {
         let stored = UserDefaults.standard.string(forKey: Self.defaultsKey)
-        variant = stored.flatMap(Variant.init(rawValue:)) ?? .compact
+        variant = stored.flatMap(Variant.init(rawValue:)) ?? .salesLast
     }
 
     func cycle(_ step: Int) {
@@ -326,12 +335,12 @@ struct OverviewPrototypeBody: View {
             .column()
 
             switch variant {
+            case .salesLast:
+                ProtoTrajectoryVariant(sites: sites, period: period, style: .overlay, compact: true, sales: .last, icon: icon, onOpen: onOpen)
+            case .salesInName:
+                ProtoTrajectoryVariant(sites: sites, period: period, style: .overlay, compact: true, sales: .nameZone, icon: icon, onOpen: onOpen)
             case .compact:
-                ProtoTrajectoryVariant(sites: sites, period: period, style: .overlay, compact: true, icon: icon, onOpen: onOpen)
-            case .rows:
-                ProtoTrajectoryRows(sites: sites, period: period, icon: icon, onOpen: onOpen)
-            case .overlay:
-                ProtoTrajectoryVariant(sites: sites, period: period, style: .overlay, compact: false, icon: icon, onOpen: onOpen)
+                ProtoTrajectoryVariant(sites: sites, period: period, style: .overlay, compact: true, sales: .column, icon: icon, onOpen: onOpen)
             }
 
             footer
