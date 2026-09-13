@@ -42,6 +42,20 @@ enum ClientConfiguration {
         }
     }
 
+    /// Where `load()` takes the target from, in words the Settings window can show: the two
+    /// variables when the environment has both, else the file's path.
+    static func sourceDescription(environment: [String: String] = ProcessInfo.processInfo.environment) -> String {
+        if let apiUrl = environment["RP_API_URL"],
+           let token = environment["RP_TOKEN"],
+           !apiUrl.isEmpty,
+           !token.isEmpty {
+            return "RP_API_URL and RP_TOKEN in the environment"
+        }
+        let path = fileURL(environment: environment).path
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
+    }
+
     static func fileURL(environment: [String: String]) -> URL {
         let configHome = environment["XDG_CONFIG_HOME"]
             .map { URL(fileURLWithPath: $0, isDirectory: true) }

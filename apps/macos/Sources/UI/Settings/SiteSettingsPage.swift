@@ -1,7 +1,10 @@
 import SwiftUI
 
-/// One site: its settings as plain fields, and one field per key. An empty optional field
-/// shows the value the server uses in its place, as read from the resolved site.
+/// One site: its settings as rows, one control each, and one row per key. An empty optional
+/// field shows the value the server uses in its place, as read from the resolved site.
+///
+/// Edits collect in a draft and go to the server on Save, which stands in the header: the
+/// settings travel as one document, so half a change is never what the server has.
 struct SiteSettingsPage: View {
     let model: SettingsModel
     let entry: SiteEntry
@@ -73,99 +76,83 @@ struct SiteSettingsPage: View {
 
     private var isDirty: Bool { draft != Draft(entry.settings) }
 
+    private var canSave: Bool {
+        isDirty && !isSaving && !draft.siteUrl.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     private var sitemapDefault: String {
-        guard let origin = resolved?.origin, let host = URL(string: origin)?.host() else { return "derived" }
+        guard let origin = resolved?.origin, let host = URL(string: origin)?.host() else { return "Derived from the origin" }
         return "https://\(host)/sitemap.xml"
     }
 
     var body: some View {
-        Form {
-            TextField("Name", text: $draft.name, prompt: Text(entry.id))
-            TextField("Property", text: $draft.siteUrl)
-            TextField("Origin", text: $draft.origin, prompt: Text(resolved?.origin ?? "derived"))
-            TextField("Sitemap", text: $draft.sitemapUrl, prompt: Text(sitemapDefault))
-            TextField("Brand terms", text: $draft.brandTerms, prompt: Text(entry.id))
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsPageHeader(resolved?.name ?? entry.name ?? entry.id, subtitle: resolved?.origin ?? entry.siteUrl) {
+                Button("Save", action: save)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!canSave)
+            }
+
+            SettingsSection("Site") {
+                SettingsRow("Name", detail: "How the site is called across the app.") {
+                    SettingsField(label: "Name", text: $draft.name, prompt: entry.id)
+                }
+                SettingsRow("Property", detail: "The Search Console property the site's results come from.") {
+                    SettingsField(label: "Property", text: $draft.siteUrl, prompt: "sc-domain:example.com")
+                }
+                SettingsRow("Origin", detail: "Where the site's pages live. Blank derives it from the property.") {
+                    SettingsField(label: "Origin", text: $draft.origin, prompt: resolved?.origin ?? "Derived from the property")
+                }
+                SettingsRow("Sitemap", detail: "The sitemap the registry is read from.") {
+                    SettingsField(label: "Sitemap", text: $draft.sitemapUrl, prompt: sitemapDefault)
+                }
+                SettingsRow("Brand terms", detail: "Comma-separated. A query with one of these counts as brand.") {
+                    SettingsField(label: "Brand terms", text: $draft.brandTerms, prompt: entry.id)
+                }
+            }
 
             if let analytics = entry.analytics {
-                Section("Analytics (\(analytics.provider))") {
-                    TextField("Site id", text: $draft.analyticsSiteId)
-                    TextField("Base URL", text: $draft.analyticsBaseUrl, prompt: Text("\(analytics.provider) cloud"))
-                    TextField("Time zone", text: $draft.analyticsTimeZone, prompt: Text(resolved?.analytics?.timeZone ?? "UTC"))
+                SettingsSection("Analytics · \(analytics.provider)") {
+                    SettingsRow("Site id", detail: "The site as \(analytics.provider) knows it.") {
+                        SettingsField(label: "Analytics site id", text: $draft.analyticsSiteId)
+                    }
+                    SettingsRow("Base URL", detail: "Blank uses the \(analytics.provider) cloud.") {
+                        SettingsField(label: "Analytics base URL", text: $draft.analyticsBaseUrl, prompt: "\(analytics.provider) cloud")
+                    }
+                    SettingsRow("Time zone", detail: "The zone the provider's days are cut in.") {
+                        SettingsField(label: "Analytics time zone", text: $draft.analyticsTimeZone, prompt: resolved?.analytics?.timeZone ?? "UTC")
+                    }
                 }
             }
 
             if let revenue = entry.revenue {
-                Section("Revenue (\(revenue.provider))") {
-                    TextField("Account id", text: $draft.revenueAccountId, prompt: Text("the token's own"))
-                    TextField("Base URL", text: $draft.revenueBaseUrl, prompt: Text("\(revenue.provider) production"))
-                    TextField("Time zone", text: $draft.revenueTimeZone, prompt: Text(resolved?.revenue?.timeZone ?? "UTC"))
+                SettingsSection("Revenue · \(revenue.provider)") {
+                    SettingsRow("Account id", detail: "Blank uses the account the token belongs to.") {
+                        SettingsField(label: "Revenue account id", text: $draft.revenueAccountId, prompt: "The token's own")
+                    }
+                    SettingsRow("Base URL", detail: "Blank uses \(revenue.provider) production.") {
+                        SettingsField(label: "Revenue base URL", text: $draft.revenueBaseUrl, prompt: "\(revenue.provider) production")
+                    }
+                    SettingsRow("Time zone", detail: "The zone the provider's days are cut in.") {
+                        SettingsField(label: "Revenue time zone", text: $draft.revenueTimeZone, prompt: resolved?.revenue?.timeZone ?? "UTC")
+                    }
                 }
             }
 
             if let secrets {
-                KeysSection(secrets: secrets, siteID: entry.id, model: model)
-            }
-
-            HStack {
-                Spacer()
-                Button("Save") {
-                    isSaving = true
-                    Task {
-                        _ = await model.saveSite(id: entry.id, settings: draft.settings(over: entry.settings))
-                        isSaving = false
-                    }
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(!isDirty || isSaving || draft.siteUrl.trimmingCharacters(in: .whitespaces).isEmpty)
+                KeysSection(title: "Keys", secrets: secrets, siteID: entry.id, model: model)
             }
         }
-        .formStyle(.columns)
+        .onSubmit(save)
         .onChange(of: entry) { _, stored in draft = Draft(stored.settings) }
     }
-}
 
-/// One row per key: a field whose placeholder says where the key comes from now, and Store.
-struct KeysSection: View {
-    let secrets: SecretsEnvelope
-    let siteID: Site.ID?
-    let model: SettingsModel
-
-    var body: some View {
-        Section("Keys") {
-            ForEach(secrets.slots) { slot in
-                KeyRow(slot: slot, siteID: siteID, model: model)
-            }
-            if !secrets.encryption.configured {
-                Text(secrets.encryption.reason ?? "Set RP_MASTER_KEY on the server.")
-                    .font(.callout)
-                    .foregroundStyle(Palette.amber)
-            }
-        }
-    }
-}
-
-struct KeyRow: View {
-    let slot: SecretSlot
-    let siteID: Site.ID?
-    let model: SettingsModel
-
-    @State private var value = ""
-
-    private var state: String {
-        if let stored = slot.stored { return stored.last4.isEmpty ? "stored" : "stored ····\(stored.last4)" }
-        if slot.inEnvironment { return "server env" }
-        return "not set"
-    }
-
-    var body: some View {
-        HStack {
-            SecureField(slot.purpose.capitalized, text: $value, prompt: Text(state))
-            Button("Store") {
-                Task {
-                    if await model.setSecret(siteID: siteID, purpose: slot.purpose, value: value) { value = "" }
-                }
-            }
-            .disabled(value.trimmingCharacters(in: .whitespaces).isEmpty)
+    private func save() {
+        guard canSave else { return }
+        isSaving = true
+        Task {
+            _ = await model.saveSite(id: entry.id, settings: draft.settings(over: entry.settings))
+            isSaving = false
         }
     }
 }

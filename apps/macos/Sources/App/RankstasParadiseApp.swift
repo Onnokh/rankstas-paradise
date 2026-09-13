@@ -13,9 +13,11 @@ struct RankstasParadiseApp: App {
             ViewCommands()
         }
 
-        // ⌘, — the server, each site's settings and keys, and the clients.
+        // ⌘, — the server and its keys, then each site's settings and keys, one page each.
         Settings {
             SettingsView()
         }
+        .defaultSize(width: 1040, height: 680)
+        .windowResizability(.contentMinSize)
     }
 }
