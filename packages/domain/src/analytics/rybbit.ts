@@ -11,6 +11,12 @@
 //     sums over its range and has no day dimension;
 //   - `GET /metric?parameter=event_name` for event counts, the same way. For
 //     this parameter Rybbit's `count` is the number of occurrences, not sessions;
+//   - `GET /metric?parameter=referrer|channel|utm_source|utm_medium|utm_campaign`
+//     for where the day's visits came from, one call per dimension per day, the
+//     same way again. `referrer` is Rybbit's `domainWithoutWWW(referrer)`: the
+//     host, already stripped, which is the canonical grain; `channel` is its own
+//     per-session grouping (Direct, Organic Search, …); the `utm_*` ones read the
+//     tag out of the URL's parameters. For all five `count` is distinct sessions;
 //   - `GET /live-user-count?minutes=N` for the people active right now, and
 //     `GET /overview/time-series?bucket=minute&past_minutes_start=N` for how
 //     many were seen in each of those minutes;
@@ -50,6 +56,8 @@ import {
 
 import { type Provider, type ProviderFactory } from "./providers.ts"
 import {
+  type AcquisitionDay,
+  acquisitionDimensions,
   AnalyticsError,
   type EventCountDay,
   type LiveEvent,
@@ -418,7 +426,7 @@ export const makeWith =
 
       // Every row of one metric for one day, following totalCount across pages.
       const metricRows = (
-        parameter: "pathname" | "event_name",
+        parameter: "pathname" | "event_name" | AcquisitionDay["dimension"],
         date: string,
       ): Effect.Effect<ReadonlyArray<Record<string, unknown>>, AnalyticsError> =>
         Effect.gen(function* () {
@@ -552,23 +560,36 @@ export const makeWith =
         }),
         fetchVisits: Effect.fn("Rybbit.fetchVisits")(function* (dates) {
           const sorted = [...new Set(dates)].sort()
-          if (sorted.length === 0) return { site: [], pages: [], events: [] }
+          if (sorted.length === 0) return { site: [], pages: [], events: [], acquisition: [] }
 
           const site = yield* siteDays(sorted)
+          // One day's metrics are asked one after another, and the days run
+          // side by side: the day is the unit of concurrency, so the calls in
+          // flight never exceed `concurrency` however many metrics a day has.
           const perDay = yield* Effect.forEach(
             sorted,
             (date) =>
               Effect.gen(function* () {
                 const pageRows = yield* metricRows("pathname", date)
                 const eventRows = yield* metricRows("event_name", date)
-                return { date, pageRows, eventRows }
+                const acquisitionRows: Array<{
+                  dimension: AcquisitionDay["dimension"]
+                  rows: ReadonlyArray<Record<string, unknown>>
+                }> = []
+                for (const dimension of acquisitionDimensions)
+                  acquisitionRows.push({
+                    dimension,
+                    rows: yield* metricRows(dimension, date),
+                  })
+                return { date, pageRows, eventRows, acquisitionRows }
               }),
             { concurrency: settings.concurrency },
           )
 
           const pages: Array<PageVisitsDay> = []
           const events: Array<EventCountDay> = []
-          for (const { date, pageRows, eventRows } of perDay) {
+          const acquisition: Array<AcquisitionDay> = []
+          for (const { date, pageRows, eventRows, acquisitionRows } of perDay) {
             for (const row of pageRows) {
               const page = asText(row["value"])
               if (!page) continue
@@ -586,9 +607,18 @@ export const makeWith =
               // For event_name, `count` is the number of occurrences.
               events.push({ date, name, count: asCount(row["count"]) })
             }
+            for (const { dimension, rows } of acquisitionRows)
+              for (const row of rows) {
+                const value = asText(row["value"])
+                // A blank value is a direct visit or an untagged link: not a
+                // row, for the reason AcquisitionDay gives.
+                if (!value) continue
+                // For these parameters, `count` is distinct sessions: a visit.
+                acquisition.push({ date, dimension, value, visits: asCount(row["count"]) })
+              }
           }
 
-          return { site, pages, events } satisfies VisitsDays
+          return { site, pages, events, acquisition } satisfies VisitsDays
         }),
       }
       return provider

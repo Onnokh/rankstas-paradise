@@ -151,6 +151,7 @@ const fakeFactory = (
             })),
             pages: [],
             events: [],
+            acquisition: [],
           }
         }),
     })
@@ -178,7 +179,7 @@ test("a site without analytics has no status and yields empty rows", async () =>
   )
 
   expect(status).toBeNull()
-  expect(visits).toEqual({ site: [], pages: [], events: [] })
+  expect(visits).toEqual({ site: [], pages: [], events: [], acquisition: [] })
 })
 
 test("a ready adapter is asked for exactly the dates given", async () => {
@@ -375,7 +376,7 @@ test("an empty date list never reaches the adapter", async () => {
     Analytics.use.fetchVisits([]).pipe(Effect.provide(layer)),
   )
 
-  expect(visits).toEqual({ site: [], pages: [], events: [] })
+  expect(visits).toEqual({ site: [], pages: [], events: [], acquisition: [] })
   expect(seen.dates).toBeUndefined()
 })
 

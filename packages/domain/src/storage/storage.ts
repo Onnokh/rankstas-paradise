@@ -14,6 +14,7 @@ import { SqliteClient } from "@effect/sql-sqlite-bun"
 
 import {
   type SiteVisitsDay,
+  type AcquisitionDay,
   type SiteVisitsHour,
   type VisitsDays,
 } from "../analytics/schema.ts"
@@ -36,6 +37,7 @@ import { serviceUse } from "../service-use.ts"
 import {
   type BaselineCapture,
   type DomainRatingDay,
+  type AcquisitionWindowRow,
   type EventWindowRow,
   type HistoryDay,
   type IndexCoverageDay,
@@ -115,7 +117,8 @@ export interface Interface {
     license: string,
   ) => Effect.Effect<void, StorageError>
   // Record one fetch of canonical visit rows from the site's analytics provider:
-  // every fetched date's page and event rows are replaced, site rows upserted,
+  // every fetched date's page, event and acquisition rows are replaced, site
+  // rows upserted,
   // and the dates stamped in `analytics_synced_day` with the provider they came
   // from. `source` is the provider name, kept so a switch of provider halfway
   // through the series stays visible; nothing queries by it.
@@ -289,8 +292,8 @@ export interface Interface {
   readonly visitsHistory: (
     limit?: number,
   ) => Effect.Effect<ReadonlyArray<SiteVisitsDay>, StorageError>
-  // One day's canonical rows — the site row, its pages, its events — as the
-  // provider gave them. Empty for a day never synced.
+  // One day's canonical rows — the site row, its pages, its events, where its
+  // visits came from — as the provider gave them. Empty for a day never synced.
   readonly visitsOfDay: (date: string) => Effect.Effect<VisitsDays, StorageError>
   // One day's hourly site rows, whatever hours were written, hour ascending.
   readonly hoursOfDay: (
@@ -312,6 +315,13 @@ export interface Interface {
     windowDays?: number,
     endDate?: string,
   ) => Effect.Effect<ReadonlyArray<EventWindowRow>, StorageError>
+  // Where the visits came from over the same kind of window: every value of
+  // every acquisition dimension with visits in either window, strongest first
+  // within its dimension.
+  readonly acquisitionWindow: (
+    windowDays?: number,
+    endDate?: string,
+  ) => Effect.Effect<ReadonlyArray<AcquisitionWindowRow>, StorageError>
   // --- revenue reads (empty, never failing on absence, for a site without a
   // commerce provider) ---
   readonly revenueSummary: () => Effect.Effect<RevenueSummary, StorageError>
@@ -676,6 +686,18 @@ export const layer = Layer.effect(
         source text not null,
         collected_at text not null default current_timestamp,
         primary key (date, name)
+      )`,
+      // Where one day's visits came from: one row per value of one dimension
+      // (referrer host, channel, UTM tag). `dimension` is one of
+      // acquisitionDimensions; `value` is the vendor's own text for it.
+      `create table if not exists analytics_acquisition_daily (
+        date text not null,
+        dimension text not null,
+        value text not null,
+        visits integer not null,
+        source text not null,
+        collected_at text not null default current_timestamp,
+        primary key (date, dimension, value)
       )`,
       // The day in progress by the hour, for the Today view. Only the today
       // sync writes here, replacing the day's rows each time; nothing reads it
@@ -1856,6 +1878,7 @@ export const layer = Layer.effect(
           for (const date of fetchedDates) {
             yield* sql`delete from analytics_page_daily where date = ${date}`
             yield* sql`delete from analytics_event_daily where date = ${date}`
+            yield* sql`delete from analytics_acquisition_daily where date = ${date}`
           }
           // A fetched day the provider returned no site row for is a day with
           // no visits, and it is recorded as such — otherwise the date reads as
@@ -1888,6 +1911,13 @@ export const layer = Layer.effect(
               values (${row.date}, ${row.name}, ${row.count}, ${source})
               on conflict(date, name) do update set
                 occurrences = excluded.occurrences, source = excluded.source,
+                collected_at = current_timestamp`
+          for (const row of visits.acquisition)
+            yield* sql`
+              insert into analytics_acquisition_daily (date, dimension, value, visits, source)
+              values (${row.date}, ${row.dimension}, ${row.value}, ${row.visits}, ${source})
+              on conflict(date, dimension, value) do update set
+                visits = excluded.visits, source = excluded.source,
                 collected_at = current_timestamp`
           for (const date of fetchedDates)
             yield* sql`
@@ -1927,7 +1957,10 @@ export const layer = Layer.effect(
         const events = yield* sql<{ date: string; name: string; count: number }>`
           select date, name, occurrences as count from analytics_event_daily
           where date = ${date} order by occurrences desc, name`
-        return { site, pages, events } as VisitsDays
+        const acquisition = yield* sql<AcquisitionDay>`
+          select date, dimension, value, visits from analytics_acquisition_daily
+          where date = ${date} order by dimension, visits desc, value`
+        return { site, pages, events, acquisition } as VisitsDays
       })
 
     const hoursOfDayI = (date: string) =>
@@ -2174,6 +2207,46 @@ export const layer = Layer.effect(
           .sort((left, right) => right.current - left.current) as ReadonlyArray<EventWindowRow>
       })
 
+    const acquisitionWindowI = (windowDays = 28, endDate?: string) =>
+      Effect.gen(function* () {
+        const bounds = yield* visitsWindowBounds(windowDays, endDate)
+        if (!bounds) return [] as ReadonlyArray<AcquisitionWindowRow>
+        type Summed = { dimension: AcquisitionDay["dimension"]; value: string; visits: number }
+        const window = (start: string, end: string) =>
+          sql<Summed>`
+            select dimension, value, sum(visits) as visits
+            from analytics_acquisition_daily
+            where date between ${start} and ${end}
+            group by dimension, value`
+        // Keyed by dimension and value together: the same host can be a
+        // referrer and, spelled the same, a utm_source, and they are two rows.
+        const keyOf = (row: { dimension: string; value: string }) =>
+          `${row.dimension}\u0000${row.value}`
+        const current = new Map(
+          (yield* window(bounds.currentStart, bounds.latestDate)).map((row) => [keyOf(row), row]),
+        )
+        const previous = new Map(
+          (yield* window(bounds.previousStart, bounds.previousEnd)).map((row) => [keyOf(row), row]),
+        )
+        const keys = [...new Set([...current.keys(), ...previous.keys()])]
+        return keys
+          .map((key) => {
+            const row = (current.get(key) ?? previous.get(key))!
+            return {
+              dimension: row.dimension,
+              value: row.value,
+              current: current.get(key)?.visits ?? 0,
+              previous: previous.get(key)?.visits ?? 0,
+            }
+          })
+          .sort(
+            (left, right) =>
+              left.dimension.localeCompare(right.dimension) ||
+              right.current - left.current ||
+              left.value.localeCompare(right.value),
+          ) as ReadonlyArray<AcquisitionWindowRow>
+      })
+
     return {
       saveSnapshots: (snapshots, fetchedDates) =>
         saveSnapshotsI(snapshots, fetchedDates).pipe(mapErr("saveSnapshots")),
@@ -2296,6 +2369,8 @@ export const layer = Layer.effect(
         ),
       eventWindow: (windowDays, endDate) =>
         eventWindowI(windowDays, endDate).pipe(mapErr("eventWindow")),
+      acquisitionWindow: (windowDays, endDate) =>
+        acquisitionWindowI(windowDays, endDate).pipe(mapErr("acquisitionWindow")),
       saveRevenue: (days, fetchedDates, source) =>
         saveRevenueI(days, fetchedDates, source).pipe(mapErr("saveRevenue")),
       missingRevenueDates: (dates) =>

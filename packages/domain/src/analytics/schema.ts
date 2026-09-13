@@ -3,8 +3,9 @@
 //
 // Everything here is the CANONICAL form. It is the intersection of what those
 // products can all answer, not the union of what any one of them offers: visits
-// and pageviews per page per day, site totals per day, and the count of each
-// named event per day. Bounce rate and time on page are left out on purpose —
+// and pageviews per page per day, site totals per day, the count of each named
+// event per day, and where each day's visits came from (referrer, channel, UTM
+// tags). Bounce rate and time on page are left out on purpose —
 // every vendor defines them differently, so they would not survive a switch of
 // provider. Nothing vendor-specific may appear in this file; an adapter reads a
 // vendor's wire format and produces these rows, and the rest of the domain
@@ -73,17 +74,58 @@ export const EventCountDay = Schema.Struct({
 export interface EventCountDay
   extends Schema.Schema.Type<typeof EventCountDay> {}
 
-// One fetch's worth of canonical rows, all three series together, because a
+// The ways a visit's origin is described, in every vendor's shared vocabulary.
+// `referrer` is the referring HOST with its `www.` stripped ("google.com"), never
+// a full URL: that is the grain Rybbit, Umami and GA4 all report a referrer list
+// at, and the grain a reader compares. `channel` is the provider's own grouping
+// of that origin (Direct, Organic Search, Organic Social, Referral, Paid Search,
+// Email, …) — the words are the vendor's, and Ranksta does not re-derive them,
+// because every vendor's rules differ and none of them is wrong. The three
+// `utm_*` dimensions are the tags a link carried, as written by whoever made the
+// link. `utm_term` and `utm_content` are left out: nobody tags these sites at
+// that grain, and every dimension is one more vendor call per synced day.
+export const acquisitionDimensions = [
+  "referrer",
+  "channel",
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+] as const
+export type AcquisitionDimension = (typeof acquisitionDimensions)[number]
+
+// How many visits on one day came from one value of one dimension, site-wide.
+// Visits, not pageviews: an origin is a property of the visit, and a referrer
+// that brought one visit of thirty pages is one referral.
+//
+// A blank value is never a row. A blank referrer is a direct visit, and Direct
+// is already a channel; a blank UTM tag is an untagged link, which is nearly
+// every visit and would only bury the tagged ones under one huge row.
+export const AcquisitionDay = Schema.Struct({
+  date: Schema.String,
+  dimension: Schema.Literals(acquisitionDimensions),
+  value: Schema.String,
+  visits: Schema.Number,
+}).annotate({ identifier: "AcquisitionDay" })
+export interface AcquisitionDay
+  extends Schema.Schema.Type<typeof AcquisitionDay> {}
+
+// One fetch's worth of canonical rows, all four series together, because a
 // provider answers for a set of dates and Storage records those dates as fetched
 // in one transaction.
 export const VisitsDays = Schema.Struct({
   site: Schema.Array(SiteVisitsDay),
   pages: Schema.Array(PageVisitsDay),
   events: Schema.Array(EventCountDay),
+  acquisition: Schema.Array(AcquisitionDay),
 }).annotate({ identifier: "VisitsDays" })
 export interface VisitsDays extends Schema.Schema.Type<typeof VisitsDays> {}
 
-export const emptyVisitsDays: VisitsDays = { site: [], pages: [], events: [] }
+export const emptyVisitsDays: VisitsDays = {
+  site: [],
+  pages: [],
+  events: [],
+  acquisition: [],
+}
 
 // What a report says about a site's analytics: which provider is configured,
 // and whether this deployment can actually read it. `ready` is false when the
@@ -268,6 +310,10 @@ export const TodayVisits = Schema.Struct({
   hours: Schema.Array(SiteVisitsHour),
   pages: Schema.Array(PageVisitsDay),
   events: Schema.Array(EventCountDay),
+  // Where today's visits came from so far. Optional on the wire, like
+  // LiveVisitors.series, so a client built against this shape still decodes an
+  // older server's answer.
+  acquisition: Schema.optional(Schema.Array(AcquisitionDay)),
   // When the sync last wrote today's rows, as an ISO 8601 instant; null when
   // it has not yet, in which case everything above is zero.
   syncedAt: Schema.NullOr(Schema.String),

@@ -21,6 +21,7 @@
 | `GET /api/live` | — (visitors on the site right now; the one read that asks the analytics provider) |
 | `GET /api/live/events?since=T` | — (what visitors did in the last 30 minutes, newest first; also asks the provider) |
 | `GET /api/events?window=N` | `events --window N` |
+| `GET /api/acquisition?window=N&limit=N` | — (where the visits came from: referrers, channels, UTM tags) |
 | `GET /api/today` | — (today so far, from the ledger; re-synced every five minutes) |
 | `GET /api/revenue?window=N` | — (sales per day from the site's commerce provider, from the ledger) |
 
@@ -75,6 +76,16 @@ built against an older server keeps decoding:
   current, previous, delta }] }`: each custom event over the last N days against
   the N days before, strongest first, anchored on the Search Console latest
   date. `events` is empty when there is no provider or nothing is synced yet.
+- `GET /api/acquisition?window=N&limit=N` → `{ analytics, windowDays, limit,
+  window, rows: [{ dimension, value, current, previous, delta }] }`: where the
+  visits came from over the same two windows. `dimension` is one of `referrer`
+  (the referring host, `www.` stripped), `channel` (the provider's own grouping:
+  Direct, Organic Search, Organic Social, Referral, …), `utm_source`,
+  `utm_medium` or `utm_campaign`; `value` is the vendor's text for it and the
+  counts are visits. Rows are strongest first within their dimension and capped
+  at `limit` per dimension (default 50). A direct visit has no referrer row and
+  an untagged link no UTM row — Direct is a channel. Same window anchor as
+  `/api/events`; `rows` is empty on the same terms as `events`.
 
 Visits have no finalization lag: the newest stored day is yesterday (UTC), and
 the last two days are re-fetched on each sync.
@@ -263,9 +274,11 @@ sales" from "not fetched yet". The two halves are independent — a site with a
 commerce provider and no analytics gets `today: null` with `sales` filled, and
 the other way round.
 
-`GET /api/events` ends its window on the newest finished day of visits
-(yesterday once today has synced), not on the Search Console latest date, so
-the freshest whole days are in it; today's partial day is left to `/api/today`.
+`GET /api/events` and `GET /api/acquisition` end their window on the newest
+finished day of visits (yesterday once today has synced), not on the Search
+Console latest date, so the freshest whole days are in it; today's partial day
+is left to `/api/today`, whose `today` also carries `acquisition`: the day's
+rows so far, `[{ date, dimension, value, visits }]`.
 
 ### Revenue from the site's commerce provider
 

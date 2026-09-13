@@ -206,6 +206,19 @@ One distinct person on one day, as the analytics provider counts it. Does not su
 **Event**:
 A named custom action the site reports to its analytics provider (`purchase`, `download_shader`), counted per day. Observed, like a Query. Not an Action — an Action is a change *we* made to a page; an Event is something a *visitor* did.
 
+**Acquisition**:
+Where a site's Visits came from, counted per day: one row per value of one of five dimensions — Referrer, Channel, and the three UTM tags. The fourth series of the visits ledger, beside site totals, pages and Events. A visit's origin is a property of the Visit, so the count is Visits and never Pageviews. A blank value is never a row: a blank referrer is a direct visit, and Direct is a Channel; a blank UTM tag is an untagged link, which is nearly every visit.
+_Avoid_: "source" for the concept — `source` is the column that names which provider wrote a row, and `utm_source` is one of the dimensions; "traffic sources".
+
+**Referrer**:
+The host a Visit came from, with its `www.` stripped (`google.com`, `reddit.com`), as the analytics provider reports it. A host, never a full URL: that is the grain every provider lists referrers at, and the grain a reader compares.
+
+**Channel**:
+The analytics provider's own grouping of a Visit's origin — Direct, Organic Search, Organic Social, Referral, Paid Search, Email, and whatever else the provider names. The words are the provider's; Ranksta does not re-derive them, because every provider's rules differ and none is wrong.
+
+**UTM tag**:
+One of the tags a link carried, as whoever made the link wrote it: `utm_source`, `utm_medium`, `utm_campaign`. Held as three dimensions of Acquisition; `utm_term` and `utm_content` are not held, because nobody tags these sites at that grain and each dimension is one more vendor call per synced day.
+
 **Live visitors**:
 The distinct people active on the site in the last thirty minutes, as the analytics provider counts them, with one count per minute of that window. Asked on demand and shown at most thirty seconds old; never stored, never on the dashboard.
 

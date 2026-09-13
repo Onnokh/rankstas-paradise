@@ -67,6 +67,19 @@ struct APIClient: Sendable {
         )
     }
 
+    /// Where the site's visits came from over `windowDays` against the window before: referrers,
+    /// channels and UTM tags, at most `limit` rows per dimension.
+    func acquisition(siteID: String, windowDays: Int, limit: Int) async throws -> AcquisitionReport {
+        try await get(
+            path: "/api/acquisition",
+            query: [
+                URLQueryItem(name: "site", value: siteID),
+                URLQueryItem(name: "window", value: String(windowDays)),
+                URLQueryItem(name: "limit", value: String(limit)),
+            ]
+        )
+    }
+
     /// The site's sales over `windowDays` whole days against the window before, from the ledger.
     func revenue(siteID: String, windowDays: Int) async throws -> RevenueReport {
         try await get(

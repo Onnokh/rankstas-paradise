@@ -262,7 +262,7 @@ export const layer = Layer.effect(
       yield* storage.saveVisits(visits, [local.date], status.provider)
       yield* storage.saveHours(local.date, hours, status.provider)
       const site = visits.site.find((day) => day.date === local.date)
-      return `Today (${local.date} ${local.timeZone}) from ${status.provider}: ${site?.visits ?? 0} visits, ${site?.pageviews ?? 0} pageviews, ${visits.events.length} event names, ${hours.length} hours.`
+      return `Today (${local.date} ${local.timeZone}) from ${status.provider}: ${site?.visits ?? 0} visits, ${site?.pageviews ?? 0} pageviews, ${visits.events.length} event names, ${visits.acquisition.length} source rows, ${hours.length} hours.`
     })
 
     // Today's sales, the same way: one row, overwritten each round and once

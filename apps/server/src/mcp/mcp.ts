@@ -480,6 +480,41 @@ export const buildMcpServer = (run: RunTool, market: MarketTool): McpServer => {
   )
 
   server.registerTool(
+    "acquisition",
+    {
+      description:
+        "Where the site's visits came from, from its analytics provider, over the " +
+        "last N days against the N days before: one row per referrer host " +
+        "(dimension \"referrer\", www stripped), per channel (\"channel\": the " +
+        "provider's own grouping — Direct, Organic Search, Organic Social, Referral, " +
+        "…) and per UTM tag (\"utm_source\", \"utm_medium\", \"utm_campaign\"), each " +
+        "with current, previous and delta visits, strongest first within its " +
+        "dimension and capped at `limit` rows per dimension. A direct visit has no " +
+        "referrer row and an untagged link no UTM row; Direct is a channel. Empty " +
+        "when the site has no provider or nothing is synced yet.",
+      inputSchema: {
+        site,
+        window: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Window length in days (default 28)."),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Rows per dimension (default 50)."),
+      },
+    },
+    async ({ site, window, limit }) => {
+      const id = toSiteId(site)
+      return run(id, scoped(Reports.use.acquisitionReport(window ?? 28, limit ?? 50), id))
+    },
+  )
+
+  server.registerTool(
     "revenue",
     {
       description:

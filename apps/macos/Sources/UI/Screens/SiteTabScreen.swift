@@ -1091,6 +1091,96 @@ private struct EventsCard: View {
     }
 }
 
+/// Where the period's visits came from, as a list-as-chart like the ranking cards: one row
+/// per referrer host, channel or UTM tag, strongest first, the count and its move against the
+/// previous period over a bar as long as the count against the strongest row. The switch in
+/// the title's place picks the dimension, so the title is the choice. The card is one of a
+/// pair, cut by the question: where visits came from (referrers, channels) beside how the
+/// links that brought them were tagged (the UTM tags).
+private struct AcquisitionCard: View {
+    let rows: [AcquisitionListRow]
+    let dimensions: [AcquisitionDimension]
+    let loading: Bool
+
+    @State private var chosen: AcquisitionDimension?
+
+    /// The choice, unless the card does not offer it, then the first word.
+    private var dimension: AcquisitionDimension {
+        chosen.flatMap { dimensions.contains($0) ? $0 : nil } ?? dimensions[0]
+    }
+
+    var body: some View {
+        let ranked = AcquisitionList.rows(rows, for: dimension)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                WordSwitch(
+                    options: dimensions,
+                    selection: Binding(get: { dimension }, set: { chosen = $0 }),
+                    label: \.label,
+                    font: .headline
+                )
+                .accessibilityLabel("Source")
+                if loading {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Spacer()
+                Text("Visits")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            if ranked.isEmpty {
+                Text(loading ? "Loading…" : dimension.emptyMessage)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 8)
+            } else {
+                let strongest = max(ranked.map(\.current).max() ?? 1, 1)
+                VStack(spacing: 6) {
+                    ForEach(ranked) { row in
+                        bar(row, strongest: strongest)
+                    }
+                }
+                .animation(.snappy(duration: 0.25), value: dimension)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .cardSurface(cornerRadius: 12)
+    }
+
+    /// One row: the value, its move when there is a period to move from, its count, and the
+    /// tint reaching as far as the count does. Lilac, like every visits figure.
+    private func bar(_ row: AcquisitionListRow, strongest: Double) -> some View {
+        HStack(spacing: 12) {
+            Text(row.value)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+            if let previous = row.previous, let delta = row.delta, previous > 0 || delta != 0 {
+                Text(Trend.signed(delta, fractionDigits: 0))
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(delta >= 0 ? Palette.mint : Palette.coral)
+            }
+            Text(row.current.formatted(.number.precision(.fractionLength(0))))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 48, alignment: .trailing)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(alignment: .leading) {
+            GeometryReader { geometry in
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(visitsColor.opacity(0.16))
+                    .frame(width: max(geometry.size.width * (row.current / strongest), 6))
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// The period's visits, one bar per day, with the period total and its move in the title
 /// row. Visits (sessions) sum over the period; a day the provider has not synced yet is
 /// left empty rather than drawn as zero, so a series that started recently reads as short,
@@ -1519,6 +1609,16 @@ private struct SiteDashboard: View {
             )
             .column()
             .padding(.top, 20)
+
+            // And where those visits came from, over the same period.
+            acquisitionCards(
+                rows: AcquisitionList.rows(
+                    from: rankings.acquisition[RankingStore.KeywordsKey(siteID: overview.id, period: state.period)] ?? []
+                ),
+                loading: rankings.loading.contains(overview.id)
+            )
+            .column()
+            .padding(.top, 20)
         }
 
         rankingCards
@@ -1551,6 +1651,10 @@ private struct SiteDashboard: View {
             )
             .column()
             .padding(.top, 20)
+
+            acquisitionCards(rows: AcquisitionList.rows(fromToday: today.acquisition ?? []), loading: false)
+                .column()
+                .padding(.top, 20)
         } else if let report = live.todays[overview.id] {
             ContentUnavailableView(
                 report.analytics == nil ? "No analytics provider" : "Analytics not ready",
@@ -1562,6 +1666,16 @@ private struct SiteDashboard: View {
             ProgressView()
                 .controlSize(.small)
                 .frame(maxWidth: .infinity, minHeight: 320)
+        }
+    }
+
+    /// Where the visits came from, two cards side by side: referrers and channels on the left,
+    /// the UTM tags on the right. The same pair on every period, so the reader's eye finds the
+    /// same card in the same place.
+    private func acquisitionCards(rows: [AcquisitionListRow], loading: Bool) -> some View {
+        HStack(alignment: .top, spacing: 20) {
+            AcquisitionCard(rows: rows, dimensions: AcquisitionDimension.origins, loading: loading)
+            AcquisitionCard(rows: rows, dimensions: AcquisitionDimension.tags, loading: loading)
         }
     }
 

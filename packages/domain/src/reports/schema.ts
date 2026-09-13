@@ -14,6 +14,7 @@ import { DomainRating, DomainRatingDay } from "../domain-rating/schema.ts"
 import { RevenueDay, RevenueStatus, TodaySales } from "../revenue/schema.ts"
 
 import {
+  AcquisitionWindowRow,
   EventWindowRow,
   HistoryDay,
   IndexStatus,
@@ -774,6 +775,32 @@ export const EventsReport = Schema.Struct({
   ),
 }).annotate({ identifier: "EventsReport" })
 export interface EventsReport extends Schema.Schema.Type<typeof EventsReport> {}
+
+// Where the site's visits came from over a window against the window before
+// it: every referrer host, channel and UTM tag with visits in either window,
+// each with current, previous and delta, strongest first within its dimension
+// and at most `limit` rows per dimension. Anchored as the events report is, on
+// the newest finished day of visits. `rows` is empty, not null, when the site
+// has no provider or nothing is synced yet.
+export const AcquisitionReport = Schema.Struct({
+  analytics: Schema.NullOr(AnalyticsStatus),
+  windowDays: Schema.Number,
+  limit: Schema.Number,
+  window: Schema.Struct({
+    currentStart: Schema.NullOr(Schema.String),
+    currentEnd: Schema.NullOr(Schema.String),
+    previousStart: Schema.NullOr(Schema.String),
+    previousEnd: Schema.NullOr(Schema.String),
+  }),
+  rows: Schema.Array(
+    Schema.Struct({
+      ...AcquisitionWindowRow.fields,
+      delta: Schema.Number,
+    }),
+  ),
+}).annotate({ identifier: "AcquisitionReport" })
+export interface AcquisitionReport
+  extends Schema.Schema.Type<typeof AcquisitionReport> {}
 
 // Orders and takings over a window, summed. Amounts in the currency's minor
 // unit, as the rows are; `net` is the provider's own net (after refunds and

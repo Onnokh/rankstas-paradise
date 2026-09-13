@@ -46,6 +46,7 @@ import {
   type DemandReport,
   type EntrySummary,
   type HistoryReport,
+  type AcquisitionReport,
   type EventsReport,
   type RevenueReport,
   type RevenueTotals,
@@ -161,6 +162,12 @@ export interface Interface {
   readonly eventsReport: (
     windowDays?: number,
   ) => Effect.Effect<EventsReport, ReportsError>
+  // Where the visits came from over the same window, at most `limit` rows per
+  // dimension.
+  readonly acquisitionReport: (
+    windowDays?: number,
+    limit?: number,
+  ) => Effect.Effect<AcquisitionReport, ReportsError>
   readonly todayReport: () => Effect.Effect<TodayReport, ReportsError>
   // The site's sales over a window against the one before, from the ledger.
   readonly revenueReport: (
@@ -1096,6 +1103,54 @@ export const layer = Layer.effect(
           }),
         ),
 
+      acquisitionReport: (windowDays = 28, limit = 50) =>
+        wrap(
+          Effect.gen(function* () {
+            const analyticsStatus = yield* analytics.status()
+            const empty = {
+              currentStart: null,
+              currentEnd: null,
+              previousStart: null,
+              previousEnd: null,
+            }
+            if (!analyticsStatus)
+              return { analytics: null, windowDays, limit, window: empty, rows: [] }
+            // The same anchor as the events report, for the same reason: no
+            // clicks figure sits beside a referrer, and the freshest whole days
+            // are the ones a reader wants to see a new source in.
+            const summary = yield* storage.visitsSummary()
+            const local = yield* analytics.localDay()
+            const finished =
+              summary.lastDate && local && summary.lastDate >= local.date
+                ? dateDaysBefore(local.date, 1)
+                : summary.lastDate
+            const anchor = finished ?? (yield* storage.latestSnapshotDate())
+            if (!anchor)
+              return { analytics: analyticsStatus, windowDays, limit, window: empty, rows: [] }
+            const currentStart = dateDaysBefore(anchor, windowDays - 1)
+            const previousEnd = dateDaysBefore(currentStart, 1)
+            const previousStart = dateDaysBefore(previousEnd, windowDays - 1)
+            const all = yield* storage.acquisitionWindow(windowDays, anchor)
+            // The storage rows are already strongest first within a dimension,
+            // so the cap keeps each dimension's head. A referrer list runs to
+            // hundreds of hosts over a quarter; nobody reads past the top few
+            // dozen, and a client that wants more asks for more.
+            const kept = new Map<string, number>()
+            const rows = all.filter((row) => {
+              const seen = kept.get(row.dimension) ?? 0
+              kept.set(row.dimension, seen + 1)
+              return seen < limit
+            })
+            return {
+              analytics: analyticsStatus,
+              windowDays,
+              limit,
+              window: { currentStart, currentEnd: anchor, previousStart, previousEnd },
+              rows: rows.map((row) => ({ ...row, delta: row.current - row.previous })),
+            }
+          }),
+        ),
+
       todayReport: () =>
         wrap(
           Effect.gen(function* () {
@@ -1122,6 +1177,7 @@ export const layer = Layer.effect(
                   hours: normaliseHours(hours),
                   pages: day.pages,
                   events: day.events,
+                  acquisition: day.acquisition,
                   syncedAt,
                 },
               }
