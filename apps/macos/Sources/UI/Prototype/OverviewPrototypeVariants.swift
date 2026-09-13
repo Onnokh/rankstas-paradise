@@ -536,6 +536,185 @@ struct ProtoSiteCard: View {
     }
 }
 
+// MARK: B3 / B4. Lean cards
+
+/// One card per site, or two across: the site, four figures — one per group — and one
+/// chart. A figure's group opens on hover as a panel of its four lines.
+struct ProtoLeanVariant: View {
+    let sites: [PrototypeSiteSeries]
+    let wide: Bool
+    let icon: (Site.ID) -> Image?
+    let onOpen: (Site.ID) -> Void
+
+    var body: some View {
+        VStack(spacing: 20) {
+            if wide {
+                ForEach(sites) { site in
+                    ProtoLeanCard(site: site, wide: true, icon: icon(site.id))
+                        .onTapGesture(count: 2) { onOpen(site.id) }
+                }
+            } else {
+                ForEach(Array(stride(from: 0, to: sites.count, by: 2)), id: \.self) { start in
+                    HStack(alignment: .top, spacing: 20) {
+                        ForEach(sites[start..<min(start + 2, sites.count)]) { site in
+                            ProtoLeanCard(site: site, wide: false, icon: icon(site.id))
+                                .onTapGesture(count: 2) { onOpen(site.id) }
+                        }
+                        if start + 1 >= sites.count {
+                            Color.clear.frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+            }
+        }
+        .column()
+        .padding(.top, 36)
+    }
+}
+
+/// The one figure that stands for each group, with the group behind it for the panel.
+struct ProtoHero: Identifiable {
+    let group: String
+    let title: String
+    let value: String
+    var change: String? = nil
+    var tint: Color? = nil
+    var dot: Color? = nil
+    var footnote: String? = nil
+    let lines: [ProtoGroups.Line]
+
+    var id: String { group }
+
+    static func all(_ site: PrototypeSiteSeries) -> [ProtoHero] {
+        let search = ProtoGroups.search(site)
+        let visitors = ProtoGroups.visitors(site)
+        let sales = ProtoGroups.sales(site)
+        let registry = ProtoGroups.registry(site)
+        return [
+            ProtoHero(group: "Search", title: "Clicks", value: search[0].value, change: search[0].change, tint: search[0].tint,
+                      dot: Palette.blue, lines: search),
+            ProtoHero(group: "Visitors", title: "Visits", value: visitors[0].value, change: visitors[0].change, tint: visitors[0].tint,
+                      dot: visitors[0].value == "—" ? nil : visitsColor,
+                      footnote: visitors[0].value == "—" ? "No analytics" : nil, lines: visitors),
+            ProtoHero(group: "Sales", title: "Revenue", value: sales?[0].value ?? "—", change: sales?[0].change, tint: sales?[0].tint,
+                      dot: sales == nil ? nil : Palette.mint,
+                      footnote: sales == nil ? "No provider" : nil, lines: sales ?? []),
+            ProtoHero(group: "Registry", title: "Indexed", value: registry[1].value, change: registry[1].change, tint: registry[1].tint,
+                      footnote: registry[1].value == "—" ? "No keyword pages" : nil, lines: registry),
+        ]
+    }
+}
+
+struct ProtoLeanCard: View {
+    let site: PrototypeSiteSeries
+    let wide: Bool
+    let icon: Image?
+
+    /// The group whose panel is open.
+    @State private var hovered: String?
+    @Environment(\.isTabPreview) private var isPreview
+
+    var body: some View {
+        let heroes = ProtoHero.all(site)
+        VStack(alignment: .leading, spacing: wide ? 24 : 20) {
+            ProtoCardHeader(site: site, icon: icon, showsOrigin: wide)
+
+            // The figures, justified like the page's own strip. Wide: the strip's shape, the
+            // move beside the figure. Narrow: the move under the figure, so four fit.
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(Array(heroes.enumerated()), id: \.element.id) { index, hero in
+                    if index > 0 { Spacer(minLength: 16) }
+                    figure(hero)
+                        .contentShape(Rectangle())
+                        .onHover { inside in
+                            guard !isPreview else { return }
+                            if inside { hovered = hero.group } else if hovered == hero.group { hovered = nil }
+                        }
+                        .overlay(alignment: .topLeading) {
+                            if hovered == hero.group, !hero.lines.isEmpty {
+                                ProtoGroupPanel(title: hero.group, lines: hero.lines)
+                                    .fixedSize()
+                                    .alignmentGuide(.top) { _ in -(wide ? 58 : 66) }
+                                    .allowsHitTesting(false)
+                                    .transition(.opacity)
+                            }
+                        }
+                }
+            }
+            .animation(.easeOut(duration: 0.12), value: hovered)
+
+            ProtoTrendChart(days: site.days, height: wide ? 72 : 56, labelInset: 0, interactive: false, showsDates: false)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .cardSurface(cornerRadius: 12)
+        .contentShape(Rectangle())
+        .zIndex(hovered == nil ? 0 : 1)
+        .help(site.glance.errorMessage ?? "Double-click to open \(site.site.name)")
+    }
+
+    @ViewBuilder
+    private func figure(_ hero: ProtoHero) -> some View {
+        if wide {
+            Metric(title: hero.title, value: hero.value, change: hero.change, tint: hero.tint, dot: hero.dot, footnote: hero.footnote)
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    if let dot = hero.dot {
+                        Circle().fill(dot).frame(width: 5, height: 5)
+                    }
+                    Text(hero.title)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Text(hero.value)
+                    .font(.system(size: 20, weight: .medium))
+                    .monospacedDigit()
+                Text(hero.change ?? hero.footnote ?? " ")
+                    .font(.caption.weight(hero.change == nil ? .regular : .medium))
+                    .monospacedDigit()
+                    .foregroundStyle(hero.change == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(hero.tint ?? Color.secondary))
+            }
+            .fixedSize()
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+/// The group behind a figure, as the hover panel: the four lines, on the material the
+/// app's other tooltips use.
+struct ProtoGroupPanel: View {
+    let title: String
+    let lines: [ProtoGroups.Line]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.callout.weight(.semibold))
+            ForEach(lines) { line in
+                HStack(spacing: 8) {
+                    Text(line.label)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 12)
+                    Text(line.value)
+                        .monospacedDigit()
+                    Text(line.change ?? "")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(line.tint ?? .secondary)
+                        .frame(width: 56, alignment: .leading)
+                }
+                .font(.callout)
+            }
+        }
+        .frame(width: 240)
+        .padding(12)
+        .background(.regularMaterial, in: .rect(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+        .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
+    }
+}
+
 // MARK: - C. Sparklines
 
 /// The fleet's chart, then the rows with a zone for the period's clicks as a line.

@@ -28,7 +28,7 @@ final class OverviewPrototypeStillsTests: XCTestCase {
                 header: AnyView(Self.header),
                 footer: AnyView(Self.footer)
             )
-            let image = try XCTUnwrap(Self.draw(AnyView(body), height: variant == .cards ? 1900 : 1700))
+            let image = try XCTUnwrap(Self.draw(AnyView(body), height: variant == .cards ? 1900 : variant == .leanWide || variant == .lean ? 1300 : 1700))
             let url = directory.appendingPathComponent("\(variant.key.lowercased())-\(variant.rawValue).png")
             let rep = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(image.tiffRepresentation)))
             try XCTUnwrap(rep.representation(using: .png, properties: [:])).write(to: url)

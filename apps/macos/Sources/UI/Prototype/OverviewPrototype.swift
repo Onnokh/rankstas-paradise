@@ -24,6 +24,13 @@ import SwiftUI
 //   D — Stacked: one chart, each site a band of the metric's one colour, the metric switched
 //       above it; the rows under it
 //
+// Round three ("this ain't it, way too much information"): a card is four figures, one per
+// group — Clicks, Visits, Revenue, Indexed — and one chart. Everything a group knows beyond
+// its figure waits in a panel that opens on hover over the figure.
+//
+//   B3 — Cards, wide: one per site, the four figures as a strip, the chart under it
+//   B4 — Cards, two across: the four figures with their moves under them, the chart under
+//
 // Round two (B won round one, "but the cards need work — not just a small detail page"):
 // a card carries the three things the app knows about a site, in groups. Search is Search
 // Console and Ahrefs: clicks, impressions, CTR, domain rating. Visitors is the analytics
@@ -46,13 +53,15 @@ import SwiftUI
 final class OverviewPrototype {
     enum Variant: String, CaseIterable, Identifiable {
         // Declaration order is the order the floating bar cycles through.
-        case current, cardsWide, cards, dashboard, sparklines, stacked
+        case current, leanWide, lean, cardsWide, cards, dashboard, sparklines, stacked
 
         var id: String { rawValue }
 
         var key: String {
             switch self {
             case .current: "Current"
+            case .leanWide: "B3"
+            case .lean: "B4"
             case .cardsWide: "B1"
             case .cards: "B2"
             case .dashboard: "A"
@@ -64,6 +73,8 @@ final class OverviewPrototype {
         var name: String {
             switch self {
             case .current: "The strip and the rows (as shipped)"
+            case .leanWide: "Cards, wide: four figures, one chart; the rest on hover"
+            case .lean: "Cards, two across: four figures, one chart; the rest on hover"
             case .cardsWide: "Cards, wide: one per site, the four groups side by side"
             case .cards: "Cards, two across: the four groups stacked"
             case .dashboard: "Dashboard: the site screen's skeleton, for the fleet"
@@ -325,6 +336,10 @@ struct OverviewPrototypeBody: View {
                     .padding(.top, 36)
             case .dashboard:
                 ProtoDashboardVariant(sites: sites, total: total, icon: icon, onOpen: onOpen)
+            case .leanWide:
+                ProtoLeanVariant(sites: sites, wide: true, icon: icon, onOpen: onOpen)
+            case .lean:
+                ProtoLeanVariant(sites: sites, wide: false, icon: icon, onOpen: onOpen)
             case .cardsWide:
                 ProtoWideCardsVariant(sites: sites, icon: icon, onOpen: onOpen)
             case .cards:
