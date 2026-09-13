@@ -363,6 +363,16 @@ struct LiveEvent: Codable, Sendable, Equatable, Identifiable {
             }
         }
 
+        /// Whether this is something done on a page rather than a move between pages. A
+        /// page load and a click out are navigation; the feed sets them in grey. Everything
+        /// else is a thing done, and gets the one colour the feed uses.
+        var isAction: Bool {
+            switch self {
+            case .pageview, .outbound: false
+            case .event, .buttonClick, .copy, .formSubmit, .inputChange: true
+            }
+        }
+
         var symbol: String {
             switch self {
             case .pageview: "eye"

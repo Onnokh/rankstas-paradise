@@ -154,13 +154,9 @@ final class LiveFeedTests: XCTestCase {
     }
 
     func testARowSaysHowManyVisitsThePersonHasMade() {
-        let seen = LiveEvent(
-            id: "p", at: "2026-09-08T10:21:10.000Z", kind: .pageview, name: nil, page: "/",
-            properties: [:], visitor: "v", country: nil, browser: nil, operatingSystem: nil,
-            device: nil, referrer: nil
-        )
+        let seen = event("p", at: "2026-09-08T10:21:10.000Z")
         let returning = LiveFeedRow(
-            siteID: "shadertown", siteName: "Shadertown", event: seen,
+            siteID: "shadertown", siteName: "Shadertown", events: [seen],
             history: VisitorHistory(
                 visitor: "v", visits: 7, firstSeen: "2026-08-12T08:04:11.000Z", lastSeen: nil
             )
@@ -168,20 +164,20 @@ final class LiveFeedTests: XCTestCase {
         XCTAssertEqual(returning.visits, "\u{00D7}7")
         XCTAssertEqual(returning.visitsHelp?.hasPrefix("7 visits since "), true)
 
-        // A first visit is the ordinary case and carries no mark, so an empty column never
+        // A first visit is the ordinary case and carries no mark, so an empty slot never
         // says anything: it means "not a return", not "first time".
         let firstTime = LiveFeedRow(
-            siteID: "shadertown", siteName: "Shadertown", event: seen,
+            siteID: "shadertown", siteName: "Shadertown", events: [seen],
             history: VisitorHistory(visitor: "v", visits: 1, firstSeen: nil, lastSeen: nil)
         )
         XCTAssertNil(firstTime.visits)
         XCTAssertNil(firstTime.visitsHelp)
 
         // The same for a provider that cannot count visitors at all.
-        XCTAssertNil(LiveFeedRow(siteID: "shadertown", siteName: "Shadertown", event: seen).visits)
+        XCTAssertNil(LiveFeedRow(siteID: "shadertown", siteName: "Shadertown", events: [seen]).visits)
         XCTAssertNil(
             LiveFeedRow(
-                siteID: "shadertown", siteName: "Shadertown", event: seen,
+                siteID: "shadertown", siteName: "Shadertown", events: [seen],
                 history: VisitorHistory(visitor: "v", visits: nil, firstSeen: nil, lastSeen: nil)
             ).visits
         )
@@ -193,21 +189,28 @@ final class LiveFeedTests: XCTestCase {
             properties: ["plan": "pro", "amount": "29"], visitor: "v",
             country: "ES", browser: "Chrome", operatingSystem: "Windows", device: "desktop", referrer: nil
         )
-        let row = LiveFeedRow(siteID: "sleevy", siteName: "Sleevy", event: purchase)
-        XCTAssertEqual(row.primary, "purchase")
-        XCTAssertEqual(row.detail, "amount 29, plan pro")
+        let row = LiveFeedRow(siteID: "sleevy", siteName: "Sleevy", events: [purchase])
+        XCTAssertEqual(row.headline, "purchase")
+        XCTAssertTrue(row.isAction)
+        // A run of one step says what the step itself adds: for an action, its data.
+        XCTAssertEqual(row.newest.detail, "amount 29, plan pro")
+        XCTAssertEqual(row.caption, "amount 29, plan pro")
+        XCTAssertEqual(row.flag, "🇪🇸")
         XCTAssertTrue(row.who.hasSuffix("· Chrome · Desktop"))
         XCTAssertTrue(row.who.contains("🇪🇸"))
-        XCTAssertNotEqual(row.time, "—")
+        XCTAssertNotEqual(row.newest.time, "—")
 
         let view = LiveEvent(
-            id: "v", at: "2026-09-08T10:21:10.000Z", kind: .pageview, name: nil, page: "/shaders/julia",
+            id: "v", at: "2026-09-08T10:21:10.000Z", kind: .pageview, name: nil, page: "/eu/ravencrest/b%C3%A3rlah",
             properties: [:], visitor: "v", country: nil, browser: nil, operatingSystem: nil, device: nil,
             referrer: "https://www.x.com/onnokh/status/1"
         )
-        let viewRow = LiveFeedRow(siteID: "sleevy", siteName: "Sleevy", event: view)
-        XCTAssertEqual(viewRow.primary, "/shaders/julia")
-        XCTAssertEqual(viewRow.detail, "from x.com")
+        let viewRow = LiveFeedRow(siteID: "sleevy", siteName: "Sleevy", events: [view])
+        // A path is read, not sent.
+        XCTAssertEqual(viewRow.headline, "/eu/ravencrest/bãrlah")
+        XCTAssertFalse(viewRow.isAction)
+        XCTAssertEqual(viewRow.caption, "from x.com")
+        XCTAssertEqual(viewRow.flag, "")
         XCTAssertEqual(viewRow.who, "")
 
         let outbound = LiveEvent(
@@ -215,9 +218,89 @@ final class LiveFeedTests: XCTestCase {
             properties: ["url": "https://www.github.com/onnokh/sleevy?tab=readme"], visitor: "v",
             country: nil, browser: nil, operatingSystem: nil, device: nil, referrer: nil
         )
-        let outRow = LiveFeedRow(siteID: "sleevy", siteName: "Sleevy", event: outbound)
-        XCTAssertEqual(outRow.primary, "github.com/onnokh/sleevy")
-        XCTAssertEqual(outRow.detail, "on /pricing")
+        let outRow = LiveFeedRow(siteID: "sleevy", siteName: "Sleevy", events: [outbound])
+        // Leaving is a move, not a thing done: an arrow, and grey.
+        XCTAssertEqual(outRow.headline, "→ github.com/onnokh/sleevy")
+        XCTAssertFalse(outRow.isAction)
+        XCTAssertEqual(outRow.caption, "on /pricing")
+    }
+
+    func testOnlyARegionTheSystemKnowsBecomesAFlag() {
+        XCTAssertEqual(LiveFeedRow.flag("es"), "🇪🇸")
+        // An anonymous proxy, a typo: codes a provider sends that are not regions. Their
+        // indicator pairs have no flag and drew as boxes. ("EU" is a region to Locale, and
+        // has a flag of its own, so it stays.)
+        XCTAssertEqual(LiveFeedRow.flag("T1"), "")
+        XCTAssertEqual(LiveFeedRow.flag("ESP"), "")
+        XCTAssertEqual(LiveFeedRow.flag("EU"), "🇪🇺")
+        XCTAssertEqual(LiveFeedRow.place("T1"), "T1")
+        XCTAssertTrue(LiveFeedRow.place("ES").hasPrefix("🇪🇸 "))
+    }
+
+    func testARunIsHeadedByItsNewestStepAndSaysTheRestInOneCaption() {
+        let run = [
+            event("1", at: "2026-09-08T10:00:00.000Z", page: "/"),
+            event("2", at: "2026-09-08T10:01:00.000Z", page: "/shaders"),
+            event("3", at: "2026-09-08T10:02:00.000Z", page: "/shaders/ferro"),
+        ]
+        let row = LiveFeedRow(siteID: "shadertown", siteName: "Shadertown", events: run)
+        XCTAssertEqual(row.headline, "/shaders/ferro")
+        XCTAssertEqual(row.newestAt, Instant.parse("2026-09-08T10:02:00.000Z"))
+        XCTAssertEqual(row.caption, "after /shaders  ·  3 steps")
+        XCTAssertEqual(row.steps.map(\.primary), ["/", "/shaders", "/shaders/ferro"])
+        // Named after its oldest step, so the id holds as the run grows at the newest end.
+        XCTAssertEqual(row.id, "shadertown|v|1")
+
+        // Two steps: the step before, and no count — "2 steps" would say nothing "after"
+        // does not.
+        let two = LiveFeedRow(siteID: "shadertown", siteName: "Shadertown", events: Array(run.prefix(2)))
+        XCTAssertEqual(two.caption, "after /")
+    }
+
+    func testTheSameThingTwiceInARowIsOneStepThatCounts() {
+        let reloads = [
+            event("1", at: "2026-09-08T10:00:00.000Z", page: "/shaders"),
+            event("2", at: "2026-09-08T10:00:30.000Z", page: "/shaders/ferro"),
+            event("3", at: "2026-09-08T10:01:00.000Z", page: "/shaders/ferro"),
+            event("4", at: "2026-09-08T10:01:30.000Z", page: "/shaders/ferro"),
+        ]
+        let row = LiveFeedRow(siteID: "shadertown", siteName: "Shadertown", events: reloads)
+        XCTAssertEqual(row.steps.count, 2)
+        XCTAssertEqual(row.newest.repeats, 3)
+        // The step keeps its first instant — how long they have been on it — but the row is
+        // as new as the last load, or it would sit above rows younger than its own age.
+        XCTAssertEqual(row.newest.at, Instant.parse("2026-09-08T10:00:30.000Z"))
+        XCTAssertEqual(row.newestAt, Instant.parse("2026-09-08T10:01:30.000Z"))
+        XCTAssertEqual(row.caption, "loaded 3 times  ·  after /shaders")
+
+        // The same page again after something else is a new step, not a count.
+        let back = reloads + [
+            event("5", at: "2026-09-08T10:02:00.000Z", page: "/shaders"),
+            event("6", at: "2026-09-08T10:02:30.000Z", page: "/shaders/ferro"),
+        ]
+        XCTAssertEqual(LiveFeedRow(siteID: "s", siteName: "S", events: back).steps.map(\.primary),
+                       ["/shaders", "/shaders/ferro", "/shaders", "/shaders/ferro"])
+    }
+
+    func testRowsAreOnePersonsRunNewestFirstAndAGapStartsANewRun() {
+        let site = Site(id: "shadertown", name: "Shadertown", origin: "https://shadertown.com")
+        let feeds: [Site.ID: LiveFeed] = [
+            site.id: LiveFeed(windowMinutes: 30, events: [
+                event("a3", at: "2026-09-08T10:20:00.000Z", page: "/shaders/ferro", visitor: "a"),
+                event("b1", at: "2026-09-08T10:19:00.000Z", page: "/", visitor: "b"),
+                event("a2", at: "2026-09-08T10:18:00.000Z", page: "/shaders", visitor: "a"),
+                event("a1", at: "2026-09-08T10:17:00.000Z", page: "/", visitor: "a"),
+                // Eleven minutes before a1: the same person, but a run of its own.
+                event("a0", at: "2026-09-08T10:06:00.000Z", page: "/about", visitor: "a"),
+            ]),
+        ]
+        let rows = LiveFeedRow.rows(feeds: feeds, sites: [site])
+        XCTAssertEqual(rows.map(\.headline), ["/shaders/ferro", "/", "/about"])
+        XCTAssertEqual(rows[0].steps.map(\.id), ["a1", "a2", "a3"])
+        XCTAssertEqual(rows[0].caption, "after /shaders  ·  3 steps")
+        XCTAssertEqual(rows[2].steps.map(\.id), ["a0"])
+        // Two runs of one person have two ids.
+        XCTAssertNotEqual(rows[0].id, rows[2].id)
     }
 
     func testRowsMergeSitesNewestFirstAndHonourTheFilters() {
@@ -225,24 +308,24 @@ final class LiveFeedTests: XCTestCase {
         let mounts = Site(id: "mounts", name: "Missing Mounts", origin: "https://missingmounts.com")
         let feeds: [Site.ID: LiveFeed] = [
             sleevy.id: LiveFeed(windowMinutes: 30, events: [
-                event("s2", at: "2026-09-08T10:20:00.000Z", kind: .event, name: "purchase"),
-                event("s1", at: "2026-09-08T10:10:00.000Z"),
+                event("s2", at: "2026-09-08T10:20:00.000Z", kind: .event, name: "purchase", visitor: "p"),
+                event("s1", at: "2026-09-08T10:10:00.000Z", visitor: "q"),
             ]),
             mounts.id: LiveFeed(windowMinutes: 30, events: [
-                event("m1", at: "2026-09-08T10:15:00.000Z"),
+                event("m1", at: "2026-09-08T10:15:00.000Z", visitor: "r"),
             ]),
         ]
 
         let all = LiveFeedRow.rows(feeds: feeds, sites: [sleevy, mounts])
-        XCTAssertEqual(all.map(\.event.id), ["s2", "m1", "s1"])
+        XCTAssertEqual(all.map(\.newest.id), ["s2", "m1", "s1"])
         XCTAssertEqual(all.map(\.siteName), ["Sleevy", "Missing Mounts", "Sleevy"])
-        XCTAssertEqual(all.first?.id, "sleevy|s2")
+        XCTAssertEqual(all.first?.id, "sleevy|p|s2")
 
         let oneSite = LiveFeedRow.rows(feeds: feeds, sites: [sleevy, mounts], only: [mounts.id])
-        XCTAssertEqual(oneSite.map(\.event.id), ["m1"])
+        XCTAssertEqual(oneSite.map(\.newest.id), ["m1"])
 
         let noPageviews = LiveFeedRow.rows(feeds: feeds, sites: [sleevy, mounts], hiding: [.pageview])
-        XCTAssertEqual(noPageviews.map(\.event.id), ["s2"])
+        XCTAssertEqual(noPageviews.map(\.newest.id), ["s2"])
 
         let capped = LiveFeedRow.rows(feeds: feeds, sites: [sleevy, mounts], limit: 2)
         XCTAssertEqual(capped.count, 2)
@@ -250,6 +333,29 @@ final class LiveFeedTests: XCTestCase {
         // Chip counts ignore the kind filter and follow the site filter.
         XCTAssertEqual(LiveFeedRow.kindCounts(feeds: feeds, sites: [sleevy, mounts]), [.pageview: 2, .event: 1])
         XCTAssertEqual(LiveFeedRow.kindCounts(feeds: feeds, sites: [sleevy, mounts], only: [sleevy.id]), [.pageview: 1, .event: 1])
+    }
+
+    func testTheKindFilterIsAppliedBeforeTheRunsAreMade() {
+        // One person: a page, an action, a page. "Events" must be one row about the action,
+        // headed by it, with no page load deciding where the row sits or what it says.
+        let site = Site(id: "mounts", name: "Missing Mounts", origin: "https://missingmounts.com")
+        let feeds: [Site.ID: LiveFeed] = [
+            site.id: LiveFeed(windowMinutes: 30, events: [
+                event("3", at: "2026-09-08T10:03:00.000Z", page: "/eu/silvermoon"),
+                event("2", at: "2026-09-08T10:02:00.000Z", kind: .event, page: "/eu/silvermoon/dirith", name: "update-character"),
+                event("1", at: "2026-09-08T10:01:00.000Z", page: "/eu/silvermoon/dirith"),
+            ]),
+        ]
+        let events = LiveFeedRow.rows(feeds: feeds, sites: [site], hiding: [.pageview])
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events[0].headline, "update-character")
+        XCTAssertEqual(events[0].steps.count, 1)
+        XCTAssertEqual(events[0].newestAt, Instant.parse("2026-09-08T10:02:00.000Z"))
+
+        let all = LiveFeedRow.rows(feeds: feeds, sites: [site])
+        XCTAssertEqual(all.count, 1)
+        XCTAssertEqual(all[0].headline, "/eu/silvermoon")
+        XCTAssertEqual(all[0].caption, "after update-character  ·  3 steps")
     }
 }
 
@@ -272,5 +378,15 @@ final class RelativeAgeTests: XCTestCase {
         let shown = RelativeAge.labelOrTime(from: now.addingTimeInterval(-7200), to: now)
         XCTAssertNotEqual(shown, "just now")
         XCTAssertFalse(shown.hasSuffix("ago"))
+    }
+
+    func testTheCompactFormFitsAGutter() {
+        XCTAssertEqual(RelativeAge.compact(from: now, to: now), "now")
+        XCTAssertEqual(RelativeAge.compact(from: now.addingTimeInterval(-59), to: now), "now")
+        XCTAssertEqual(RelativeAge.compact(from: now.addingTimeInterval(-60), to: now), "1m")
+        XCTAssertEqual(RelativeAge.compact(from: now.addingTimeInterval(-3599), to: now), "59m")
+        let clock = RelativeAge.compact(from: now.addingTimeInterval(-3600), to: now)
+        XCTAssertFalse(clock.hasSuffix("m"))
+        XCTAssertNotEqual(clock, "now")
     }
 }

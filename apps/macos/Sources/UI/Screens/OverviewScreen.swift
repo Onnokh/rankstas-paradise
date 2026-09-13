@@ -123,7 +123,8 @@ struct OverviewScreen: View {
                     kinds: $state.feedKinds,
                     windowMinutes: windowMinutes,
                     waiting: live.feeds.isEmpty && live.feedErrors.isEmpty,
-                    now: now
+                    now: now,
+                    icon: { favicons.image(for: $0) }
                 )
                 .column()
                 .padding(.top, 20)
@@ -454,14 +455,18 @@ private struct HeatStrip: View {
 
 // MARK: - Feed
 
-/// What visitors are doing on the shown sites, newest first. The header's words keep it to
-/// page loads or events, the way a site tab's period switch works. The feed keeps moving
-/// under the pointer: a new row simply appears at the top.
+/// What visitors are doing on the shown sites, one row per person, newest first. A row is
+/// the person's newest step, large; the steps before it in one caption; how often they have
+/// been here and where they are at the end; and, under the pointer, the whole run. The
+/// header's words keep it to page loads or events, the way a site tab's period switch works.
+/// The feed keeps moving under the pointer: a new row appears at the top.
 ///
-/// The rows are a plain stack, drawn in full and never animated. A lazy stack here kept the
-/// main thread busy re-phasing its items on every poll, and a layout animation over the rows
-/// every five seconds is what turned that into a hang; the rows are capped instead.
-private struct FeedCard: View {
+/// The rows are a plain stack, drawn in full, and their layout is never animated. A lazy
+/// stack here kept the main thread busy re-phasing its items on every poll, and a layout
+/// animation over the rows every five seconds is what turned that into a hang; the rows are
+/// capped instead. What does move is the row that arrives: the others step down at once,
+/// and it comes in where it landed — see `FeedArrivals` for which rows those are.
+struct FeedCard: View {
     let rows: [LiveFeedRow]
     /// Whether a row names its site: not when the page is kept to one.
     let showsSite: Bool
@@ -471,11 +476,17 @@ private struct FeedCard: View {
     let waiting: Bool
     /// The moment the ages are measured from; ticks from the screen's timeline.
     let now: Date
+    /// A site's favicon, when the store has it: the mark a row leads with.
+    var icon: (Site.ID) -> Image? = { _ in nil }
 
     @Environment(\.isTabPreview) private var isPreview
-    /// The visitor under the pointer, as site and visitor token, so every row of that
-    /// person's visit lights up together: their path through the site.
-    @State private var hoveredVisitor: String?
+    /// The row under the pointer: it lifts a little, and its tooltip opens.
+    @State private var hoveredRow: LiveFeedRow.ID?
+    /// Which rows have just arrived: they come in, and their tint fades.
+    @State private var arrivals = FeedArrivals()
+    /// How wide the rows are, as laid out: what the caption's zone is cut from. Nil until
+    /// the first layout, when the rows take the column's full width.
+    @State private var rowWidth: CGFloat?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -494,131 +505,269 @@ private struct FeedCard: View {
                     .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
             } else {
                 VStack(spacing: 0) {
-                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                        let visitor = Self.visitorKey(row)
+                    ForEach(rows) { row in
                         FeedRow(
                             row: row,
-                            age: row.event.date.map { RelativeAge.labelOrTime(from: $0, to: now) } ?? row.time,
+                            age: RelativeAge.compact(from: row.newestAt, to: now),
                             showsSite: showsSite,
-                            isHighlighted: hoveredVisitor == visitor,
-                            isLast: index == rows.count - 1
+                            icon: icon(row.siteID),
+                            isHovered: hoveredRow == row.id,
+                            isArriving: arrivals.fresh.contains(row.id),
+                            captionWidth: FeedRow.captionWidth(in: rowWidth, showsSite: showsSite)
                         )
                         .equatable()
                         .onHover { inside in
                             guard !isPreview else { return }
                             if inside {
-                                hoveredVisitor = visitor
-                            } else if hoveredVisitor == visitor {
-                                hoveredVisitor = nil
+                                hoveredRow = row.id
+                            } else if hoveredRow == row.id {
+                                hoveredRow = nil
                             }
                         }
+                        // Over the rows below it, or its tooltip is painted under them. On
+                        // the stack's own child: set inside the row, the trait did not reach
+                        // the stack through the wrappers above.
+                        .zIndex(hoveredRow == row.id ? 1 : 0)
                     }
                 }
+                .animation(.easeOut(duration: 0.12), value: hoveredRow)
+                // The rows' width sets the zones: the caption's gives way first, so the
+                // headline keeps its room in a narrow window.
+                .onGeometryChange(for: CGFloat.self, of: \.size.width) { rowWidth = $0 }
             }
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .cardSurface(cornerRadius: 12)
-    }
-
-    /// One person on one site. The token is per provider, so it is scoped by site too.
-    private static func visitorKey(_ row: LiveFeedRow) -> String {
-        "\(row.siteID)|\(row.event.visitor)"
+        // Every poll and every change of kind is noted; a preview is a still and notes
+        // nothing. The kinds are noted on their own too, for the switch that leaves the
+        // rows as they were.
+        .onChange(of: rows, initial: true) { _, rows in
+            guard !isPreview else { return }
+            arrivals.note(rows, kinds: kinds, at: Date())
+        }
+        .onChange(of: kinds) { _, kinds in
+            guard !isPreview else { return }
+            arrivals.note(rows, kinds: kinds, at: Date())
+        }
+        // An arriving row is drawn once as it starts — unseen, tinted — and then let go, so
+        // it comes in and its tint fades from there. The two states have to be two frames.
+        .task(id: arrivals.fresh) {
+            guard !arrivals.fresh.isEmpty else { return }
+            try? await Task.sleep(for: .milliseconds(32))
+            arrivals.settle()
+        }
     }
 }
 
-/// One row: when, where, what kind, what, and who — as a country, a browser and a device. The
-/// words come ready from the row; nothing is formatted here, so an unchanged row is skipped.
+/// One row, one line, fixed zones left to right: when, where, what, the rest, who. Three
+/// sizes for three roles — the headline at body, the site at callout, everything else at
+/// caption — and one colour with one meaning: a thing done is set in the analytics colour,
+/// a page loaded in grey. Nothing on the row changes width between rows but the words
+/// themselves, so the eye lands on the same place every time.
+///
+/// The words come ready from the row; nothing is formatted here, so an unchanged row is
+/// skipped. Flush with the card: the age starts where the title starts, the flag ends where
+/// the kind switch ends.
 private struct FeedRow: View, Equatable {
     let row: LiveFeedRow
-    /// "just now", "3m ago", or the clock time once it is an hour old; the exact time is on
-    /// hover.
+    /// "now", "3m", or the clock time once it is an hour old.
     let age: String
     /// Whether the site's name is shown: not when the feed is kept to one site.
     let showsSite: Bool
-    /// Whether the pointer is on one of this visitor's rows.
-    let isHighlighted: Bool
-    let isLast: Bool
+    let icon: Image?
+    let isHovered: Bool
+    /// Whether the row is at the start of coming in: unseen and tinted, for one frame. When
+    /// it stops being so the row fades in and lifts, and the tint goes over a few seconds.
+    let isArriving: Bool
+    /// The caption's zone, cut from the row's width by `captionWidth(in:showsSite:)`. Zero
+    /// hides the caption; the tooltip still has it.
+    let captionWidth: CGFloat
 
-    private var event: LiveEvent { row.event }
+    static let height: CGFloat = 36
+    /// How long the tint of a row that arrived stays: long enough to find it after a glance
+    /// away, short enough that two arrivals a minute apart never both show.
+    private static let tintFade: TimeInterval = 4
+    private static let gutter: CGFloat = 40
+    private static let siteWidth: CGFloat = 136
+    private static let spacing: CGFloat = 16
+    /// The caption's zone at its widest, in the column at full width.
+    private static let captionMax: CGFloat = 300
+    /// The least the headline gets before the caption gives way: it is the row's point, and
+    /// a route cut to "/eu/…tion" says nothing.
+    private static let headlineMin: CGFloat = 220
+    /// A caption narrower than this is an ellipsis; it goes instead.
+    private static let captionMin: CGFloat = 100
+    /// The two slots at the end: the visit count, its gap, the flag.
+    private static let whoWidth: CGFloat = 26 + 10 + 20
+    /// How far the hover's highlight reaches past the row's words on either side.
+    private static let overhang: CGFloat = 8
 
-
+    /// The caption's zone for rows this wide: what is left after the fixed zones and the
+    /// headline's least, up to `captionMax`, or nothing when that is too little to read. The
+    /// same for every row of the stack, so the zones stay fixed between rows; only the window
+    /// moves them. Nil is before the first layout: the column at full width.
+    static func captionWidth(in rowWidth: CGFloat?, showsSite: Bool) -> CGFloat {
+        let width = rowWidth ?? (SiteTabScreen.columnWidth - 40)
+        let fixed = gutter + spacing + (showsSite ? siteWidth + spacing : 0) + spacing + whoWidth
+        let words = width - fixed
+        let caption = min(captionMax, words - headlineMin - spacing)
+        return caption < captionMin ? 0 : caption
+    }
+    /// An `Image` cannot be compared, and the favicon arrives once: what matters is whether
+    /// the row has one.
     nonisolated static func == (left: FeedRow, right: FeedRow) -> Bool {
         left.row == right.row && left.age == right.age && left.showsSite == right.showsSite
-            && left.isHighlighted == right.isHighlighted && left.isLast == right.isLast
+            && (left.icon == nil) == (right.icon == nil) && left.isHovered == right.isHovered
+            && left.isArriving == right.isArriving && left.captionWidth == right.captionWidth
     }
 
-    var body: some View {
-        HStack(spacing: 12) {
-            // The guide's list marker, the tabs' own headband, on every row of the visitor
-            // under the pointer. The slot is always there, so the row never shifts.
-            Headband()
-                .fill(Palette.acid)
-                .frame(width: Headband.markerSize.width, height: Headband.markerSize.height)
-                .opacity(isHighlighted ? 1 : 0)
-                .accessibilityHidden(true)
+    /// Where the words start: where the tooltip hangs from.
+    private var wordsX: CGFloat { Self.gutter + 16 + (showsSite ? Self.siteWidth + 16 : 0) }
 
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
             Text(age)
+                .font(.caption)
                 .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(width: 64, alignment: .leading)
-                .help(row.time)
+                .foregroundStyle(.tertiary)
+                .frame(width: Self.gutter, alignment: .leading)
+                .help(row.newest.time)
 
             if showsSite {
-                Text(row.siteName)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .frame(width: 104, alignment: .leading)
-            }
-
-            Image(systemName: event.kind.symbol)
-                .foregroundStyle(event.kind == .event ? visitsColor : Color.secondary)
-                .frame(width: 16)
-
-            HStack(spacing: 6) {
-                Text(row.primary)
-                    .fontWeight(event.kind == .event ? .semibold : .regular)
-                if let detail = row.detail {
-                    Text("· \(detail)")
+                HStack(spacing: 8) {
+                    if let icon {
+                        icon.resizable().interpolation(.high).scaledToFit()
+                            .frame(width: 16, height: 16)
+                            .clipShape(.rect(cornerRadius: 3))
+                    }
+                    Text(row.siteName)
+                        .font(.callout)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
+                .frame(width: Self.siteWidth, alignment: .leading)
             }
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .leading)
 
-            // How many times this person has been here, all time, on the rows of someone who
-            // has been here before. The slot is always there, so no row shifts when one is
-            // marked; a first visit is the ordinary case and is left unmarked.
-            Group {
-                if let visits = row.visits {
-                    Text(visits)
-                        .monospacedDigit()
-                        .font(.caption)
-                        .foregroundStyle(visitsColor)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(visitsColor.opacity(0.12), in: .capsule)
-                        .help(row.visitsHelp ?? visits)
-                }
-            }
-            .frame(width: 52, alignment: .trailing)
-
-            Text(row.who)
-                .foregroundStyle(.secondary)
+            Text(row.headline)
+                .font(.body)
+                .fontWeight(row.isAction ? .medium : .regular)
+                .foregroundStyle(row.isAction ? AnyShapeStyle(visitsColor) : AnyShapeStyle(.primary))
                 .lineLimit(1)
-                .frame(width: 216, alignment: .trailing)
-        }
-        .font(.callout)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(event.kind == .event ? visitsColor.opacity(0.08) : Color.clear, in: .rect(cornerRadius: 6))
-        .overlay(alignment: .bottom) {
-            if !isLast {
-                Palette.line.frame(height: 1).padding(.horizontal, 12)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if captionWidth > 0 {
+                Text(row.caption)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(width: captionWidth, alignment: .trailing)
+            }
+
+            // Who, in two fixed slots: how often they have been here, and where they are.
+            HStack(spacing: 10) {
+                Text(row.visits ?? "")
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 26, alignment: .trailing)
+                    .help(row.visitsHelp ?? "First visit")
+                Text(row.flag)
+                    .font(.body)
+                    .lineLimit(1)
+                    .frame(width: 20, alignment: .trailing)
+                    .help(row.who)
             }
         }
+        .frame(height: Self.height)
+        .padding(.horizontal, Self.overhang)
+        // The one colour, faint, under a row that arrived; it fades from the moment the row
+        // starts coming in. Instant on the way in: the animation is the one of the new state.
+        .background {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(visitsColor.opacity(isArriving ? 0.14 : 0))
+                .animation(isArriving ? nil : .easeOut(duration: Self.tintFade), value: isArriving)
+        }
+        .background(isHovered ? Palette.line.opacity(0.45) : Color.clear, in: .rect(cornerRadius: 6))
+        .padding(.horizontal, -Self.overhang)
+        // The row comes in from a little below. Not a layout move: the rows under it have
+        // already stepped down, and this row's slot is where it lands.
+        .opacity(isArriving ? 0 : 1)
+        .offset(y: isArriving ? 4 : 0)
+        .animation(isArriving ? nil : .easeOut(duration: 0.35), value: isArriving)
         .contentShape(Rectangle())
+        .overlay(alignment: .topLeading) {
+            if isHovered {
+                FeedTooltip(row: row, now: Date())
+                    .fixedSize()
+                    .offset(x: wordsX, y: Self.height + 2)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// What the row does not say, under the pointer: who this is, how often they have been
+/// here, and every step of the run with its age and its data — oldest first, so it reads as
+/// it was walked. The same panel as the realtime bars' minute label.
+private struct FeedTooltip: View {
+    let row: LiveFeedRow
+    let now: Date
+
+    /// Past this many steps the oldest are counted, not listed.
+    private static let limit = 12
+
+    var body: some View {
+        let shown = Array(row.steps.suffix(Self.limit))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text(row.who.isEmpty ? "Unknown visitor" : row.who)
+                    .fontWeight(.medium)
+                Text("·").foregroundStyle(.tertiary)
+                Text(row.visitsHelp ?? "first visit")
+                    .foregroundStyle(.secondary)
+            }
+            .font(.callout)
+
+            VStack(alignment: .leading, spacing: 4) {
+                if row.steps.count > shown.count {
+                    Text("\(row.steps.count - shown.count) earlier steps")
+                        .foregroundStyle(.quaternary)
+                }
+                ForEach(shown) { step in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(RelativeAge.labelOrTime(from: step.at, to: now))
+                            .monospacedDigit()
+                            .foregroundStyle(.tertiary)
+                            .frame(width: 60, alignment: .trailing)
+                        Text(step.primary)
+                            .fontWeight(step.isAction ? .medium : .regular)
+                            .foregroundStyle(step.isAction ? AnyShapeStyle(visitsColor) : AnyShapeStyle(.primary))
+                        if step.repeats > 1 {
+                            Text("×\(step.repeats)")
+                                .monospacedDigit()
+                                .foregroundStyle(.tertiary)
+                        }
+                        if let detail = step.detail {
+                            Text(detail)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .lineLimit(1)
+                }
+            }
+            .font(.callout)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: 520, alignment: .leading)
+        .background(.regularMaterial, in: .rect(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+        .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
     }
 }
 
