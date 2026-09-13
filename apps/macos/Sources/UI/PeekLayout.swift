@@ -156,8 +156,9 @@ struct PeekLayout {
     //
     // Every tab is a site, and the site cards fill a two-column grid under the "Projects"
     // heading. The Overview's summary card stands to their left, two rows tall. It is no
-    // tab: it has no pill to grow from, so it belongs to the grid alone and fades in with
-    // the morph (see `overviewCardOpacity`).
+    // tab: it has no pill to grow from, so it belongs to the grid alone and travels in from
+    // the window's left edge on the same morph the site cards travel down on (see
+    // `overviewCardFrame`).
 
     var gridRows: Int {
         max(1, Int((Double(tabCount) / Double(Self.gridColumns)).rounded(.up)))
@@ -198,15 +199,25 @@ struct PeekLayout {
         return CGPoint(x: (size.width - block.width) / 2, y: (size.height - block.height) / 2)
     }
 
-    /// The Overview's card: left of the site grid, level with its first row, two rows tall.
-    var overviewCardFrame: CGRect {
+    /// Where the Overview's card stands in the grid: left of the site grid, level with its
+    /// first row, two rows tall.
+    var overviewGridFrame: CGRect {
         CGRect(origin: CGPoint(x: gridOrigin.x, y: gridOrigin.y + Self.gridHeadingHeight), size: overviewCardSize)
     }
 
-    /// The overview card has no pill to grow from, so it is not there until the grid is: it
-    /// fades in over the second half of the morph, after the site cards have left the strip.
+    /// The Overview's card at this progress. It has no pill to grow from, so it waits wholly
+    /// off the window's left edge and travels to its place on the morph, the same number
+    /// the site cards travel down on: everything in the grid arrives together, and nothing
+    /// appears on top of a card still moving.
+    var overviewCardFrame: CGRect {
+        let home = overviewGridFrame
+        let parked = CGRect(x: -home.width, y: home.minY, width: home.width, height: home.height)
+        return interpolate(parked, home, by: morph)
+    }
+
+    /// The card fades up as it travels, so it is fully there only when it is in place.
     var overviewCardOpacity: Double {
-        Double(min(max((morph - 0.5) * 2, 0), 1))
+        Double(morph)
     }
 
     /// Left edge of the site grid, right of the overview card.

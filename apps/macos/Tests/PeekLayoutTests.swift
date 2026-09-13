@@ -74,6 +74,7 @@ final class PeekLayoutTests: XCTestCase {
     func testGridPutsTheOverviewCardLeftSpanningTwoRowsAndEverySiteInTwoColumns() {
         let layout = PeekLayout(size: size, tabCount: 5, progress: PeekProgress.grid)
         let overview = layout.overviewCardFrame
+        XCTAssertEqual(overview, layout.overviewGridFrame, "In the grid the card is home.")
         let first = layout.gridFrame(0)
         let second = layout.gridFrame(1)
         let third = layout.gridFrame(2)
@@ -93,13 +94,21 @@ final class PeekLayoutTests: XCTestCase {
         XCTAssertTrue(block.contains(overview))
     }
 
-    /// The overview card has no pill to grow from, so it is absent in the bar and the strip
-    /// and only arrives over the second half of the morph, once the site cards have left.
-    func testOverviewCardIsAbsentUntilTheSecondHalfOfTheMorph() {
-        XCTAssertEqual(PeekLayout(size: size, tabCount: 4, progress: PeekProgress.closed).overviewCardOpacity, 0)
-        XCTAssertEqual(PeekLayout(size: size, tabCount: 4, progress: PeekProgress.strip).overviewCardOpacity, 0)
+    /// The overview card has no pill to grow from, so it waits off the window's left edge
+    /// through the bar and the strip, and travels to its place on the morph, the number the
+    /// site cards travel on, so the grid arrives as one.
+    func testOverviewCardWaitsOffTheLeftEdgeAndTravelsInOnTheMorph() {
+        for progress in [PeekProgress.closed, PeekProgress.strip] {
+            let layout = PeekLayout(size: size, tabCount: 4, progress: progress)
+            XCTAssertLessThanOrEqual(layout.overviewCardFrame.maxX, 0, "Off the window at progress \(progress).")
+            XCTAssertEqual(layout.overviewCardOpacity, 0)
+        }
         let halfway = 1 + PeekLayout.morphDeadzone + (1 - PeekLayout.morphDeadzone) / 2
-        XCTAssertEqual(PeekLayout(size: size, tabCount: 4, progress: halfway).overviewCardOpacity, 0, accuracy: 0.0001)
+        let mid = PeekLayout(size: size, tabCount: 4, progress: halfway)
+        let home = mid.overviewGridFrame
+        XCTAssertEqual(mid.overviewCardFrame.minX, (-home.width + home.minX) / 2, accuracy: 0.001, "Halfway along its travel.")
+        XCTAssertEqual(mid.overviewCardFrame.minY, home.minY, accuracy: 0.001, "It travels level.")
+        XCTAssertEqual(mid.overviewCardOpacity, 0.5, accuracy: 0.0001)
         XCTAssertEqual(PeekLayout(size: size, tabCount: 4, progress: PeekProgress.grid).overviewCardOpacity, 1)
     }
 

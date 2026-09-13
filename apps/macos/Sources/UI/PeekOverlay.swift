@@ -27,7 +27,9 @@ struct PeekOverlay: View {
                 .accessibilityHidden(layout.gridOpacity < 0.5)
 
             // The Overview's summary, laid out natively for the card's size. No tab and so
-            // no pill: it belongs to the grid and fades in as the site cards arrive there.
+            // no pill: it belongs to the grid and travels in from the left edge as the site
+            // cards travel down, behind them — it is first in the stack — so it never
+            // stands on top of a card still moving.
             let overview = layout.overviewCardFrame
             PeekCard(
                 title: TabID.overview.title(in: model),
@@ -45,8 +47,8 @@ struct PeekOverlay: View {
             .frame(width: overview.width, height: overview.height)
             .position(x: overview.midX, y: overview.midY)
             .opacity(layout.overviewCardOpacity)
-            .allowsHitTesting(layout.overviewCardOpacity > 0.5)
-            .accessibilityHidden(layout.overviewCardOpacity < 0.5)
+            .allowsHitTesting(layout.morph > 0.5)
+            .accessibilityHidden(layout.morph < 0.5)
 
             ForEach(Array(workspace.tabs.enumerated()), id: \.element) { index, tab in
                 let frame = layout.cardFrame(index)
