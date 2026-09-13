@@ -25,6 +25,8 @@ struct PeekLayout {
     static let gridGap: CGFloat = 20
     static let gridHeadingHeight: CGFloat = 44
     static let gridColumns = 2
+    /// The overview card on the left is a little narrower than a site card and spans two rows.
+    static let overviewCardWidthRatio: CGFloat = 0.85
 
     /// Progress above the strip that does not yet start the grid morph. A springy landing on
     /// the strip overshoots into this zone and reads as the strip stretching, not the grid
@@ -152,31 +154,41 @@ struct PeekLayout {
 
     // MARK: Grid
     //
-    // Every tab is a site, so the grid is one block of site cards in two columns, under the
-    // "Projects" heading, centred in the window.
+    // Every tab is a site, and the site cards fill a two-column grid under the "Projects"
+    // heading. The Overview's summary card stands to their left, two rows tall. It is no
+    // tab: it has no pill to grow from, so it belongs to the grid alone and fades in with
+    // the morph (see `overviewCardOpacity`).
 
     var gridRows: Int {
         max(1, Int((Double(tabCount) / Double(Self.gridColumns)).rounded(.up)))
     }
 
+    /// Rows the block is sized for: the overview card needs at least two.
+    private var sizedRows: Int { max(gridRows, 2) }
+
     var gridCardSize: CGSize {
         let columns = CGFloat(Self.gridColumns)
-        let rows = CGFloat(gridRows)
+        let rows = CGFloat(sizedRows)
         let blockWidth = size.width * 0.72
         let blockHeight = size.height * 0.7 - Self.gridHeadingHeight
-        let byWidth = (blockWidth - Self.gridGap * (columns - 1)) / columns
+        let byWidth = (blockWidth - Self.gridGap * columns) / (columns + Self.overviewCardWidthRatio)
         let rowHeight = (blockHeight - Self.gridGap * (rows - 1)) / rows
         let byHeight = cardWidth(forHeight: rowHeight)
         let width = max(120, min(byWidth, byHeight))
         return CGSize(width: width, height: cardHeight(forWidth: width))
     }
 
+    var overviewCardSize: CGSize {
+        let card = gridCardSize
+        return CGSize(width: card.width * Self.overviewCardWidthRatio, height: card.height * 2 + Self.gridGap)
+    }
+
     var gridBlockSize: CGSize {
         let card = gridCardSize
         let columns = CGFloat(Self.gridColumns)
-        let rows = CGFloat(gridRows)
+        let rows = CGFloat(sizedRows)
         return CGSize(
-            width: card.width * columns + Self.gridGap * (columns - 1),
+            width: overviewCardSize.width + Self.gridGap + card.width * columns + Self.gridGap * (columns - 1),
             height: Self.gridHeadingHeight + card.height * rows + Self.gridGap * (rows - 1)
         )
     }
@@ -186,12 +198,30 @@ struct PeekLayout {
         return CGPoint(x: (size.width - block.width) / 2, y: (size.height - block.height) / 2)
     }
 
-    /// The "Projects" heading sits over the whole block.
+    /// The Overview's card: left of the site grid, level with its first row, two rows tall.
+    var overviewCardFrame: CGRect {
+        CGRect(origin: CGPoint(x: gridOrigin.x, y: gridOrigin.y + Self.gridHeadingHeight), size: overviewCardSize)
+    }
+
+    /// The overview card has no pill to grow from, so it is not there until the grid is: it
+    /// fades in over the second half of the morph, after the site cards have left the strip.
+    var overviewCardOpacity: Double {
+        Double(min(max((morph - 0.5) * 2, 0), 1))
+    }
+
+    /// Left edge of the site grid, right of the overview card.
+    private var siteGridMinX: CGFloat {
+        gridOrigin.x + overviewCardSize.width + Self.gridGap
+    }
+
+    /// The "Projects" heading sits over the site grid only.
     var gridHeadingFrame: CGRect {
-        CGRect(
-            x: gridOrigin.x,
+        let card = gridCardSize
+        let columns = CGFloat(Self.gridColumns)
+        return CGRect(
+            x: siteGridMinX,
             y: gridOrigin.y,
-            width: gridBlockSize.width,
+            width: card.width * columns + Self.gridGap * (columns - 1),
             height: Self.gridHeadingHeight
         )
     }
@@ -201,7 +231,7 @@ struct PeekLayout {
         let column = CGFloat(index % Self.gridColumns)
         let row = CGFloat(index / Self.gridColumns)
         return CGRect(
-            x: gridOrigin.x + column * (card.width + Self.gridGap),
+            x: siteGridMinX + column * (card.width + Self.gridGap),
             y: gridOrigin.y + Self.gridHeadingHeight + row * (card.height + Self.gridGap),
             width: card.width,
             height: card.height

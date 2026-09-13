@@ -69,23 +69,38 @@ final class PeekLayoutTests: XCTestCase {
         XCTAssertEqual(layout.tabFrame(1).minX, layout.tabFrame(0).minX + layout.tabWidth + PeekLayout.tabSpacing, accuracy: 0.001)
     }
 
-    /// Every tab is a site, so the grid is one block of equal cards in two columns under the
-    /// heading, with no summary card standing apart on the left.
-    func testGridLaysTheSitesInTwoColumnsOfEqualCardsUnderTheHeading() {
+    /// Every tab is a site and fills the two-column grid under the heading; the Overview's
+    /// summary card, no tab, stands to the left of them two rows tall.
+    func testGridPutsTheOverviewCardLeftSpanningTwoRowsAndEverySiteInTwoColumns() {
         let layout = PeekLayout(size: size, tabCount: 5, progress: PeekProgress.grid)
+        let overview = layout.overviewCardFrame
         let first = layout.gridFrame(0)
         let second = layout.gridFrame(1)
         let third = layout.gridFrame(2)
 
-        XCTAssertEqual(first.minX, layout.gridOrigin.x, accuracy: 0.001)
+        XCTAssertEqual(overview.minX, layout.gridOrigin.x, accuracy: 0.001)
+        XCTAssertEqual(overview.height, first.height * 2 + PeekLayout.gridGap, accuracy: 0.001)
+        XCTAssertEqual(first.minX, overview.maxX + PeekLayout.gridGap, accuracy: 0.001)
+        XCTAssertEqual(first.minY, overview.minY, accuracy: 0.001)
         XCTAssertEqual(second.minX, first.maxX + PeekLayout.gridGap, accuracy: 0.001)
         XCTAssertEqual(second.size, first.size)
         XCTAssertEqual(third.minX, first.minX, accuracy: 0.001)
         XCTAssertEqual(third.minY, first.maxY + PeekLayout.gridGap, accuracy: 0.001)
         XCTAssertEqual(layout.gridRows, 3)
         XCTAssertEqual(layout.gridHeadingFrame.minX, first.minX, accuracy: 0.001)
-        XCTAssertEqual(layout.gridHeadingFrame.maxX, second.maxX, accuracy: 0.001)
         XCTAssertEqual(layout.gridHeadingFrame.maxY, first.minY, accuracy: 0.001)
+        let block = CGRect(origin: layout.gridOrigin, size: layout.gridBlockSize)
+        XCTAssertTrue(block.contains(overview))
+    }
+
+    /// The overview card has no pill to grow from, so it is absent in the bar and the strip
+    /// and only arrives over the second half of the morph, once the site cards have left.
+    func testOverviewCardIsAbsentUntilTheSecondHalfOfTheMorph() {
+        XCTAssertEqual(PeekLayout(size: size, tabCount: 4, progress: PeekProgress.closed).overviewCardOpacity, 0)
+        XCTAssertEqual(PeekLayout(size: size, tabCount: 4, progress: PeekProgress.strip).overviewCardOpacity, 0)
+        let halfway = 1 + PeekLayout.morphDeadzone + (1 - PeekLayout.morphDeadzone) / 2
+        XCTAssertEqual(PeekLayout(size: size, tabCount: 4, progress: halfway).overviewCardOpacity, 0, accuracy: 0.0001)
+        XCTAssertEqual(PeekLayout(size: size, tabCount: 4, progress: PeekProgress.grid).overviewCardOpacity, 1)
     }
 
     func testOvershootPastTheStripStretchesItWithoutStartingTheMorph() {

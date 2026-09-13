@@ -26,6 +26,28 @@ struct PeekOverlay: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(layout.gridOpacity < 0.5)
 
+            // The Overview's summary, laid out natively for the card's size. No tab and so
+            // no pill: it belongs to the grid and fades in as the site cards arrive there.
+            let overview = layout.overviewCardFrame
+            PeekCard(
+                title: TabID.overview.title(in: model),
+                icon: nil,
+                shortcut: nil,
+                showsShortcut: false,
+                isActive: workspace.activeTabID == .overview,
+                layout: layout,
+                size: overview.size,
+                hint: "Open the overview",
+                action: { onSelect(.overview) }
+            ) {
+                OverviewSummaryCard(model: model)
+            }
+            .frame(width: overview.width, height: overview.height)
+            .position(x: overview.midX, y: overview.midY)
+            .opacity(layout.overviewCardOpacity)
+            .allowsHitTesting(layout.overviewCardOpacity > 0.5)
+            .accessibilityHidden(layout.overviewCardOpacity < 0.5)
+
             ForEach(Array(workspace.tabs.enumerated()), id: \.element) { index, tab in
                 let frame = layout.cardFrame(index)
                 let isActive = tab == workspace.activeTabID
@@ -62,6 +84,7 @@ private struct PeekCard<Screen: View>: View {
     let isActive: Bool
     let layout: PeekLayout
     let size: CGSize
+    var hint = "Open this project"
     let action: () -> Void
     @ViewBuilder let screen: () -> Screen
 
@@ -115,7 +138,7 @@ private struct PeekCard<Screen: View>: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
-        .accessibilityHint("Open this project")
+        .accessibilityHint(hint)
         .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 

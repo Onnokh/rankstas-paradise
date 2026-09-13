@@ -109,7 +109,9 @@ bundle, and a replacement leaves it alone.
 - `Sources/UI` — `RootView`, `TabBar`, `PeekOverlay`, `TabContentStack`, `ScreenRail`, and `PeekLayout`, the pure struct that turns window size plus peek progress into every frame.
 - `Sources/UI/Screens` — one screen per pane kind, rendered from its state. A site's peek preview always shows its dashboard.
   Only the sites are tabs. The Overview and the Realtime are the two screens every server has, reached from the
-  rail and never from the tab bar, so no tab is active while one of them is in front. The Overview is the projects compared: the strip sums the
+  rail and never from the tab bar, so no tab is active while one of them is in front. The peek's grid still holds the
+  Overview's summary card on the left, two rows tall; it has no pill, so it fades in as the grid arrives, and choosing it
+  opens the Overview. The Overview is the projects compared: the strip sums the
   sites over a chosen period, and under it one card per project says how it does — the site in a zone of its own
   with what it sold, then Search, Visitors and Plan, each the period against the period before as a percentage
   with a word (Growing, Flat, Slipping at ten percent either way) and as two runs on one small chart, the period
