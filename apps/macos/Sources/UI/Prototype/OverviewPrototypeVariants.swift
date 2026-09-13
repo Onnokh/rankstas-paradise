@@ -157,37 +157,109 @@ struct ProtoCardHeader: View {
     }
 }
 
-/// The long run as one bar per week. The weeks inside the compared period keep the colour;
-/// the ones before step back, so the eye finds the period the percentage above speaks of.
-struct ProtoWeekBars: View {
-    let weeks: [ProtoWeek]
-    let value: (ProtoWeek) -> Double?
+/// How the period is set against the one before.
+enum ProtoCompareStyle {
+    /// The period as a line and area in the source's colour, over the period before as a
+    /// grey line, the same days laid on the same axis. Growth is the gap between the lines.
+    case overlay
+    /// The period before as a dim block of bars, a gap, then the period lit. Growth is the
+    /// step from one block to the next.
+    case sideBySide
+}
+
+/// The period against the period before, for one source. Both runs are the same length:
+/// a day per point up to a month, a week per point beyond, so a half year is 26 points.
+struct ProtoCompareChart: View {
+    let current: [Double]
+    let previous: [Double]
     let color: Color
-    /// How many trailing weeks the period covers.
-    let litWeeks: Int
+    let style: ProtoCompareStyle
+    /// The earlier run is a stand-in — its total spread evenly — and is drawn dashed.
+    var previousIsAverage = false
+
+    /// Sums a run into buckets of `size` from its end, so both runs line up on their last day.
+    static func buckets(_ values: [Double], size: Int) -> [Double] {
+        guard size > 1 else { return values }
+        var out: [Double] = []
+        var end = values.count
+        while end > 0 {
+            let start = max(0, end - size)
+            out.append(values[start..<end].reduce(0, +))
+            end = start
+        }
+        return out.reversed()
+    }
+
+    /// Noon of the day `index` days after the made-up calendar's first day.
+    static func slot(_ index: Int) -> Date {
+        Date(timeIntervalSinceReferenceDate: 43_200 + Double(index) * 86_400)
+    }
+
+    /// A trailing mean over `window` points: the shape of a run of ones and zeros.
+    static func smoothed(_ values: [Double], window: Int) -> [Double] {
+        guard window > 1, values.count > window else { return values }
+        return values.indices.map { index in
+            let start = max(0, index - window + 1)
+            let run = values[start...index]
+            return run.reduce(0, +) / Double(run.count)
+        }
+    }
 
     var body: some View {
-        let points = weeks.compactMap { week in value(week).map { (week: week, value: $0) } }
-        let firstLit = max(weeks.count - litWeeks, 0)
-        Chart {
-            RuleMark(y: .value("Value", 0))
-                .foregroundStyle(Palette.line)
-                .lineStyle(StrokeStyle(lineWidth: 1))
-            ForEach(points, id: \.week.id) { point in
-                let index = weeks.firstIndex { $0.id == point.week.id } ?? 0
-                BarMark(x: .value("Week", point.week.end, unit: .weekOfYear), y: .value("Value", point.value))
-                    .foregroundStyle(color.opacity(index >= firstLit ? 1 : 0.3))
-                    .cornerRadius(1.5)
+        switch style {
+        case .overlay:
+            Chart {
+                RuleMark(y: .value("Value", 0))
+                    .foregroundStyle(Palette.line)
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+                ForEach(Array(previous.enumerated()), id: \.offset) { index, value in
+                    LineMark(x: .value("Day", index), y: .value("Was", value), series: .value("Run", "was"))
+                        .foregroundStyle(Color.secondary.opacity(0.7))
+                        .lineStyle(StrokeStyle(lineWidth: 1.25, lineJoin: .round, dash: previousIsAverage ? [3, 3] : []))
+                }
+                .interpolationMethod(.monotone)
+                ForEach(Array(current.enumerated()), id: \.offset) { index, value in
+                    AreaMark(x: .value("Day", index), y: .value("Now", value), series: .value("Run", "now"))
+                        .foregroundStyle(LinearGradient(colors: [color.opacity(0.28), color.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                    LineMark(x: .value("Day", index), y: .value("Now", value), series: .value("Run", "now"))
+                        .foregroundStyle(color)
+                        .lineStyle(StrokeStyle(lineWidth: 1.5, lineJoin: .round))
+                }
+                .interpolationMethod(.monotone)
             }
+            .chartYScale(domain: .automatic(includesZero: true))
+            .chartXAxis(.hidden)
+            .chartYAxis(.hidden)
+            .chartPlotStyle { plot in plot.padding(.top, 2) }
+            .accessibilityHidden(true)
+        case .sideBySide:
+            // Slots are days on a made-up calendar: a bar needs a unit to take its width
+            // from, and a day is the one Charts sizes reliably. Slot 0 is the first earlier
+            // point; one empty slot separates the two blocks.
+            let gap = 1
+            let slots = previous.count + gap + current.count
+            Chart {
+                RuleMark(y: .value("Value", 0))
+                    .foregroundStyle(Palette.line)
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+                ForEach(Array(previous.enumerated()), id: \.offset) { index, value in
+                    BarMark(x: .value("Slot", Self.slot(index), unit: .day), y: .value("Was", value))
+                        .foregroundStyle(color.opacity(previousIsAverage ? 0.18 : 0.3))
+                        .cornerRadius(1.5)
+                }
+                ForEach(Array(current.enumerated()), id: \.offset) { index, value in
+                    BarMark(x: .value("Slot", Self.slot(previous.count + gap + index), unit: .day), y: .value("Now", value))
+                        .foregroundStyle(color)
+                        .cornerRadius(1.5)
+                }
+            }
+            .chartXScale(domain: Self.slot(0).addingTimeInterval(-43_200)...Self.slot(max(slots - 1, 0)).addingTimeInterval(43_200))
+            .chartYScale(domain: .automatic(includesZero: true))
+            .chartXAxis(.hidden)
+            .chartYAxis(.hidden)
+            .chartPlotStyle { plot in plot.padding(.top, 2) }
+            .accessibilityHidden(true)
         }
-        .chartYScale(domain: .automatic(includesZero: true))
-        // The axis is the whole run even when only the newest weeks have a count, so a young
-        // site's three weeks stand at the right end and not as three slabs across the zone.
-        .chartXScale(domain: (weeks.first?.end ?? .now).addingTimeInterval(-3.5 * 86_400)...(weeks.last?.end ?? .now).addingTimeInterval(3.5 * 86_400))
-        .chartXAxis(.hidden)
-        .chartYAxis(.hidden)
-        .chartPlotStyle { plot in plot.padding(.top, 2) }
-        .accessibilityHidden(true)
     }
 }
 
@@ -200,13 +272,14 @@ struct ProtoWeekBars: View {
 struct ProtoTrajectoryVariant: View {
     let sites: [PrototypeSiteSeries]
     let period: Period
+    let style: ProtoCompareStyle
     let icon: (Site.ID) -> Image?
     let onOpen: (Site.ID) -> Void
 
     var body: some View {
         VStack(spacing: 20) {
             ForEach(sites) { site in
-                ProtoTrajectoryCard(site: site, period: period, icon: icon(site.id))
+                ProtoTrajectoryCard(site: site, period: period, style: style, icon: icon(site.id))
                     .onTapGesture(count: 2) { onOpen(site.id) }
                     .help(site.glance.errorMessage ?? "Double-click to open \(site.site.name)")
             }
@@ -219,12 +292,31 @@ struct ProtoTrajectoryVariant: View {
 struct ProtoTrajectoryCard: View {
     let site: PrototypeSiteSeries
     let period: Period
+    let style: ProtoCompareStyle
     let icon: Image?
 
-    private var litWeeks: Int { max(1, Int((Double(period.days) / 7).rounded(.up))) }
+    /// The overlay is a line: a day per point up to a month, a week per point beyond, and a
+    /// daily run is read through a seven-day trailing mean so a site with one click a day
+    /// draws a shape and not a square wave. The blocks are bars: a week per bar from 28 days
+    /// on, so four weeks stand against four weeks.
+    private var bucket: Int {
+        switch style {
+        case .overlay: period.days > 31 ? 7 : 1
+        case .sideBySide: period.days >= 28 ? 7 : 1
+        }
+    }
+
+    private func shape(_ values: [Double]) -> [Double] {
+        let bucketed = ProtoCompareChart.buckets(values, size: bucket)
+        guard style == .overlay, bucket == 1, period.days >= 14 else { return bucketed }
+        return ProtoCompareChart.smoothed(bucketed, window: 7)
+    }
+
+    private func runs(_ value: (HistoryReportDay) -> Double) -> (now: [Double], was: [Double]) {
+        (shape(site.days.map(value)), shape(site.previousDays.map(value)))
+    }
 
     var body: some View {
-        let weeks = ProtoWeek.weeks(site.allDays)
         let clicks = ProtoGrowth.clicks(site)
         let visits = ProtoGrowth.visits(site)
         let revenue = ProtoGrowth.revenue(site)
@@ -238,7 +330,8 @@ struct ProtoTrajectoryCard: View {
                     line: "\(GlanceFigure.count(clicks.current)) clicks" + (clicks.previous.map { ", was \(GlanceFigure.count($0))" } ?? ""),
                     absent: nil
                 ) {
-                    ProtoWeekBars(weeks: weeks, value: \.clicks, color: Palette.blue, litWeeks: litWeeks)
+                    let run = runs(\.clicks)
+                    ProtoCompareChart(current: run.now, previous: run.was, color: Palette.blue, style: style)
                 }
                 ProtoSourceColumn(
                     title: "Visitors",
@@ -246,7 +339,8 @@ struct ProtoTrajectoryCard: View {
                     line: visits.map { "\(GlanceFigure.count($0.current)) visits" + ($0.previous.map { ", was \(GlanceFigure.count($0))" } ?? "") } ?? "",
                     absent: "No analytics provider"
                 ) {
-                    ProtoWeekBars(weeks: weeks, value: \.visits, color: visitsColor, litWeeks: litWeeks)
+                    let run = runs { $0.visits?.visits ?? 0 }
+                    ProtoCompareChart(current: run.now, previous: run.was, color: visitsColor, style: style)
                 }
                 ProtoSourceColumn(
                     title: "Sales",
@@ -254,12 +348,12 @@ struct ProtoTrajectoryCard: View {
                     line: site.revenue.map { "\(Money.format($0.current.revenue, currency: $0.currency)), was \(Money.format($0.previous.revenue, currency: $0.currency))" } ?? "",
                     absent: "No commerce provider"
                 ) {
-                    // The revenue report carries only the window's days: this picture is the
-                    // period, not the long run, and the caption says so.
-                    ProtoMiniBars(
-                        points: (site.revenue?.days ?? []).map { ProtoMiniBars.Point(day: $0.day, value: $0.revenue / 100) },
-                        color: Palette.mint
-                    )
+                    // The revenue report carries only the window's days, and the period before
+                    // as one total: that total is spread over the same days as a dashed line.
+                    let now = shape((site.revenue?.days ?? []).map { $0.revenue / 100 })
+                    let wasTotal = (site.revenue?.previous.revenue ?? 0) / 100
+                    let was = now.isEmpty ? [] : Array(repeating: wasTotal / Double(now.count), count: now.count)
+                    ProtoCompareChart(current: now, previous: was, color: Palette.mint, style: style, previousIsAverage: true)
                 }
                 planColumn
             }

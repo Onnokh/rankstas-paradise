@@ -20,8 +20,14 @@ import SwiftUI
 // Three shapes, switchable from the floating bar at the bottom of the window (⌘⌥← / ⌘⌥→)
 // while the Overview is in front, with real data:
 //
-//   E — Trajectory: one card per project; for Search, Visitors, Sales and Plan the growth
-//       as one large percentage, and under it the last 26 weeks, the compared period lit
+//   E1 — Trajectory, overlaid: one card per project; for Search, Visitors, Sales and Plan
+//        the growth as one large percentage, and under it the period as a line in the
+//        source's colour over the period before in grey, day against day
+//   E2 — Trajectory, side by side: the same, the period before as a dim block of bars, then
+//        the period lit, so the growth is the step between the blocks
+//
+// (Round four's E showed 26 weeks with the period lit; Onno: "E could work, but it would be
+// nice to see any growth — compare it directly to a previous timeframe.")
 //   F — Scorecard: one row per project, one verdict per source — the ratio and a word —
 //       and the 26 weeks of clicks as a line at the row's end
 //   G — Plan: one card per project, the registry as a funnel: planned, published, indexed,
@@ -39,13 +45,14 @@ import SwiftUI
 final class OverviewPrototype {
     enum Variant: String, CaseIterable, Identifiable {
         // Declaration order is the order the floating bar cycles through.
-        case trajectory, scorecard, plan
+        case overlay, sideBySide, scorecard, plan
 
         var id: String { rawValue }
 
         var key: String {
             switch self {
-            case .trajectory: "E"
+            case .overlay: "E1"
+            case .sideBySide: "E2"
             case .scorecard: "F"
             case .plan: "G"
             }
@@ -53,7 +60,8 @@ final class OverviewPrototype {
 
         var name: String {
             switch self {
-            case .trajectory: "Trajectory: growth per source, and the last 26 weeks"
+            case .overlay: "Trajectory: the period as a line over the period before"
+            case .sideBySide: "Trajectory: the period before, then the period, as two blocks"
             case .scorecard: "Scorecard: one verdict per source, per project"
             case .plan: "Plan: the registry as a funnel, per project"
             }
@@ -68,7 +76,7 @@ final class OverviewPrototype {
 
     init() {
         let stored = UserDefaults.standard.string(forKey: Self.defaultsKey)
-        variant = stored.flatMap(Variant.init(rawValue:)) ?? .trajectory
+        variant = stored.flatMap(Variant.init(rawValue:)) ?? .overlay
     }
 
     func cycle(_ step: Int) {
@@ -312,8 +320,10 @@ struct OverviewPrototypeBody: View {
             .column()
 
             switch variant {
-            case .trajectory:
-                ProtoTrajectoryVariant(sites: sites, period: period, icon: icon, onOpen: onOpen)
+            case .overlay:
+                ProtoTrajectoryVariant(sites: sites, period: period, style: .overlay, icon: icon, onOpen: onOpen)
+            case .sideBySide:
+                ProtoTrajectoryVariant(sites: sites, period: period, style: .sideBySide, icon: icon, onOpen: onOpen)
             case .scorecard:
                 ProtoScorecardVariant(sites: sites, icon: icon, onOpen: onOpen)
             case .plan:
