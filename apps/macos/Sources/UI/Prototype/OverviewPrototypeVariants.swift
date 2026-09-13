@@ -273,13 +273,14 @@ struct ProtoTrajectoryVariant: View {
     let sites: [PrototypeSiteSeries]
     let period: Period
     let style: ProtoCompareStyle
+    var compact = false
     let icon: (Site.ID) -> Image?
     let onOpen: (Site.ID) -> Void
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: compact ? 12 : 20) {
             ForEach(sites) { site in
-                ProtoTrajectoryCard(site: site, period: period, style: style, icon: icon(site.id))
+                ProtoTrajectoryCard(site: site, period: period, style: style, compact: compact, icon: icon(site.id))
                     .onTapGesture(count: 2) { onOpen(site.id) }
                     .help(site.glance.errorMessage ?? "Double-click to open \(site.site.name)")
             }
@@ -293,7 +294,12 @@ struct ProtoTrajectoryCard: View {
     let site: PrototypeSiteSeries
     let period: Period
     let style: ProtoCompareStyle
+    var compact = false
     let icon: Image?
+
+    /// The compact card's sizes: the figure at 20 points, the picture at 36.
+    private var figureSize: CGFloat { compact ? 20 : 28 }
+    private var pictureHeight: CGFloat { compact ? 36 : 48 }
 
     /// The overlay is a line: a day per point up to a month, a week per point beyond, and a
     /// daily run is read through a seven-day trailing mean so a site with one click a day
@@ -317,51 +323,88 @@ struct ProtoTrajectoryCard: View {
     }
 
     var body: some View {
-        let clicks = ProtoGrowth.clicks(site)
-        let visits = ProtoGrowth.visits(site)
-        let revenue = ProtoGrowth.revenue(site)
-        VStack(alignment: .leading, spacing: 20) {
-            ProtoCardHeader(site: site, icon: icon)
-
-            HStack(alignment: .top, spacing: 28) {
-                ProtoSourceColumn(
-                    title: "Search",
-                    growth: clicks,
-                    line: "\(GlanceFigure.count(clicks.current)) clicks" + (clicks.previous.map { ", was \(GlanceFigure.count($0))" } ?? ""),
-                    absent: nil
-                ) {
-                    let run = runs(\.clicks)
-                    ProtoCompareChart(current: run.now, previous: run.was, color: Palette.blue, style: style)
+        Group {
+            if compact {
+                HStack(alignment: .top, spacing: 24) {
+                    // The name in a zone of its own, so the card is one band and not a header
+                    // over a band.
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            ProtoFavicon(icon: icon)
+                            Text(site.site.name)
+                                .font(.headline)
+                                .lineLimit(1)
+                        }
+                        Text(site.site.origin.replacingOccurrences(of: "https://", with: ""))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        if let error = site.glance.errorMessage {
+                            Image(systemName: "exclamationmark.triangle")
+                                .foregroundStyle(Palette.coral)
+                                .help(error)
+                        }
+                    }
+                    .frame(width: 140, alignment: .leading)
+                    columns
                 }
-                ProtoSourceColumn(
-                    title: "Visitors",
-                    growth: visits,
-                    line: visits.map { "\(GlanceFigure.count($0.current)) visits" + ($0.previous.map { ", was \(GlanceFigure.count($0))" } ?? "") } ?? "",
-                    absent: "No analytics provider"
-                ) {
-                    let run = runs { $0.visits?.visits ?? 0 }
-                    ProtoCompareChart(current: run.now, previous: run.was, color: visitsColor, style: style)
+            } else {
+                VStack(alignment: .leading, spacing: 20) {
+                    ProtoCardHeader(site: site, icon: icon)
+                    columns
                 }
-                ProtoSourceColumn(
-                    title: "Sales",
-                    growth: revenue,
-                    line: site.revenue.map { "\(Money.format($0.current.revenue, currency: $0.currency)), was \(Money.format($0.previous.revenue, currency: $0.currency))" } ?? "",
-                    absent: "No commerce provider"
-                ) {
-                    // The revenue report carries only the window's days, and the period before
-                    // as one total: that total is spread over the same days as a dashed line.
-                    let now = shape((site.revenue?.days ?? []).map { $0.revenue / 100 })
-                    let wasTotal = (site.revenue?.previous.revenue ?? 0) / 100
-                    let was = now.isEmpty ? [] : Array(repeating: wasTotal / Double(now.count), count: now.count)
-                    ProtoCompareChart(current: now, previous: was, color: Palette.mint, style: style, previousIsAverage: true)
-                }
-                planColumn
             }
         }
-        .padding(20)
+        .padding(compact ? 16 : 20)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .cardSurface(cornerRadius: 12)
         .contentShape(Rectangle())
+    }
+
+    private var columns: some View {
+        let clicks = ProtoGrowth.clicks(site)
+        let visits = ProtoGrowth.visits(site)
+        let revenue = ProtoGrowth.revenue(site)
+        return HStack(alignment: .top, spacing: compact ? 20 : 28) {
+            ProtoSourceColumn(
+                title: "Search",
+                growth: clicks,
+                line: "\(GlanceFigure.count(clicks.current)) clicks" + (clicks.previous.map { ", was \(GlanceFigure.count($0))" } ?? ""),
+                absent: nil,
+                figureSize: figureSize,
+                pictureHeight: pictureHeight
+            ) {
+                let run = runs(\.clicks)
+                ProtoCompareChart(current: run.now, previous: run.was, color: Palette.blue, style: style)
+            }
+            ProtoSourceColumn(
+                title: "Visitors",
+                growth: visits,
+                line: visits.map { "\(GlanceFigure.count($0.current)) visits" + ($0.previous.map { ", was \(GlanceFigure.count($0))" } ?? "") } ?? "",
+                absent: "No analytics provider",
+                figureSize: figureSize,
+                pictureHeight: pictureHeight
+            ) {
+                let run = runs { $0.visits?.visits ?? 0 }
+                ProtoCompareChart(current: run.now, previous: run.was, color: visitsColor, style: style)
+            }
+            ProtoSourceColumn(
+                title: "Sales",
+                growth: revenue,
+                line: site.revenue.map { "\(Money.format($0.current.revenue, currency: $0.currency)), was \(Money.format($0.previous.revenue, currency: $0.currency))" } ?? "",
+                absent: "No commerce provider",
+                figureSize: figureSize,
+                pictureHeight: pictureHeight
+            ) {
+                // The revenue report carries only the window's days, and the period before
+                // as one total: that total is spread over the same days as a dashed line.
+                let now = shape((site.revenue?.days ?? []).map { $0.revenue / 100 })
+                let wasTotal = (site.revenue?.previous.revenue ?? 0) / 100
+                let was = now.isEmpty ? [] : Array(repeating: wasTotal / Double(now.count), count: now.count)
+                ProtoCompareChart(current: now, previous: was, color: Palette.mint, style: style, previousIsAverage: true)
+            }
+            planColumn
+        }
     }
 
     /// The plan's column: the indexed share as the figure, its move over the indexing series
@@ -379,7 +422,7 @@ struct ProtoTrajectoryCard: View {
             if let share {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(share.formatted(.percent.precision(.fractionLength(0))))
-                        .font(.system(size: 28, weight: .medium))
+                        .font(.system(size: figureSize, weight: .medium))
                         .monospacedDigit()
                     Text(move.map { Trend.signed($0, fractionDigits: 0) + "pp" } ?? "indexed")
                         .font(.caption.weight(.medium))
@@ -392,7 +435,7 @@ struct ProtoTrajectoryCard: View {
                     .lineLimit(1)
             } else {
                 Text("—")
-                    .font(.system(size: 28, weight: .medium))
+                    .font(.system(size: figureSize, weight: .medium))
                 Text(site.registry == nil ? "No registry yet" : "No keyword pages planned")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
@@ -404,7 +447,7 @@ struct ProtoTrajectoryCard: View {
                     ProtoNoPicture(text: site.registry == nil ? "" : "Indexing series too young")
                 }
             }
-            .frame(height: 48)
+            .frame(height: pictureHeight)
             .padding(.top, 6)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -418,6 +461,8 @@ struct ProtoSourceColumn<Picture: View>: View {
     let line: String
     /// Why there is no growth to show, for a site without this source.
     let absent: String?
+    var figureSize: CGFloat = 28
+    var pictureHeight: CGFloat = 48
     @ViewBuilder let picture: () -> Picture
 
     var body: some View {
@@ -428,7 +473,7 @@ struct ProtoSourceColumn<Picture: View>: View {
             if let growth {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(growth.label)
-                        .font(.system(size: 28, weight: .medium))
+                        .font(.system(size: figureSize, weight: .medium))
                         .monospacedDigit()
                         .foregroundStyle(growth.tint ?? .primary)
                     Text(growth.verdict)
@@ -440,16 +485,16 @@ struct ProtoSourceColumn<Picture: View>: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 picture()
-                    .frame(height: 48)
+                    .frame(height: pictureHeight)
                     .padding(.top, 6)
             } else {
                 Text("—")
-                    .font(.system(size: 28, weight: .medium))
+                    .font(.system(size: figureSize, weight: .medium))
                 Text(absent ?? "")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                 ProtoNoPicture(text: "")
-                    .frame(height: 48)
+                    .frame(height: pictureHeight)
                     .padding(.top, 6)
             }
         }
@@ -471,6 +516,169 @@ struct ProtoNoPicture: View {
             Spacer()
             Palette.line.frame(height: 1)
         }
+    }
+}
+
+// MARK: E1b. Trajectory as rows
+
+/// One card, one row per project: the site in the first zone, then four zones — Search,
+/// Visitors, Sales, Plan — each the percentage with its word over the "was" line, and the
+/// period against the period before as a small chart beside them. One row height.
+struct ProtoTrajectoryRows: View {
+    let sites: [PrototypeSiteSeries]
+    let period: Period
+    let icon: (Site.ID) -> Image?
+    let onOpen: (Site.ID) -> Void
+
+    @Environment(\.isTabPreview) private var isPreview
+    @State private var hoveredRow: Site.ID?
+
+    static let siteWidth: CGFloat = 130
+    static let spacing: CGFloat = 14
+    static let rowHeight: CGFloat = 60
+    static let chartWidth: CGFloat = 64
+    static let columns = ["Search", "Visitors", "Sales", "Plan"]
+    private static let overhang: CGFloat = 8
+
+    private var bucket: Int { period.days > 31 ? 7 : 1 }
+
+    private func shape(_ values: [Double]) -> [Double] {
+        let bucketed = ProtoCompareChart.buckets(values, size: bucket)
+        guard bucket == 1, period.days >= 14 else { return bucketed }
+        return ProtoCompareChart.smoothed(bucketed, window: 7)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: Self.spacing) {
+                Text("Projects")
+                    .font(.headline)
+                    .frame(width: Self.siteWidth, alignment: .leading)
+                ForEach(Self.columns, id: \.self) { column in
+                    Text(column)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.bottom, 4)
+
+            VStack(spacing: 0) {
+                ForEach(sites) { site in
+                    row(site)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) { onOpen(site.id) }
+                        .onHover { inside in
+                            guard !isPreview else { return }
+                            if inside { hoveredRow = site.id } else if hoveredRow == site.id { hoveredRow = nil }
+                        }
+                        .help(site.glance.errorMessage ?? "Double-click to open \(site.site.name)")
+                }
+            }
+            .animation(.easeOut(duration: 0.12), value: hoveredRow)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .cardSurface(cornerRadius: 12)
+        .column()
+        .padding(.top, 36)
+    }
+
+    private func row(_ site: PrototypeSiteSeries) -> some View {
+        let clicks = ProtoGrowth.clicks(site)
+        let visits = ProtoGrowth.visits(site)
+        let revenue = ProtoGrowth.revenue(site)
+        let clickRun = (shape(site.days.map(\.clicks)), shape(site.previousDays.map(\.clicks)))
+        let visitRun = (shape(site.days.map { $0.visits?.visits ?? 0 }), shape(site.previousDays.map { $0.visits?.visits ?? 0 }))
+        let salesNow = shape((site.revenue?.days ?? []).map { $0.revenue / 100 })
+        let salesWas = salesNow.isEmpty ? [] : Array(repeating: (site.revenue?.previous.revenue ?? 0) / 100 / Double(salesNow.count), count: salesNow.count)
+        let share = site.registry?.indexedShare
+        let first = site.coverage.first?.indexedShare
+        let last = site.coverage.last?.indexedShare
+        let move: Double? = if let first, let last, site.coverage.count >= 2 { (last - first) * 100 } else { nil }
+        return HStack(alignment: .center, spacing: Self.spacing) {
+            HStack(spacing: 8) {
+                ProtoFavicon(icon: icon(site.id))
+                Text(site.site.name)
+                    .font(.callout)
+                    .lineLimit(1)
+            }
+            .frame(width: Self.siteWidth, alignment: .leading)
+
+            zone(growth: clicks, line: "\(GlanceFigure.count(clicks.current)), was \(clicks.previous.map(GlanceFigure.count) ?? "—")", absent: nil) {
+                ProtoCompareChart(current: clickRun.0, previous: clickRun.1, color: Palette.blue, style: .overlay)
+            }
+            zone(growth: visits, line: visits.map { $0.previous == nil ? GlanceFigure.count($0.current) : "\(GlanceFigure.count($0.current)), was \(GlanceFigure.count($0.previous!))" } ?? "", absent: "No analytics") {
+                ProtoCompareChart(current: visitRun.0, previous: visitRun.1, color: visitsColor, style: .overlay)
+            }
+            zone(growth: revenue, line: site.revenue.map { Money.format($0.current.revenue, currency: $0.currency) } ?? "", absent: "No provider") {
+                ProtoCompareChart(current: salesNow, previous: salesWas, color: Palette.mint, style: .overlay, previousIsAverage: true)
+            }
+            // The plan's zone: the indexed share, and its move.
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(share.map { $0.formatted(.percent.precision(.fractionLength(0))) } ?? "—")
+                            .font(.body)
+                            .monospacedDigit()
+                            .fixedSize()
+                            .foregroundStyle(move.map { GlanceFigure.tint($0) } ?? .primary)
+                        Text(move.map { Trend.signed($0, fractionDigits: 0) + "pp" } ?? "")
+                            .font(.caption)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(share == nil ? "No keyword pages" : "indexed, \(ProtoFunnel(targets: site.targets).steps[4].count) clicked")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Group {
+                    if site.coverage.count >= 2 {
+                        ProtoSparkline(values: site.coverage.map { ($0.indexedShare ?? 0) * 100 }, color: Palette.mint, fromZero: false)
+                    } else {
+                        Color.clear
+                    }
+                }
+                .frame(width: Self.chartWidth, height: 28)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(height: Self.rowHeight)
+        .padding(.horizontal, Self.overhang)
+        .background(hoveredRow == site.id ? Palette.line.opacity(0.45) : Color.clear, in: .rect(cornerRadius: 6))
+        .padding(.horizontal, -Self.overhang)
+    }
+
+    /// One source's zone: the percentage and word over the counts, the chart at the right.
+    private func zone<Chart: View>(growth: ProtoGrowth?, line: String, absent: String?, @ViewBuilder chart: () -> Chart) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                // The percentage alone: its colour is the word, and a word beside it wrapped
+                // the zone. A source that only started says so in the line under.
+                Text(growth?.label ?? "—")
+                    .font(.body)
+                    .monospacedDigit()
+                    .fixedSize()
+                    .foregroundStyle(growth?.tint ?? .primary)
+                Text(growth == nil ? (absent ?? "") : (growth?.ratio == nil && growth!.current > 0 ? "\(line), started this period" : line))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Group {
+                if growth != nil {
+                    chart()
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(width: Self.chartWidth, height: 28)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

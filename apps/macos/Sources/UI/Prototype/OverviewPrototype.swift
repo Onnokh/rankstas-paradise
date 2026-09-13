@@ -20,6 +20,14 @@ import SwiftUI
 // Three shapes, switchable from the floating bar at the bottom of the window (⌘⌥← / ⌘⌥→)
 // while the Overview is in front, with real data:
 //
+//   E1a — Trajectory, toned down: the E1 card at two thirds — the site's name in a zone of
+//         its own on the left, the four sources beside it, the percentage at 20 points
+//   E1b — Trajectory, as rows: one card, one 64-point row per project, the four sources as
+//         zones with the percentage and word over a small chart
+//
+// (Round five's E1 was chosen: "E1 could work, but it's way too big for 4 projects — do this
+// but tone them down a bit.")
+//
 //   E1 — Trajectory, overlaid: one card per project; for Search, Visitors, Sales and Plan
 //        the growth as one large percentage, and under it the period as a line in the
 //        source's colour over the period before in grey, day against day
@@ -45,25 +53,23 @@ import SwiftUI
 final class OverviewPrototype {
     enum Variant: String, CaseIterable, Identifiable {
         // Declaration order is the order the floating bar cycles through.
-        case overlay, sideBySide, scorecard, plan
+        case compact, rows, overlay
 
         var id: String { rawValue }
 
         var key: String {
             switch self {
+            case .compact: "E1a"
+            case .rows: "E1b"
             case .overlay: "E1"
-            case .sideBySide: "E2"
-            case .scorecard: "F"
-            case .plan: "G"
             }
         }
 
         var name: String {
             switch self {
-            case .overlay: "Trajectory: the period as a line over the period before"
-            case .sideBySide: "Trajectory: the period before, then the period, as two blocks"
-            case .scorecard: "Scorecard: one verdict per source, per project"
-            case .plan: "Plan: the registry as a funnel, per project"
+            case .compact: "Trajectory, toned down: the card at two thirds, the name in its own zone"
+            case .rows: "Trajectory, as rows: one row per project in one card"
+            case .overlay: "Trajectory, as round five drew it (for comparison)"
             }
         }
     }
@@ -76,7 +82,7 @@ final class OverviewPrototype {
 
     init() {
         let stored = UserDefaults.standard.string(forKey: Self.defaultsKey)
-        variant = stored.flatMap(Variant.init(rawValue:)) ?? .overlay
+        variant = stored.flatMap(Variant.init(rawValue:)) ?? .compact
     }
 
     func cycle(_ step: Int) {
@@ -320,14 +326,12 @@ struct OverviewPrototypeBody: View {
             .column()
 
             switch variant {
+            case .compact:
+                ProtoTrajectoryVariant(sites: sites, period: period, style: .overlay, compact: true, icon: icon, onOpen: onOpen)
+            case .rows:
+                ProtoTrajectoryRows(sites: sites, period: period, icon: icon, onOpen: onOpen)
             case .overlay:
-                ProtoTrajectoryVariant(sites: sites, period: period, style: .overlay, icon: icon, onOpen: onOpen)
-            case .sideBySide:
-                ProtoTrajectoryVariant(sites: sites, period: period, style: .sideBySide, icon: icon, onOpen: onOpen)
-            case .scorecard:
-                ProtoScorecardVariant(sites: sites, icon: icon, onOpen: onOpen)
-            case .plan:
-                ProtoPlanVariant(sites: sites, icon: icon, onOpen: onOpen)
+                ProtoTrajectoryVariant(sites: sites, period: period, style: .overlay, compact: false, icon: icon, onOpen: onOpen)
             }
 
             footer
