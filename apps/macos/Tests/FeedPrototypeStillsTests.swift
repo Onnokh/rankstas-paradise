@@ -36,6 +36,7 @@ final class FeedPrototypeStillsTests: XCTestCase {
         let stills: [(String, AnyView)] = [
             // A stand-in favicon, so the still shows the slot the app fills from its store.
             ("t-hierarchy", log { FeedHierarchyVariant(rows: rows, showsSite: true, now: now, icon: { _ in Image(systemName: "seal.fill") }) }),
+            ("u-one-line", log { FeedOneLineVariant(rows: rows, showsSite: true, now: now, icon: { _ in Image(systemName: "seal.fill") }) }),
             ("q-quiet", log { FeedQuietVariant(rows: rows, showsSite: true, now: now) }),
             ("r-quiet-path", log { FeedQuietPathVariant(rows: rows, showsSite: true, now: now) }),
             ("r-quiet-path-hover", log {

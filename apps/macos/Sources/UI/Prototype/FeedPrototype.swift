@@ -22,6 +22,7 @@ import SwiftUI
 //   R — Quiet path: one row per person, their path as the row's words
 //   S — Quiet per site: R's rows, one column per site
 //   T — Hierarchy: two lines per person — what now, then one caption with everything else
+//   U — One line: T on one line, the caption right-anchored in its own zone
 //
 // Round three — the log kept, one thing changed each (the log was still the clearest):
 //
@@ -60,7 +61,7 @@ final class FeedPrototype {
     enum Variant: String, CaseIterable, Identifiable {
         // Declaration order is the order the floating bar cycles through.
         case current
-        case hierarchy, quiet, quietPath, quietPerSite
+        case hierarchy, oneLine, quiet, quietPath, quietPerSite
         case grouped, trail, folded, temperature, perSite, transcript, head
         case pulse, trace, now, stage
         case visits, lanes, pressure, paths, signals
@@ -71,6 +72,7 @@ final class FeedPrototype {
             switch self {
             case .current: "Current"
             case .hierarchy: "T"
+            case .oneLine: "U"
             case .quiet: "Q"
             case .quietPath: "R"
             case .quietPerSite: "S"
@@ -97,6 +99,7 @@ final class FeedPrototype {
             switch self {
             case .current: "The log, one row per event (as shipped)"
             case .hierarchy: "Hierarchy: what now, then one caption for the rest"
+            case .oneLine: "One line: T on one line, caption right-anchored"
             case .quiet: "Quiet: the log, stripped to type"
             case .quietPath: "Quiet path: one line per person, the path as the line"
             case .quietPerSite: "Quiet per site: one line per person, one column per site"
@@ -123,7 +126,7 @@ final class FeedPrototype {
         var title: String {
             switch self {
             case .current: "Feed"
-            case .hierarchy, .quiet, .quietPath, .quietPerSite: "Feed"
+            case .hierarchy, .oneLine, .quiet, .quietPath, .quietPerSite: "Feed"
             case .grouped, .trail, .folded, .temperature, .perSite, .transcript, .head: "Feed"
             case .pulse: "Pulse"
             case .trace: "Trace"
@@ -197,6 +200,8 @@ struct FeedPrototypeHost: View {
             )
         case .hierarchy:
             logCard { FeedHierarchyVariant(rows: rows, showsSite: showsSite, now: now, icon: icon) }
+        case .oneLine:
+            logCard { FeedOneLineVariant(rows: rows, showsSite: showsSite, now: now, icon: icon) }
         case .quiet:
             logCard { FeedQuietVariant(rows: rows, showsSite: showsSite, now: now) }
         case .quietPath:

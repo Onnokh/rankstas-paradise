@@ -480,7 +480,7 @@ struct FeedHierarchyRow: View {
     let icon: Image?
     var isHovered = false
 
-    static let height: CGFloat = 44
+    static let height: CGFloat = 42
     private static let gutter: CGFloat = 40
     private static let siteWidth: CGFloat = 136
 
@@ -580,15 +580,16 @@ struct FeedHierarchyRow: View {
     }
 
     /// Everything else, in one grey: "after /eu/drakthul/felmasakr · 5 steps". Always
-    /// opening with "after" or "from", so every row's words start at the same place.
+    /// opening with "after" or "arrived", so every row's words start at the same place.
     /// Only the step before this one is named, in full — two, shortened, cut paths in the
-    /// middle of a word, and the whole trail is the tooltip's. A row with no history says
-    /// how the visit began instead, when the provider knows: "from google.com". The line is
-    /// kept even when it is empty, so every row is the same height.
-    private var caption: Text {
+    /// middle of a word, and the whole trail is the tooltip's.
+    ///
+    /// A row with no history says how the visit began: "arrived from google.com", or just
+    /// "arrived" when the provider gives no referrer. Every row has a second line: on a
+    /// fixed grid, an empty line read as a gap twice the size of the one under a full row,
+    /// and that alternation was what broke the rhythm.
+    static func caption(for line: FeedQuietLine) -> String {
         var parts: [String] = []
-        // The same page loaded again and again is said in words here, not as "×3" on the
-        // headline: "×3" at the row's end already means a third visit.
         if let newest = line.newest, newest.repeats > 1 {
             parts.append("loaded \(newest.repeats) times")
         }
@@ -598,8 +599,146 @@ struct FeedHierarchyRow: View {
                 parts.append("\(line.steps.count) steps")
             }
         } else if let origin = line.origin {
-            parts.append(origin)
+            parts.append("arrived \(origin)")
+        } else {
+            parts.append("arrived")
         }
-        return Text(parts.isEmpty ? " " : parts.joined(separator: "  ·  "))
+        return parts.joined(separator: "  ·  ")
+    }
+
+    private var caption: Text {
+        Text(Self.caption(for: line))
+    }
+}
+
+// MARK: - U · One line
+
+/// T on one line. The headline leads; the caption is right-anchored in its own zone, in
+/// caption grey, between the words and the who — a fixed edge, so it can never push the
+/// headline or the flag. One 36-point row, so the pitch is perfect and the card is half as
+/// tall. The bet against T: that a zone and a tone are enough hierarchy without a second line.
+struct FeedOneLineVariant: View {
+    let rows: [LiveFeedRow]
+    let showsSite: Bool
+    let now: Date
+    var icon: (Site.ID) -> Image? = { _ in nil }
+
+    @Environment(\.isTabPreview) private var isPreview
+    @State private var hovered: String?
+
+    var body: some View {
+        let lines = FeedQuiet.lines(grouping: rows, now: now)
+        VStack(spacing: 0) {
+            ForEach(lines) { line in
+                FeedOneLineRow(line: line, showsSite: showsSite, icon: icon(line.siteID), isHovered: hovered == line.id)
+                    .onHover { inside in
+                        guard !isPreview else { return }
+                        if inside {
+                            hovered = line.id
+                        } else if hovered == line.id {
+                            hovered = nil
+                        }
+                    }
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: hovered)
+    }
+}
+
+struct FeedOneLineRow: View {
+    let line: FeedQuietLine
+    let showsSite: Bool
+    let icon: Image?
+    var isHovered = false
+
+    static let height: CGFloat = 36
+    private static let gutter: CGFloat = 40
+    private static let siteWidth: CGFloat = 136
+    /// The caption's zone. Fixed, so the headline's zone is fixed too.
+    private static let captionWidth: CGFloat = 300
+
+    private var wordsX: CGFloat { 12 + Self.gutter + 16 + (showsSite ? Self.siteWidth + 16 : 0) }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            Text(line.age)
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.tertiary)
+                .frame(width: Self.gutter, alignment: .trailing)
+
+            if showsSite {
+                HStack(spacing: 8) {
+                    if let icon {
+                        icon.resizable().interpolation(.high).scaledToFit()
+                            .frame(width: 16, height: 16)
+                            .clipShape(.rect(cornerRadius: 3))
+                    }
+                    Text(line.siteName)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(width: Self.siteWidth, alignment: .leading)
+            }
+
+            headline
+                .font(.body)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(FeedHierarchyRow.caption(for: line))
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(width: Self.captionWidth, alignment: .trailing)
+
+            HStack(spacing: 10) {
+                Text(line.returns ?? "")
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 26, alignment: .trailing)
+                    .help(line.returnsHelp ?? "first visit")
+                Text(line.flag)
+                    .font(.body)
+                    .frame(width: 24, alignment: .trailing)
+                    .help(line.country)
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: Self.height)
+        .background(isHovered ? Palette.line.opacity(0.45) : Color.clear, in: .rect(cornerRadius: 6))
+        .contentShape(Rectangle())
+        .overlay(alignment: .topLeading) {
+            if isHovered {
+                FeedQuietTooltip(line: line)
+                    .fixedSize()
+                    .offset(x: wordsX, y: Self.height + 2)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .zIndex(isHovered ? 1 : 0)
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder private var headline: some View {
+        if let newest = line.newest {
+            switch newest.kind {
+            case .event, .buttonClick, .copy, .formSubmit, .inputChange:
+                Text(newest.primary)
+                    .fontWeight(.medium)
+                    .foregroundStyle(visitsColor)
+            case .outbound:
+                Text("→ \(FeedQuiet.readable(newest.primary))")
+            case .pageview:
+                Text(FeedQuiet.readable(newest.primary))
+            }
+        } else {
+            Text("—")
+        }
     }
 }
