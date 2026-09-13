@@ -20,4 +20,14 @@ enum RelativeAge {
     static func labelOrTime(from date: Date, to now: Date) -> String {
         label(from: date, to: now) ?? date.formatted(date: .omitted, time: .shortened)
     }
+
+    /// "now", "3m", "59m", then the clock time: the same ages for a column that is a gutter,
+    /// not a sentence. Four characters at most before the clock takes over, so the column
+    /// can be narrow and the digits still line up.
+    static func compact(from date: Date, to now: Date) -> String {
+        let elapsed = now.timeIntervalSince(date)
+        if elapsed < 60 { return "now" }
+        if elapsed < hour { return "\(Int(elapsed / 60))m" }
+        return date.formatted(date: .omitted, time: .shortened)
+    }
 }

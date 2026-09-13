@@ -216,7 +216,8 @@ The distinct people active on the site in the last five minutes: the ones there 
 One thing a visitor just did, as the provider recorded it: a Pageview, or an Event with its data, with the page it happened on and the visitor's country, browser and device. The rows of the Live feed. Asked on demand for the last thirty minutes, shown at most a few seconds old; never stored. Not an Event count: that is the per-day ledger.
 
 **Live feed**:
-The Live events of every site, newest first, in one stream on the Overview. Filtered by site and by kind. A visitor shows as a country, a browser and a device, never as a made-up name.
+The Live events of every site on the Overview, one row per visitor, newest first: a row is one person's run through one site — their Live events within ten minutes of each other — headed by the newest one, with the steps before it in a caption and the whole run under the pointer. Filtered by site and by kind before the runs are made. A visitor shows as a flag, a browser and a device, never as a made-up name.
+_Avoid_: "session" for a run (a Visit is the provider's count; a run is the feed's own grouping, cut by the window); one row per event (that was the log the feed replaced).
 
 **Visitor history**:
 What the provider knows about one person of the Live feed over their whole recorded history, not the window: how many Visits it has counted for them, and when it first and last saw them. What says a returning visitor from a first-time one — a Live event on its own cannot, because the window is half an hour. Asked once a minute beside the feed, never stored.
