@@ -484,6 +484,9 @@ struct FeedCard: View {
     @State private var hoveredRow: LiveFeedRow.ID?
     /// Which rows have just arrived: they come in, and their tint fades.
     @State private var arrivals = FeedArrivals()
+    /// How wide the rows are, as laid out: what the caption's zone is cut from. Nil until
+    /// the first layout, when the rows take the column's full width.
+    @State private var rowWidth: CGFloat?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -509,7 +512,8 @@ struct FeedCard: View {
                             showsSite: showsSite,
                             icon: icon(row.siteID),
                             isHovered: hoveredRow == row.id,
-                            isArriving: arrivals.fresh.contains(row.id)
+                            isArriving: arrivals.fresh.contains(row.id),
+                            captionWidth: FeedRow.captionWidth(in: rowWidth, showsSite: showsSite)
                         )
                         .equatable()
                         .onHover { inside in
@@ -527,6 +531,9 @@ struct FeedCard: View {
                     }
                 }
                 .animation(.easeOut(duration: 0.12), value: hoveredRow)
+                // The rows' width sets the zones: the caption's gives way first, so the
+                // headline keeps its room in a narrow window.
+                .onGeometryChange(for: CGFloat.self, of: \.size.width) { rowWidth = $0 }
             }
         }
         .padding(20)
@@ -573,6 +580,9 @@ private struct FeedRow: View, Equatable {
     /// Whether the row is at the start of coming in: unseen and tinted, for one frame. When
     /// it stops being so the row fades in and lifts, and the tint goes over a few seconds.
     let isArriving: Bool
+    /// The caption's zone, cut from the row's width by `captionWidth(in:showsSite:)`. Zero
+    /// hides the caption; the tooltip still has it.
+    let captionWidth: CGFloat
 
     static let height: CGFloat = 36
     /// How long the tint of a row that arrived stays: long enough to find it after a glance
@@ -580,17 +590,36 @@ private struct FeedRow: View, Equatable {
     private static let tintFade: TimeInterval = 4
     private static let gutter: CGFloat = 40
     private static let siteWidth: CGFloat = 136
-    /// The caption's zone. Fixed, so the headline's zone is fixed too.
-    private static let captionWidth: CGFloat = 300
+    private static let spacing: CGFloat = 16
+    /// The caption's zone at its widest, in the column at full width.
+    private static let captionMax: CGFloat = 300
+    /// The least the headline gets before the caption gives way: it is the row's point, and
+    /// a route cut to "/eu/…tion" says nothing.
+    private static let headlineMin: CGFloat = 220
+    /// A caption narrower than this is an ellipsis; it goes instead.
+    private static let captionMin: CGFloat = 100
+    /// The two slots at the end: the visit count, its gap, the flag.
+    private static let whoWidth: CGFloat = 26 + 10 + 20
     /// How far the hover's highlight reaches past the row's words on either side.
     private static let overhang: CGFloat = 8
 
+    /// The caption's zone for rows this wide: what is left after the fixed zones and the
+    /// headline's least, up to `captionMax`, or nothing when that is too little to read. The
+    /// same for every row of the stack, so the zones stay fixed between rows; only the window
+    /// moves them. Nil is before the first layout: the column at full width.
+    static func captionWidth(in rowWidth: CGFloat?, showsSite: Bool) -> CGFloat {
+        let width = rowWidth ?? (SiteTabScreen.columnWidth - 40)
+        let fixed = gutter + spacing + (showsSite ? siteWidth + spacing : 0) + spacing + whoWidth
+        let words = width - fixed
+        let caption = min(captionMax, words - headlineMin - spacing)
+        return caption < captionMin ? 0 : caption
+    }
     /// An `Image` cannot be compared, and the favicon arrives once: what matters is whether
     /// the row has one.
     nonisolated static func == (left: FeedRow, right: FeedRow) -> Bool {
         left.row == right.row && left.age == right.age && left.showsSite == right.showsSite
             && (left.icon == nil) == (right.icon == nil) && left.isHovered == right.isHovered
-            && left.isArriving == right.isArriving
+            && left.isArriving == right.isArriving && left.captionWidth == right.captionWidth
     }
 
     /// Where the words start: where the tooltip hangs from.
@@ -628,12 +657,14 @@ private struct FeedRow: View, Equatable {
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(row.caption)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(width: Self.captionWidth, alignment: .trailing)
+            if captionWidth > 0 {
+                Text(row.caption)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(width: captionWidth, alignment: .trailing)
+            }
 
             // Who, in two fixed slots: how often they have been here, and where they are.
             HStack(spacing: 10) {
