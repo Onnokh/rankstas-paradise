@@ -1,11 +1,12 @@
 import Foundation
 import Observation
 
-/// Identifies one tab: the overview, the realtime, or a site.
+/// Identifies what the pane shows: the overview, the realtime, or a site's tab.
 ///
-/// The overview and the realtime are the two tabs every server has, in that order, ahead of
-/// the sites. The overview is the sites compared over a stored period; the realtime is the
-/// sites watched — who is on them now, what today has brought, what visitors are doing.
+/// Only the sites are tabs. The overview and the realtime are the two screens every server
+/// has, reached from the rail beside the pane and never from the tab bar. The overview is
+/// the sites compared over a stored period; the realtime is the sites watched — who is on
+/// them now, what today has brought, what visitors are doing.
 enum TabID: Hashable, Sendable {
     case overview
     case realtime

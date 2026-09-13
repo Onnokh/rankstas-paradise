@@ -69,20 +69,22 @@ final class PeekLayoutTests: XCTestCase {
         XCTAssertEqual(layout.tabFrame(1).minX, layout.tabFrame(0).minX + layout.tabWidth + PeekLayout.tabSpacing, accuracy: 0.001)
     }
 
-    func testGridPutsTheOverviewLeftSpanningTwoRowsAndSitesInTwoColumns() {
+    /// Every tab is a site, so the grid is one block of equal cards in two columns under the
+    /// heading, with no summary card standing apart on the left.
+    func testGridLaysTheSitesInTwoColumnsOfEqualCardsUnderTheHeading() {
         let layout = PeekLayout(size: size, tabCount: 5, progress: PeekProgress.grid)
-        let overview = layout.gridFrame(0)
-        let first = layout.gridFrame(1)
-        let second = layout.gridFrame(2)
-        let third = layout.gridFrame(3)
+        let first = layout.gridFrame(0)
+        let second = layout.gridFrame(1)
+        let third = layout.gridFrame(2)
 
-        XCTAssertEqual(overview.height, first.height * 2 + PeekLayout.gridGap, accuracy: 0.001)
-        XCTAssertEqual(first.minX, overview.maxX + PeekLayout.gridGap, accuracy: 0.001)
-        XCTAssertEqual(first.minY, overview.minY, accuracy: 0.001)
+        XCTAssertEqual(first.minX, layout.gridOrigin.x, accuracy: 0.001)
         XCTAssertEqual(second.minX, first.maxX + PeekLayout.gridGap, accuracy: 0.001)
+        XCTAssertEqual(second.size, first.size)
         XCTAssertEqual(third.minX, first.minX, accuracy: 0.001)
         XCTAssertEqual(third.minY, first.maxY + PeekLayout.gridGap, accuracy: 0.001)
+        XCTAssertEqual(layout.gridRows, 3)
         XCTAssertEqual(layout.gridHeadingFrame.minX, first.minX, accuracy: 0.001)
+        XCTAssertEqual(layout.gridHeadingFrame.maxX, second.maxX, accuracy: 0.001)
         XCTAssertEqual(layout.gridHeadingFrame.maxY, first.minY, accuracy: 0.001)
     }
 

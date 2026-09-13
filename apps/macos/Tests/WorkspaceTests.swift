@@ -3,21 +3,30 @@ import XCTest
 
 @MainActor
 final class WorkspaceTests: XCTestCase {
-    func testReconcileBuildsTabsWithOverviewAndRealtimeFirst() {
+    /// The bar holds the sites and nothing else. The Overview and the Realtime are the rail's
+    /// screens: every pane the workspace can show lists them ahead of the tabs, so a view can
+    /// be mounted for them, but no ⌘-number and no step along the bar reaches them.
+    func testTabsAreTheSitesAndTheRailScreensStandAheadOfThemAmongThePanes() {
         let workspace = Workspace()
         workspace.reconcile(siteIDs: ["a", "b"])
-        XCTAssertEqual(workspace.tabs, [.overview, .realtime, .site("a"), .site("b")])
+        XCTAssertEqual(workspace.tabs, [.site("a"), .site("b")])
+        XCTAssertEqual(workspace.panes, [.overview, .realtime, .site("a"), .site("b")])
+        XCTAssertEqual(workspace.activeTabID, .overview, "The Overview is in front at launch, without being a tab.")
     }
 
     func testNeighbourTabStepsAlongTheBarAndWraps() {
         let workspace = Workspace()
         workspace.reconcile(siteIDs: ["a", "b"])
 
-        XCTAssertEqual(workspace.neighbourTab(1), .realtime)
+        XCTAssertEqual(workspace.neighbourTab(1), .site("a"), "From a rail screen either step lands on the first tab.")
+        XCTAssertEqual(workspace.neighbourTab(-1), .site("a"))
+
+        workspace.activate(.site("a"))
+        XCTAssertEqual(workspace.neighbourTab(1), .site("b"))
         XCTAssertEqual(workspace.neighbourTab(-1), .site("b"), "Left from the first tab wraps to the last.")
 
         workspace.activate(.site("b"))
-        XCTAssertEqual(workspace.neighbourTab(1), .overview, "Right from the last tab wraps to the first.")
+        XCTAssertEqual(workspace.neighbourTab(1), .site("a"), "Right from the last tab wraps to the first.")
         XCTAssertEqual(workspace.neighbourTab(-1), .site("a"))
     }
 
@@ -42,7 +51,7 @@ final class WorkspaceTests: XCTestCase {
     func testSteppingAlongTheWholeBarStopsRebuildingOnceEachTabHasBeenSeen() {
         let workspace = Workspace()
         workspace.reconcile(siteIDs: ["a", "b", "c", "d"])
-        XCTAssertEqual(workspace.tabs.count, 6)
+        XCTAssertEqual(workspace.tabs.count, 4)
 
         // The first walk builds each tab once. It is every walk after it that has to be free.
         for _ in workspace.tabs.indices {
@@ -98,6 +107,17 @@ final class WorkspaceTests: XCTestCase {
         XCTAssertFalse(workspace.recency.contains(.site("zzz")), "Only a known tab gets a view.")
     }
 
+    /// The Realtime is no tab, but it is a pane, so the idle mounting after launch can give
+    /// it a view too: the rail click that reaches it is then a swap.
+    func testARailScreenCanBeMountedThoughItIsNoTab() {
+        let workspace = Workspace(mountedLimit: 3)
+        workspace.reconcile(siteIDs: ["a"])
+
+        workspace.mount(.realtime)
+        XCTAssertEqual(workspace.mountedTabIDs, [.overview, .realtime])
+        XCTAssertFalse(workspace.tabs.contains(.realtime))
+    }
+
     func testEvictedTabKeepsItsNavigationState() {
         let workspace = Workspace(mountedLimit: 1)
         workspace.reconcile(siteIDs: ["a", "b"])
@@ -114,7 +134,7 @@ final class WorkspaceTests: XCTestCase {
         let workspace = Workspace()
         workspace.reconcile(siteIDs: ["a", "b"])
 
-        workspace.activateTab(at: 3)
+        workspace.activateTab(at: 1)
         XCTAssertEqual(workspace.activeTabID, .site("b"))
 
         workspace.activateTab(at: 9)

@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// The mounted tab screens. The active one sits in place; the others wait below the bottom
-/// edge, parked without animation. Swapping the active tab is instant. Any motion the user
-/// sees comes from the container: the peek offset retracting, or the whole pane travelling
-/// back up after the grid pushed it out.
+/// The mounted panes — the rail's two screens and the site tabs that keep a view. The
+/// active one sits in place; the others wait below the bottom edge, parked without
+/// animation. Swapping the active pane is instant. Any motion the user sees comes from the
+/// container: the peek offset retracting, or the whole pane travelling back up after the
+/// grid pushed it out.
 ///
 /// The pane is exactly the size it is given. A screen that wants more width than the pane
 /// has — a mounted one behind the active one counts too — is centred in it and cut at its
@@ -44,15 +45,16 @@ struct TabContentStack: View, Equatable {
             && lhs.height == rhs.height
     }
 
-    /// The mounted tabs in tab-bar order, not in the order they were last used.
+    /// The mounted panes in the workspace's fixed order — the rail's screens, then the tab
+    /// bar — not in the order they were last used.
     ///
     /// `Workspace.mountedTabIDs` is ordered by recency, so activating a tab reordered this
     /// ForEach and moved nine hosted screens in the layer tree on the one frame that has to
-    /// be cheap: the frame a tab is chosen. Which tabs are mounted is the same set either
+    /// be cheap: the frame a tab is chosen. Which panes are mounted is the same set either
     /// way, and the active one is raised by `zIndex`, so nothing about the result changes.
     private var mountedTabs: [TabID] {
         let mounted = Set(workspace.mountedTabIDs)
-        return workspace.tabs.filter(mounted.contains)
+        return workspace.panes.filter(mounted.contains)
     }
 
     var body: some View {

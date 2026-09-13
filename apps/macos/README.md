@@ -104,18 +104,19 @@ bundle, and a replacement leaves it alone.
 
 - `Sources/App` — the app entry and its menu bar additions (`ViewCommands`).
 - `Sources/Model` — API client, DTOs, cache-first repository, `OverviewModel`, `OverviewGlance` and `ProjectTrajectory` (the Overview's per-site arithmetic: the strip's totals, and each project's period against the period before), `LiveStore` (live counts and the live feed, polled, never cached). Data only, shared by every tab.
-- `Sources/Workspace` — `Workspace` (tabs, active tab, bounded mounted set), per-tab state, `PeekProgress` (0 closed, 1 strip, 2 grid).
+- `Sources/Workspace` — `Workspace` (the site tabs, the pane in front, bounded mounted set), per-tab state, `PeekProgress` (0 closed, 1 strip, 2 grid).
 - `Sources/Gesture` — three-finger trackpad drag recogniser streaming travel and velocity.
 - `Sources/UI` — `RootView`, `TabBar`, `PeekOverlay`, `TabContentStack`, `ScreenRail`, and `PeekLayout`, the pure struct that turns window size plus peek progress into every frame.
-- `Sources/UI/Screens` — one screen per tab kind, rendered from tab state. A site's peek preview always shows its dashboard.
-  The first two tabs are the same on every server. The Overview is the projects compared: the strip sums the
+- `Sources/UI/Screens` — one screen per pane kind, rendered from its state. A site's peek preview always shows its dashboard.
+  Only the sites are tabs. The Overview and the Realtime are the two screens every server has, reached from the
+  rail and never from the tab bar, so no tab is active while one of them is in front. The Overview is the projects compared: the strip sums the
   sites over a chosen period, and under it one card per project says how it does — the site in a zone of its own
   with what it sold, then Search, Visitors and Plan, each the period against the period before as a percentage
   with a word (Growing, Flat, Slipping at ten percent either way) and as two runs on one small chart, the period
   in the source's colour over the period before in grey. Read from what is stored and never polled. The Realtime is the sites watched: who is on each site now,
-  the last half hour by the minute, today so far, and the feed of what visitors are doing — the one tab that polls.
-  The rail stands beside every tab's pane: the app icon at the top, the Overview and the Realtime right under it so
-  they can be reached from any tab, a site's own screens centred below, and a stand-in account icon at the bottom.
+  the last half hour by the minute, today so far, and the feed of what visitors are doing — the one screen that polls.
+  The rail stands beside every pane: the app icon at the top, the Overview and the Realtime right under it so
+  they can be reached from anywhere, a site's own screens centred below, and a stand-in account icon at the bottom.
   A site tab has four screens, peers chosen from the rail beside the pane: Dashboard, the period's Search
   Console figures and chart with the provider's cards under them — realtime, visits, revenue, the period's
   events, and where its visits came from as two cards, referrers and channels beside the UTM tags, each row
@@ -125,9 +126,9 @@ bundle, and a replacement leaves it alone.
   dimmed in the Registry and in the ranking card. One header row — favicon, name, origin, people online, the
   period on the dashboard, refresh — is pinned above all four.
 
-Peek: swipe down with three fingers (or ⌘⇧P) to reveal live previews under the tabs; keep swiping for the grid. Esc or a click closes it. ⌘1…⌘9 select tabs (⌘1 is the Overview, ⌘2 the Realtime); ⌘← and ⌘→ step between them. ⌘⌥1…⌘⌥4 choose a site's screen in the rail's order. View > Refresh (⌘R) refreshes the active tab.
+Peek: swipe down with three fingers (or ⌘⇧P) to reveal live previews under the tabs; keep swiping for the grid. Esc or a click closes it. ⌘1…⌘9 select tabs (⌘1 is the first site); ⌘← and ⌘→ step between them. ⌘⇧O opens the Overview and ⌘⇧R the Realtime. ⌘⌥1…⌘⌥4 choose a site's screen in the rail's order. View > Refresh (⌘R) refreshes the pane in front.
 
-Refreshing and loading never blank the screen. Every store keeps what it shows until the server's answer lands, and the overview, history, ranked lists and work record are read from a local cache first, so a warm launch and a refresh only change the numbers, not the layout. The live count and the feed are the one exception: they are never cached, because a stale "3 people" would be a lie, and only the Realtime tab and a site's dashboard read them.
+Refreshing and loading never blank the screen. Every store keeps what it shows until the server's answer lands, and the overview, history, ranked lists and work record are read from a local cache first, so a warm launch and a refresh only change the numbers, not the layout. The live count and the feed are the one exception: they are never cached, because a stale "3 people" would be a lie, and only the Realtime and a site's dashboard read them.
 
 ## Judging animation feel
 

@@ -32,35 +32,17 @@ struct PeekOverlay: View {
                 let shortcut: Int? = index < 9 ? index + 1 : nil
                 let icon: Image? = if case .site(let siteID) = tab { favicons.image(for: siteID) } else { nil }
 
-                Group {
-                    if tab == .overview {
-                        // The overview is a summary, laid out natively for the card's size.
-                        PeekCard(
-                            title: tab.title(in: model),
-                            icon: icon,
-                            shortcut: shortcut,
-                            showsShortcut: showsShortcuts,
-                            isActive: isActive,
-                            layout: layout,
-                            size: frame.size,
-                            action: { onSelect(tab) }
-                        ) {
-                            OverviewSummaryCard(model: model)
-                        }
-                    } else {
-                        PeekCard(
-                            title: tab.title(in: model),
-                            icon: icon,
-                            shortcut: shortcut,
-                            showsShortcut: showsShortcuts,
-                            isActive: isActive,
-                            layout: layout,
-                            size: frame.size,
-                            action: { onSelect(tab) }
-                        ) {
-                            TabSnapshotView(image: snapshots.card(for: tab))
-                        }
-                    }
+                PeekCard(
+                    title: tab.title(in: model),
+                    icon: icon,
+                    shortcut: shortcut,
+                    showsShortcut: showsShortcuts,
+                    isActive: isActive,
+                    layout: layout,
+                    size: frame.size,
+                    action: { onSelect(tab) }
+                ) {
+                    TabSnapshotView(image: snapshots.card(for: tab))
                 }
                 .frame(width: frame.width, height: frame.height)
                 .position(x: frame.midX, y: frame.midY)
