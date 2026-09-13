@@ -20,6 +20,14 @@ import SwiftUI
 // Three shapes, switchable from the floating bar at the bottom of the window (⌘⌥← / ⌘⌥→)
 // while the Overview is in front, with real data:
 //
+//   E1a-2a — Sales as one line under the origin: a mint dot, the period's amount, the growth
+//            in its colour; the earlier amount on hover. The card keeps its height.
+//   E1a-2b — The same line at the foot of the name zone, so it sits on the baseline the
+//            three charts share.
+//
+// (Round seven's E1a-2 was chosen: "the sales is pretty ugly like this" — a whole column
+// squeezed into the name zone made the selling site's card taller and heavier.)
+//
 //   E1a-1 — Sales last: the columns run Search, Visitors, Plan, Sales, so a site without a
 //           commerce provider ends in a blank zone and the three columns every site has
 //           stand in the same place on every card
@@ -62,23 +70,23 @@ import SwiftUI
 final class OverviewPrototype {
     enum Variant: String, CaseIterable, Identifiable {
         // Declaration order is the order the floating bar cycles through.
-        case salesLast, salesInName, compact
+        case salesLine, salesFoot, salesInName
 
         var id: String { rawValue }
 
         var key: String {
             switch self {
-            case .salesLast: "E1a-1"
+            case .salesLine: "E1a-2a"
+            case .salesFoot: "E1a-2b"
             case .salesInName: "E1a-2"
-            case .compact: "E1a"
             }
         }
 
         var name: String {
             switch self {
-            case .salesLast: "Compact card, Sales last: blank where a site does not sell"
-            case .salesInName: "Compact card, Sales in the name zone: three shared columns"
-            case .compact: "Compact card as round six drew it (for comparison)"
+            case .salesLine: "Sales as one line under the origin: the amount and its growth"
+            case .salesFoot: "Sales as one line at the foot of the name zone, on the charts' baseline"
+            case .salesInName: "Sales as a stacked column under the name (round seven, for comparison)"
             }
         }
     }
@@ -91,7 +99,7 @@ final class OverviewPrototype {
 
     init() {
         let stored = UserDefaults.standard.string(forKey: Self.defaultsKey)
-        variant = stored.flatMap(Variant.init(rawValue:)) ?? .salesLast
+        variant = stored.flatMap(Variant.init(rawValue:)) ?? .salesLine
     }
 
     func cycle(_ step: Int) {
@@ -335,12 +343,12 @@ struct OverviewPrototypeBody: View {
             .column()
 
             switch variant {
-            case .salesLast:
-                ProtoTrajectoryVariant(sites: sites, period: period, style: .overlay, compact: true, sales: .last, icon: icon, onOpen: onOpen)
+            case .salesLine:
+                ProtoTrajectoryVariant(sites: sites, period: period, style: .overlay, compact: true, sales: .nameLine, icon: icon, onOpen: onOpen)
+            case .salesFoot:
+                ProtoTrajectoryVariant(sites: sites, period: period, style: .overlay, compact: true, sales: .nameFoot, icon: icon, onOpen: onOpen)
             case .salesInName:
                 ProtoTrajectoryVariant(sites: sites, period: period, style: .overlay, compact: true, sales: .nameZone, icon: icon, onOpen: onOpen)
-            case .compact:
-                ProtoTrajectoryVariant(sites: sites, period: period, style: .overlay, compact: true, sales: .column, icon: icon, onOpen: onOpen)
             }
 
             footer

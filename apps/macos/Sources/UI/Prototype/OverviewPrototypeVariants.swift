@@ -165,6 +165,10 @@ enum ProtoSalesPlacement {
     case last
     /// Under the site's name, in its zone; the columns are the three every site has.
     case nameZone
+    /// One line under the origin: the amount and its growth.
+    case nameLine
+    /// The same line, at the foot of the name zone.
+    case nameFoot
 }
 
 /// How the period is set against the one before.
@@ -309,8 +313,8 @@ struct ProtoTrajectoryCard: View {
     var sales: ProtoSalesPlacement = .column
     let icon: Image?
 
-    /// The name zone: wider when it also carries the sales.
-    private var nameWidth: CGFloat { sales == .nameZone ? 184 : 140 }
+    /// The name zone: wider when it carries the sales as a column.
+    private var nameWidth: CGFloat { sales == .nameZone ? 184 : 150 }
 
     /// The compact card's sizes: the figure at 20 points, the picture at 36.
     private var figureSize: CGFloat { compact ? 20 : 28 }
@@ -359,14 +363,31 @@ struct ProtoTrajectoryCard: View {
                                 .foregroundStyle(Palette.coral)
                                 .help(error)
                         }
-                        if sales == .nameZone, site.sells {
-                            salesColumn
-                                .padding(.top, 14)
+                        if site.sells {
+                            switch sales {
+                            case .nameZone:
+                                salesColumn
+                                    .padding(.top, 14)
+                            case .nameLine:
+                                salesLine
+                                    .padding(.top, 10)
+                            case .nameFoot:
+                                Spacer(minLength: 12)
+                                salesLine
+                            default:
+                                EmptyView()
+                            }
                         }
                     }
                     .frame(width: nameWidth, alignment: .leading)
+                    // The zone takes the card's height, so a line at its foot sits on the
+                    // baseline the charts share.
+                    .frame(maxHeight: sales == .nameFoot ? .infinity : nil, alignment: .top)
                     columns
                 }
+                // The row takes its own height — the columns' — and not what it is offered:
+                // a zone let grow to the row's height would otherwise grow the row instead.
+                .fixedSize(horizontal: false, vertical: true)
             } else {
                 VStack(alignment: .leading, spacing: 20) {
                     ProtoCardHeader(site: site, icon: icon)
@@ -399,7 +420,7 @@ struct ProtoTrajectoryCard: View {
                     // an empty zone must not set the card's height.
                     Color.clear.frame(maxWidth: .infinity).frame(height: 1)
                 }
-            case .nameZone:
+            case .nameZone, .nameLine, .nameFoot:
                 planColumn
             }
         }
@@ -433,6 +454,29 @@ struct ProtoTrajectoryCard: View {
             let run = runs { $0.visits?.visits ?? 0 }
             ProtoCompareChart(current: run.now, previous: run.was, color: visitsColor, style: style)
         }
+    }
+
+    /// The sales as one quiet line: the source's dot, the period's amount, the growth in its
+    /// colour. What it was is on hover.
+    private var salesLine: some View {
+        let revenue = ProtoGrowth.revenue(site)
+        let report = site.revenue
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Circle()
+                .fill(Palette.mint)
+                .frame(width: 5, height: 5)
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+            Text(report.map { Money.format($0.current.revenue, currency: $0.currency) } ?? "—")
+                .font(.callout)
+                .monospacedDigit()
+                .lineLimit(1)
+            Text(revenue?.label ?? "")
+                .font(.caption.weight(.medium))
+                .monospacedDigit()
+                .foregroundStyle(revenue?.tint ?? .secondary)
+        }
+        .help(report.map { "Sales this period. Was \(Money.format($0.previous.revenue, currency: $0.currency)) the period before." } ?? "")
+        .accessibilityElement(children: .combine)
     }
 
     private var salesColumn: some View {
