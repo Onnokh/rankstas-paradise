@@ -459,11 +459,13 @@ private struct HeatStrip: View {
 /// the person's newest step, large; the steps before it in one caption; how often they have
 /// been here and where they are at the end; and, under the pointer, the whole run. The
 /// header's words keep it to page loads or events, the way a site tab's period switch works.
-/// The feed keeps moving under the pointer: a new row simply appears at the top.
+/// The feed keeps moving under the pointer: a new row appears at the top.
 ///
-/// The rows are a plain stack, drawn in full and never animated. A lazy stack here kept the
-/// main thread busy re-phasing its items on every poll, and a layout animation over the rows
-/// every five seconds is what turned that into a hang; the rows are capped instead.
+/// The rows are a plain stack, drawn in full, and their layout is never animated. A lazy
+/// stack here kept the main thread busy re-phasing its items on every poll, and a layout
+/// animation over the rows every five seconds is what turned that into a hang; the rows are
+/// capped instead. What does move is the row that arrives: the others step down at once,
+/// and it comes in where it landed — see `FeedArrivals` for which rows those are.
 struct FeedCard: View {
     let rows: [LiveFeedRow]
     /// Whether a row names its site: not when the page is kept to one.
@@ -480,6 +482,8 @@ struct FeedCard: View {
     @Environment(\.isTabPreview) private var isPreview
     /// The row under the pointer: it lifts a little, and its tooltip opens.
     @State private var hoveredRow: LiveFeedRow.ID?
+    /// Which rows have just arrived: they come in, and their tint fades.
+    @State private var arrivals = FeedArrivals()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -504,7 +508,8 @@ struct FeedCard: View {
                             age: RelativeAge.compact(from: row.newestAt, to: now),
                             showsSite: showsSite,
                             icon: icon(row.siteID),
-                            isHovered: hoveredRow == row.id
+                            isHovered: hoveredRow == row.id,
+                            isArriving: arrivals.fresh.contains(row.id)
                         )
                         .equatable()
                         .onHover { inside in
@@ -527,6 +532,24 @@ struct FeedCard: View {
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .cardSurface(cornerRadius: 12)
+        // Every poll and every change of kind is noted; a preview is a still and notes
+        // nothing. The kinds are noted on their own too, for the switch that leaves the
+        // rows as they were.
+        .onChange(of: rows, initial: true) { _, rows in
+            guard !isPreview else { return }
+            arrivals.note(rows, kinds: kinds, at: Date())
+        }
+        .onChange(of: kinds) { _, kinds in
+            guard !isPreview else { return }
+            arrivals.note(rows, kinds: kinds, at: Date())
+        }
+        // An arriving row is drawn once as it starts — unseen, tinted — and then let go, so
+        // it comes in and its tint fades from there. The two states have to be two frames.
+        .task(id: arrivals.fresh) {
+            guard !arrivals.fresh.isEmpty else { return }
+            try? await Task.sleep(for: .milliseconds(32))
+            arrivals.settle()
+        }
     }
 }
 
@@ -547,8 +570,14 @@ private struct FeedRow: View, Equatable {
     let showsSite: Bool
     let icon: Image?
     let isHovered: Bool
+    /// Whether the row is at the start of coming in: unseen and tinted, for one frame. When
+    /// it stops being so the row fades in and lifts, and the tint goes over a few seconds.
+    let isArriving: Bool
 
     static let height: CGFloat = 36
+    /// How long the tint of a row that arrived stays: long enough to find it after a glance
+    /// away, short enough that two arrivals a minute apart never both show.
+    private static let tintFade: TimeInterval = 4
     private static let gutter: CGFloat = 40
     private static let siteWidth: CGFloat = 136
     /// The caption's zone. Fixed, so the headline's zone is fixed too.
@@ -561,6 +590,7 @@ private struct FeedRow: View, Equatable {
     nonisolated static func == (left: FeedRow, right: FeedRow) -> Bool {
         left.row == right.row && left.age == right.age && left.showsSite == right.showsSite
             && (left.icon == nil) == (right.icon == nil) && left.isHovered == right.isHovered
+            && left.isArriving == right.isArriving
     }
 
     /// Where the words start: where the tooltip hangs from.
@@ -622,8 +652,20 @@ private struct FeedRow: View, Equatable {
         }
         .frame(height: Self.height)
         .padding(.horizontal, Self.overhang)
+        // The one colour, faint, under a row that arrived; it fades from the moment the row
+        // starts coming in. Instant on the way in: the animation is the one of the new state.
+        .background {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(visitsColor.opacity(isArriving ? 0.14 : 0))
+                .animation(isArriving ? nil : .easeOut(duration: Self.tintFade), value: isArriving)
+        }
         .background(isHovered ? Palette.line.opacity(0.45) : Color.clear, in: .rect(cornerRadius: 6))
         .padding(.horizontal, -Self.overhang)
+        // The row comes in from a little below. Not a layout move: the rows under it have
+        // already stepped down, and this row's slot is where it lands.
+        .opacity(isArriving ? 0 : 1)
+        .offset(y: isArriving ? 4 : 0)
+        .animation(isArriving ? nil : .easeOut(duration: 0.35), value: isArriving)
         .contentShape(Rectangle())
         .overlay(alignment: .topLeading) {
             if isHovered {
