@@ -1,137 +1,119 @@
 #if DEBUG
+import Charts
 import SwiftUI
 
 // PROTOTYPE — throwaway. Not for main.
 //
-// The four bodies. Each is what sits between the strip and the footer; the header and the
-// strip are the page's own and never change between variants.
+// Round four's three bodies. Each is what sits between the strip and the footer.
 
-// MARK: - A. Dashboard
+// MARK: - Readings
 
-/// The site dashboard's skeleton, for the fleet: the chart edge to edge, then the visits card
-/// beside the sites as bars, then the rows for the figures per site.
-struct ProtoDashboardVariant: View {
-    let sites: [PrototypeSiteSeries]
-    let total: [HistoryReportDay]
-    let icon: (Site.ID) -> Image?
-    let onOpen: (Site.ID) -> Void
+/// This period against the one before, as the prototype says it: a ratio, a word, a colour.
+/// The bands are the screen's, not the server's — see the note on thresholds.
+struct ProtoGrowth {
+    let current: Double
+    let previous: Double?
 
-    var body: some View {
-        let rows = sites.map(\.glance)
+    /// (current − previous) / previous. Nil when there was nothing to grow from.
+    var ratio: Double? {
+        guard let previous, previous > 0 else { return nil }
+        return (current - previous) / previous
+    }
 
-        ProtoTrendChart(days: total)
-            .padding(.top, 36)
+    /// "+34%", or "new" for a count that came from nothing, or a dash for nothing at all.
+    var label: String {
+        if let ratio { return Trend.signed(ratio * 100, fractionDigits: 0) + "%" }
+        return current > 0 ? "new" : "—"
+    }
 
-        HStack(alignment: .top, spacing: 20) {
-            ProtoVisitsCard(days: total, comparison: OverviewGlance.totalVisits(rows))
-            ProtoSitesBarsCard(sites: sites, icon: icon, onOpen: onOpen)
-        }
-        .column()
-        .padding(.top, 36)
+    var verdict: String {
+        guard let ratio else { return current > 0 ? "Started this period" : "Nothing yet" }
+        if ratio >= 0.1 { return "Growing" }
+        if ratio <= -0.1 { return "Slipping" }
+        return "Flat"
+    }
 
-        SitesCard(rows: rows, icon: icon, onOpen: onOpen)
-            .column()
-            .padding(.top, 20)
+    /// Mint up, coral down, secondary for flat or unknown: one colour, one meaning.
+    var tint: Color? {
+        guard let ratio else { return nil }
+        if ratio >= 0.1 { return Palette.mint }
+        if ratio <= -0.1 { return Palette.coral }
+        return nil
+    }
+
+    static func clicks(_ site: PrototypeSiteSeries) -> ProtoGrowth {
+        ProtoGrowth(current: site.glance.comparison.currentStats.clicks, previous: site.glance.comparison.previousStats?.clicks)
+    }
+
+    static func visits(_ site: PrototypeSiteSeries) -> ProtoGrowth? {
+        site.glance.visits.map { ProtoGrowth(current: $0.current, previous: $0.previous) }
+    }
+
+    static func revenue(_ site: PrototypeSiteSeries) -> ProtoGrowth? {
+        guard let report = site.revenue, report.revenue != nil else { return nil }
+        return ProtoGrowth(current: report.current.revenue, previous: report.previous.revenue)
     }
 }
 
-/// The fleet's visits, one bar per day, with the period's total and its move in the title:
-/// the site dashboard's Visits card over every site.
-struct ProtoVisitsCard: View {
-    let days: [HistoryReportDay]
-    let comparison: VisitsComparison?
+/// One week of the long run: seven days summed, newest last.
+struct ProtoWeek: Identifiable {
+    let end: Date
+    let clicks: Double
+    let impressions: Double
+    /// Nil when no day of the week had a synced count.
+    let visits: Double?
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("Visits")
-                    .font(.headline)
-                Spacer()
-                if let comparison {
-                    Text(GlanceFigure.count(comparison.current))
-                        .font(.subheadline.weight(.semibold))
-                        .monospacedDigit()
-                    if let trend = comparison.trend {
-                        Text(Trend.signed(trend.delta, fractionDigits: 0))
-                            .font(.caption.weight(.medium))
-                            .monospacedDigit()
-                            .foregroundStyle(GlanceFigure.tint(trend.delta))
-                    }
-                }
-            }
+    var id: Date { end }
 
-            ProtoDayBars(days: days, metric: .visits)
+    /// The last `count` whole weeks, cut from the end of the run.
+    static func weeks(_ days: [HistoryReportDay], count: Int = 26) -> [ProtoWeek] {
+        var weeks: [ProtoWeek] = []
+        var end = days.count
+        while end - 7 >= 0, weeks.count < count {
+            let run = days[(end - 7)..<end]
+            let counted = run.compactMap(\.visits)
+            weeks.append(ProtoWeek(
+                end: run.last!.day,
+                clicks: run.reduce(0) { $0 + $1.clicks },
+                impressions: run.reduce(0) { $0 + $1.impressions },
+                visits: counted.isEmpty ? nil : counted.reduce(0) { $0 + $1.visits }
+            ))
+            end -= 7
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .cardSurface(cornerRadius: 12)
+        return weeks.reversed()
     }
 }
 
-/// The sites ranked by one metric, each row a bar as long as its share of the strongest: the
-/// ranking cards' list-as-chart, with the sites for rows. The word switch picks the metric
-/// and the bars take its colour. Double-click opens the site.
-struct ProtoSitesBarsCard: View {
-    let sites: [PrototypeSiteSeries]
-    let icon: (Site.ID) -> Image?
-    let onOpen: (Site.ID) -> Void
-
-    @State private var metric = PrototypeMetric.clicks
-
-    private var options: [PrototypeMetric] {
-        sites.contains { $0.glance.visits != nil } ? PrototypeMetric.allCases : [.clicks, .impressions]
+/// The registry read as a funnel over the pages a keyword aims at.
+struct ProtoFunnel {
+    struct Step: Identifiable {
+        let name: String
+        let count: Int
+        let note: String
+        var id: String { name }
     }
 
-    private var chosen: PrototypeMetric { options.contains(metric) ? metric : .clicks }
+    let steps: [Step]
+    var planned: Int { steps.first?.count ?? 0 }
 
-    var body: some View {
-        let chosen = chosen
-        let ranked = sites.sorted { $0.total(chosen) > $1.total(chosen) }
-        let strongest = max(ranked.map { $0.total(chosen) }.max() ?? 1, 1)
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 12) {
-                Text("Sites")
-                    .font(.headline)
-                Spacer()
-                WordSwitch(options: options, selection: $metric, label: \.label, font: .subheadline)
-                    .accessibilityLabel("Rank by")
-            }
-
-            VStack(spacing: 6) {
-                ForEach(ranked) { site in
-                    let value = site.total(chosen)
-                    HStack(spacing: 10) {
-                        ProtoFavicon(icon: icon(site.id))
-                        Text(site.site.name)
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                        Text(GlanceFigure.count(value))
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(alignment: .leading) {
-                        GeometryReader { geometry in
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(chosen.color.opacity(0.16))
-                                .frame(width: max(geometry.size.width * (value / strongest), 6))
-                        }
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) { onOpen(site.id) }
-                    .help("Double-click to open \(site.site.name)")
-                }
-            }
-            .animation(.snappy(duration: 0.25), value: chosen)
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .cardSurface(cornerRadius: 12)
+    init(targets: [RegistryTarget]) {
+        let planned = targets.filter { !$0.mappedKeywords.isEmpty }
+        let published = planned.filter { $0.phase != RegistryPhase.new.rawValue }
+        let indexed = planned.filter { $0.indexed == "indexed" }
+        let reached = planned.filter { $0.window.impressions > 0 }
+        let clicked = planned.filter { $0.window.clicks > 0 }
+        steps = [
+            Step(name: "Planned", count: planned.count, note: "Pages a keyword aims at"),
+            Step(name: "Published", count: published.count, note: "Pages Search Console has seen"),
+            Step(name: "Indexed", count: indexed.count, note: "Pages Google reports in its index"),
+            Step(name: "Reached", count: reached.count, note: "Pages a search reached in the window"),
+            Step(name: "Clicked", count: clicked.count, note: "Pages a search brought someone to"),
+        ]
     }
 }
 
-/// A site's mark at row size, with the globe for a site whose icon has not landed.
+// MARK: - Parts
+
 struct ProtoFavicon: View {
     let icon: Image?
     var size: CGFloat = 16
@@ -148,252 +130,6 @@ struct ProtoFavicon: View {
     }
 }
 
-// MARK: - B. Cards
-
-/// What a site card says, in four groups. Each group is four lines — a label, a figure, its
-/// move — and one small picture. Built once per card from the series, so both layouts say
-/// the same thing.
-enum ProtoGroups {
-    struct Line: Identifiable {
-        let label: String
-        let value: String
-        var change: String? = nil
-        var tint: Color? = nil
-        var id: String { label }
-    }
-
-    /// Search Console and Ahrefs: what Google shows and how strong the domain is.
-    static func search(_ site: PrototypeSiteSeries) -> [Line] {
-        let comparison = site.glance.comparison
-        let stats = comparison.currentStats
-        return [
-            Line(label: "Clicks", value: GlanceFigure.count(stats.clicks),
-                 change: comparison.clicks.map { Trend.signed($0.delta, fractionDigits: 0) },
-                 tint: comparison.clicks.map { GlanceFigure.tint($0.delta) }),
-            Line(label: "Impressions", value: GlanceFigure.count(stats.impressions),
-                 change: comparison.impressions.map { Trend.signed($0.delta, fractionDigits: 0) },
-                 tint: comparison.impressions.map { GlanceFigure.tint($0.delta) }),
-            Line(label: "CTR", value: GlanceFigure.rate(stats.ctr),
-                 change: comparison.ctrPointsDelta.map { Trend.signed($0, fractionDigits: 1) + "pp" },
-                 tint: comparison.ctrPointsDelta.map { GlanceFigure.tint($0) }),
-            Line(label: "Domain Rating", value: site.rating.map { $0.current.formatted(.number.precision(.fractionLength(1))) } ?? "—",
-                 change: site.rating?.delta.map { Trend.signed($0, fractionDigits: 1) },
-                 tint: site.rating?.delta.map { GlanceFigure.tint($0) }),
-        ]
-    }
-
-    /// The analytics provider: the people. Visits sum over the period; visitors do not, so
-    /// they are given a day; pages a visit is the one ratio the schema allows.
-    static func visitors(_ site: PrototypeSiteSeries) -> [Line] {
-        func sum(_ days: [HistoryReportDay], _ key: KeyPath<VisitsDay, Double>) -> Double? {
-            let counted = days.compactMap(\.visits)
-            return counted.isEmpty ? nil : counted.reduce(0) { $0 + $1[keyPath: key] }
-        }
-        func perDay(_ days: [HistoryReportDay], _ key: KeyPath<VisitsDay, Double>) -> Double? {
-            let counted = days.compactMap(\.visits)
-            return counted.isEmpty ? nil : counted.reduce(0) { $0 + $1[keyPath: key] } / Double(counted.count)
-        }
-        func move(_ current: Double?, _ previous: Double?, digits: Int = 0) -> (String?, Color?) {
-            guard let current, let previous else { return (nil, nil) }
-            let delta = current - previous
-            // A move that rounds to nothing is no move: "−0,0" is a line that says less than a blank.
-            guard abs(delta) >= 0.5 / pow(10, Double(digits)) else { return (nil, nil) }
-            return (Trend.signed(delta, fractionDigits: digits), GlanceFigure.tint(delta))
-        }
-        let visits = sum(site.days, \.visits), previousVisits = sum(site.previousDays, \.visits)
-        let pageviews = sum(site.days, \.pageviews), previousPageviews = sum(site.previousDays, \.pageviews)
-        let visitorsPerDay = perDay(site.days, \.visitors), previousVisitorsPerDay = perDay(site.previousDays, \.visitors)
-        let pagesPerVisit = visits.flatMap { v in pageviews.map { v > 0 ? $0 / v : 0 } }
-        let previousPagesPerVisit = previousVisits.flatMap { v in previousPageviews.map { v > 0 ? $0 / v : 0 } }
-        let visitsMove = move(visits, previousVisits)
-        let pageviewsMove = move(pageviews, previousPageviews)
-        let visitorsMove = move(visitorsPerDay, previousVisitorsPerDay)
-        let pagesMove = move(pagesPerVisit, previousPagesPerVisit, digits: 1)
-        return [
-            Line(label: "Visits", value: visits.map(GlanceFigure.count) ?? "—", change: visitsMove.0, tint: visitsMove.1),
-            Line(label: "Visitors a day", value: visitorsPerDay.map(GlanceFigure.count) ?? "—", change: visitorsMove.0, tint: visitorsMove.1),
-            Line(label: "Pageviews", value: pageviews.map(GlanceFigure.count) ?? "—", change: pageviewsMove.0, tint: pageviewsMove.1),
-            Line(label: "Pages a visit", value: pagesPerVisit.map { $0.formatted(.number.precision(.fractionLength(1))) } ?? "—",
-                 change: pagesMove.0, tint: pagesMove.1),
-        ]
-    }
-
-    /// A money move in whole units, so it fits the move's slot: "+€ 1.451".
-    static func signedMoney(_ minorUnits: Double, currency: String?) -> String {
-        let units = abs(minorUnits) / 100
-        let figure = currency.map { units.formatted(.currency(code: $0).precision(.fractionLength(0))) }
-            ?? units.formatted(.number.precision(.fractionLength(0)))
-        return (minorUnits < 0 ? "−" : "+") + figure
-    }
-
-    /// The commerce provider, for a site that sells. Amounts in the report's currency.
-    static func sales(_ site: PrototypeSiteSeries) -> [Line]? {
-        guard let report = site.revenue, report.revenue != nil else { return nil }
-        let currency = report.currency
-        let orders = report.current.orders
-        let average = orders > 0 ? report.current.revenue / orders : 0
-        let previousAverage = report.previous.orders > 0 ? report.previous.revenue / report.previous.orders : nil
-        return [
-            Line(label: "Revenue", value: Money.format(report.current.revenue, currency: currency),
-                 change: signedMoney(report.delta.revenue, currency: currency), tint: GlanceFigure.tint(report.delta.revenue)),
-            Line(label: "Orders", value: GlanceFigure.count(orders),
-                 change: Trend.signed(report.delta.orders, fractionDigits: 0), tint: GlanceFigure.tint(report.delta.orders)),
-            Line(label: "Net", value: Money.format(report.current.net, currency: currency),
-                 change: signedMoney(report.delta.net, currency: currency), tint: GlanceFigure.tint(report.delta.net)),
-            Line(label: "Order value", value: Money.format(average, currency: currency),
-                 change: previousAverage.map { signedMoney(average - $0, currency: currency) },
-                 tint: previousAverage.map { GlanceFigure.tint(average - $0) }),
-        ]
-    }
-
-    /// Ranksta's own: the plan. Indexing is measured over the keyword pages, as on the
-    /// registry screen; the volume is the plan's addressable market, not a forecast.
-    static func registry(_ site: PrototypeSiteSeries) -> [Line] {
-        let totals = site.registry
-        let share = totals?.indexedShare
-        let latest = site.coverage.last?.indexedShare
-        let earliest = site.coverage.first?.indexedShare
-        let shareMove: Double? = if let latest, let earliest, site.coverage.count >= 2 { (latest - earliest) * 100 } else { nil }
-        return [
-            Line(label: "Pages", value: totals.map { $0.pages.formatted() } ?? "—"),
-            Line(label: "Indexed", value: share.map { $0.formatted(.percent.precision(.fractionLength(0))) } ?? "—",
-                 change: shareMove.map { Trend.signed($0, fractionDigits: 0) + "pp" },
-                 tint: shareMove.map { GlanceFigure.tint($0) }),
-            Line(label: "Not indexed", value: totals.map { $0.notIndexed.formatted() } ?? "—",
-                 change: totals.flatMap { $0.unknown > 0 ? "\($0.unknown) open" : nil }),
-            Line(label: "Volume", value: site.monthlyVolume.map { GlanceFigure.count($0) + "/mo" } ?? "—"),
-        ]
-    }
-}
-
-/// One group inside a site card: its name, its lines and its picture. `columns` is how many
-/// lines share a row — one in the wide card, two in the narrow one.
-struct ProtoGroup<Picture: View>: View {
-    let title: String
-    let lines: [ProtoGroups.Line]
-    var columns = 1
-    var pictureHeight: CGFloat = 44
-    @ViewBuilder let picture: () -> Picture
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            VStack(spacing: 4) {
-                ForEach(Array(stride(from: 0, to: lines.count, by: columns)), id: \.self) { start in
-                    HStack(spacing: 20) {
-                        ForEach(lines[start..<min(start + columns, lines.count)]) { line in
-                            ProtoGroupLine(line: line)
-                        }
-                        if start + columns > lines.count {
-                            Color.clear.frame(maxWidth: .infinity)
-                        }
-                    }
-                }
-            }
-
-            picture()
-                .frame(height: pictureHeight)
-                .padding(.top, 4)
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-    }
-}
-
-/// One line of a group: the label leading, the figure trailing with its move in a slot of
-/// its own, so the figures of every line end on the same line. One row height.
-struct ProtoGroupLine: View {
-    let line: ProtoGroups.Line
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(line.label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Spacer(minLength: 6)
-            Text(line.value)
-                .font(.callout)
-                .monospacedDigit()
-                .lineLimit(1)
-            Text(line.change ?? "")
-                .font(.caption)
-                .monospacedDigit()
-                .lineLimit(1)
-                .foregroundStyle(line.tint ?? .secondary)
-                .frame(width: 56, alignment: .leading)
-        }
-        .frame(height: 20)
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// The four pictures, one per group, all silent: the trend for Search, day bars for
-/// Visitors and Sales, the indexing series or the index band for Registry.
-enum ProtoPictures {
-    @ViewBuilder
-    static func search(_ site: PrototypeSiteSeries, height: CGFloat) -> some View {
-        ProtoTrendChart(days: site.days, height: height, labelInset: 0, interactive: false, showsDates: false)
-    }
-
-    @ViewBuilder
-    static func visitors(_ site: PrototypeSiteSeries) -> some View {
-        let points = site.days.compactMap { day in day.visits.map { ProtoMiniBars.Point(day: day.day, value: $0.visits) } }
-        if points.count >= 2 {
-            ProtoMiniBars(points: points, color: visitsColor)
-        } else {
-            ProtoNoPicture(text: "No analytics")
-        }
-    }
-
-    @ViewBuilder
-    static func sales(_ site: PrototypeSiteSeries) -> some View {
-        let points = (site.revenue?.days ?? []).map { ProtoMiniBars.Point(day: $0.day, value: $0.revenue / 100) }
-        if points.count >= 2 {
-            ProtoMiniBars(points: points, color: Palette.mint)
-        } else {
-            ProtoNoPicture(text: site.sells ? "No sales yet" : "No commerce provider")
-        }
-    }
-
-    @ViewBuilder
-    static func registry(_ site: PrototypeSiteSeries) -> some View {
-        if site.coverage.count >= 2 {
-            ProtoSparkline(values: site.coverage.map { ($0.indexedShare ?? 0) * 100 }, color: Palette.mint, fromZero: false)
-        } else if let totals = site.registry {
-            VStack {
-                Spacer()
-                ProtoIndexBand(totals: totals)
-                Spacer()
-            }
-        } else {
-            ProtoNoPicture(text: "No registry")
-        }
-    }
-}
-
-/// The picture's zone when there is nothing to draw in it: the reason, small and centred,
-/// over the baseline the chart would have had.
-struct ProtoNoPicture: View {
-    let text: String
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            Text(text)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-            Spacer()
-            Palette.line.frame(height: 1)
-        }
-    }
-}
-
-/// The card's first line: the site's mark and name, its origin, and at the trailing edge
-/// what it made over the period when it sells — the one figure worth the header.
 struct ProtoCardHeader: View {
     let site: PrototypeSiteSeries
     let icon: Image?
@@ -421,20 +157,56 @@ struct ProtoCardHeader: View {
     }
 }
 
-// MARK: B1. Wide cards
+/// The long run as one bar per week. The weeks inside the compared period keep the colour;
+/// the ones before step back, so the eye finds the period the percentage above speaks of.
+struct ProtoWeekBars: View {
+    let weeks: [ProtoWeek]
+    let value: (ProtoWeek) -> Double?
+    let color: Color
+    /// How many trailing weeks the period covers.
+    let litWeeks: Int
 
-/// One card per site, the full column: the header, then the four groups side by side, each
-/// a column of four lines over its picture. Every card has the same four columns, so a site
-/// that does not sell keeps the Sales column and says why.
-struct ProtoWideCardsVariant: View {
+    var body: some View {
+        let points = weeks.compactMap { week in value(week).map { (week: week, value: $0) } }
+        let firstLit = max(weeks.count - litWeeks, 0)
+        Chart {
+            RuleMark(y: .value("Value", 0))
+                .foregroundStyle(Palette.line)
+                .lineStyle(StrokeStyle(lineWidth: 1))
+            ForEach(points, id: \.week.id) { point in
+                let index = weeks.firstIndex { $0.id == point.week.id } ?? 0
+                BarMark(x: .value("Week", point.week.end, unit: .weekOfYear), y: .value("Value", point.value))
+                    .foregroundStyle(color.opacity(index >= firstLit ? 1 : 0.3))
+                    .cornerRadius(1.5)
+            }
+        }
+        .chartYScale(domain: .automatic(includesZero: true))
+        // The axis is the whole run even when only the newest weeks have a count, so a young
+        // site's three weeks stand at the right end and not as three slabs across the zone.
+        .chartXScale(domain: (weeks.first?.end ?? .now).addingTimeInterval(-3.5 * 86_400)...(weeks.last?.end ?? .now).addingTimeInterval(3.5 * 86_400))
+        .chartXAxis(.hidden)
+        .chartYAxis(.hidden)
+        .chartPlotStyle { plot in plot.padding(.top, 2) }
+        .accessibilityHidden(true)
+    }
+}
+
+// MARK: - E. Trajectory
+
+/// One card per project. Four columns — Search, Visitors, Sales, Plan — each led by the
+/// growth as one large percentage, the counts it comes from under it in a line, and the
+/// last 26 weeks as bars, the compared period lit. A source the site does not have keeps
+/// its column and says so.
+struct ProtoTrajectoryVariant: View {
     let sites: [PrototypeSiteSeries]
+    let period: Period
     let icon: (Site.ID) -> Image?
     let onOpen: (Site.ID) -> Void
 
     var body: some View {
         VStack(spacing: 20) {
             ForEach(sites) { site in
-                ProtoWideCard(site: site, icon: icon(site.id))
+                ProtoTrajectoryCard(site: site, period: period, icon: icon(site.id))
                     .onTapGesture(count: 2) { onOpen(site.id) }
                     .help(site.glance.errorMessage ?? "Double-click to open \(site.site.name)")
             }
@@ -444,27 +216,52 @@ struct ProtoWideCardsVariant: View {
     }
 }
 
-struct ProtoWideCard: View {
+struct ProtoTrajectoryCard: View {
     let site: PrototypeSiteSeries
+    let period: Period
     let icon: Image?
 
+    private var litWeeks: Int { max(1, Int((Double(period.days) / 7).rounded(.up))) }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        let weeks = ProtoWeek.weeks(site.allDays)
+        let clicks = ProtoGrowth.clicks(site)
+        let visits = ProtoGrowth.visits(site)
+        let revenue = ProtoGrowth.revenue(site)
+        VStack(alignment: .leading, spacing: 20) {
             ProtoCardHeader(site: site, icon: icon)
 
             HStack(alignment: .top, spacing: 28) {
-                ProtoGroup(title: "Search", lines: ProtoGroups.search(site)) {
-                    ProtoPictures.search(site, height: 44)
+                ProtoSourceColumn(
+                    title: "Search",
+                    growth: clicks,
+                    line: "\(GlanceFigure.count(clicks.current)) clicks" + (clicks.previous.map { ", was \(GlanceFigure.count($0))" } ?? ""),
+                    absent: nil
+                ) {
+                    ProtoWeekBars(weeks: weeks, value: \.clicks, color: Palette.blue, litWeeks: litWeeks)
                 }
-                ProtoGroup(title: "Visitors", lines: ProtoGroups.visitors(site)) {
-                    ProtoPictures.visitors(site)
+                ProtoSourceColumn(
+                    title: "Visitors",
+                    growth: visits,
+                    line: visits.map { "\(GlanceFigure.count($0.current)) visits" + ($0.previous.map { ", was \(GlanceFigure.count($0))" } ?? "") } ?? "",
+                    absent: "No analytics provider"
+                ) {
+                    ProtoWeekBars(weeks: weeks, value: \.visits, color: visitsColor, litWeeks: litWeeks)
                 }
-                ProtoGroup(title: "Sales", lines: ProtoGroups.sales(site) ?? Self.noSales) {
-                    ProtoPictures.sales(site)
+                ProtoSourceColumn(
+                    title: "Sales",
+                    growth: revenue,
+                    line: site.revenue.map { "\(Money.format($0.current.revenue, currency: $0.currency)), was \(Money.format($0.previous.revenue, currency: $0.currency))" } ?? "",
+                    absent: "No commerce provider"
+                ) {
+                    // The revenue report carries only the window's days: this picture is the
+                    // period, not the long run, and the caption says so.
+                    ProtoMiniBars(
+                        points: (site.revenue?.days ?? []).map { ProtoMiniBars.Point(day: $0.day, value: $0.revenue / 100) },
+                        color: Palette.mint
+                    )
                 }
-                ProtoGroup(title: "Registry", lines: ProtoGroups.registry(site)) {
-                    ProtoPictures.registry(site)
-                }
+                planColumn
             }
         }
         .padding(20)
@@ -473,15 +270,242 @@ struct ProtoWideCard: View {
         .contentShape(Rectangle())
     }
 
-    /// A site without a commerce provider keeps the column and its four lines, as dashes.
-    static let noSales = ["Revenue", "Orders", "Net", "Order value"].map { ProtoGroups.Line(label: $0, value: "—") }
+    /// The plan's column: the indexed share as the figure, its move over the indexing series
+    /// as the tint, the funnel's ends as the line, the series as the picture.
+    private var planColumn: some View {
+        let funnel = ProtoFunnel(targets: site.targets)
+        let share = site.registry?.indexedShare
+        let first = site.coverage.first?.indexedShare
+        let last = site.coverage.last?.indexedShare
+        let move: Double? = if let first, let last, site.coverage.count >= 2 { (last - first) * 100 } else { nil }
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Plan")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+            if let share {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(share.formatted(.percent.precision(.fractionLength(0))))
+                        .font(.system(size: 28, weight: .medium))
+                        .monospacedDigit()
+                    Text(move.map { Trend.signed($0, fractionDigits: 0) + "pp" } ?? "indexed")
+                        .font(.caption.weight(.medium))
+                        .monospacedDigit()
+                        .foregroundStyle(move.map { GlanceFigure.tint($0) } ?? .secondary)
+                }
+                Text("\(funnel.steps[4].count) of \(funnel.planned) planned pages clicked")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            } else {
+                Text("—")
+                    .font(.system(size: 28, weight: .medium))
+                Text(site.registry == nil ? "No registry yet" : "No keyword pages planned")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            Group {
+                if site.coverage.count >= 2 {
+                    ProtoSparkline(values: site.coverage.map { ($0.indexedShare ?? 0) * 100 }, color: Palette.mint, fromZero: false)
+                } else {
+                    ProtoNoPicture(text: site.registry == nil ? "" : "Indexing series too young")
+                }
+            }
+            .frame(height: 48)
+            .padding(.top, 6)
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
 }
 
-// MARK: B2. Cards two across
+/// One source's column on a trajectory card.
+struct ProtoSourceColumn<Picture: View>: View {
+    let title: String
+    let growth: ProtoGrowth?
+    let line: String
+    /// Why there is no growth to show, for a site without this source.
+    let absent: String?
+    @ViewBuilder let picture: () -> Picture
 
-/// Two cards to a row, the four groups stacked inside each, the lines two to a row. A site
-/// that does not sell has no Sales group; the card is shorter for it.
-struct ProtoCardsVariant: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+            if let growth {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(growth.label)
+                        .font(.system(size: 28, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(growth.tint ?? .primary)
+                    Text(growth.verdict)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                Text(line)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                picture()
+                    .frame(height: 48)
+                    .padding(.top, 6)
+            } else {
+                Text("—")
+                    .font(.system(size: 28, weight: .medium))
+                Text(absent ?? "")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                ProtoNoPicture(text: "")
+                    .frame(height: 48)
+                    .padding(.top, 6)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+}
+
+/// The picture's zone when there is nothing to draw: the reason, small, over the baseline
+/// the chart would have had.
+struct ProtoNoPicture: View {
+    let text: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer()
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+            Spacer()
+            Palette.line.frame(height: 1)
+        }
+    }
+}
+
+// MARK: - F. Scorecard
+
+/// One row per project, in the tab bar's order: the site, then one verdict per source —
+/// the ratio in the row's colour with the word under it — and, at the end, the 26 weeks
+/// of clicks as one line. One row height; every zone fixed.
+struct ProtoScorecardVariant: View {
+    let sites: [PrototypeSiteSeries]
+    let icon: (Site.ID) -> Image?
+    let onOpen: (Site.ID) -> Void
+
+    @Environment(\.isTabPreview) private var isPreview
+    @State private var hoveredRow: Site.ID?
+
+    static let siteWidth: CGFloat = 200
+    static let sparkWidth: CGFloat = 140
+    static let spacing: CGFloat = 16
+    static let rowHeight: CGFloat = 48
+    static let columns = ["Search", "Visitors", "Sales", "Plan"]
+    private static let overhang: CGFloat = 8
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: Self.spacing) {
+                Text("Projects")
+                    .font(.headline)
+                    .frame(width: Self.siteWidth, alignment: .leading)
+                ForEach(Self.columns, id: \.self) { column in
+                    Text(column)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                Text("26 weeks of clicks")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: Self.sparkWidth, alignment: .trailing)
+            }
+            .padding(.bottom, 4)
+
+            VStack(spacing: 0) {
+                ForEach(sites) { site in
+                    row(site)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) { onOpen(site.id) }
+                        .onHover { inside in
+                            guard !isPreview else { return }
+                            if inside { hoveredRow = site.id } else if hoveredRow == site.id { hoveredRow = nil }
+                        }
+                        .help(site.glance.errorMessage ?? "Double-click to open \(site.site.name)")
+                }
+            }
+            .animation(.easeOut(duration: 0.12), value: hoveredRow)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .cardSurface(cornerRadius: 12)
+        .column()
+        .padding(.top, 36)
+    }
+
+    private func row(_ site: PrototypeSiteSeries) -> some View {
+        let weeks = ProtoWeek.weeks(site.allDays)
+        let share = site.registry?.indexedShare
+        let first = site.coverage.first?.indexedShare
+        let last = site.coverage.last?.indexedShare
+        let move: Double? = if let first, let last, site.coverage.count >= 2 { (last - first) * 100 } else { nil }
+        return HStack(alignment: .center, spacing: Self.spacing) {
+            HStack(spacing: 8) {
+                ProtoFavicon(icon: icon(site.id))
+                Text(site.site.name)
+                    .font(.callout)
+                    .lineLimit(1)
+            }
+            .frame(width: Self.siteWidth, alignment: .leading)
+
+            ProtoVerdictCell(growth: ProtoGrowth.clicks(site), absent: nil)
+            ProtoVerdictCell(growth: ProtoGrowth.visits(site), absent: "No analytics")
+            ProtoVerdictCell(growth: ProtoGrowth.revenue(site), absent: "No provider")
+            // The plan's cell: the indexed share, and its move since the series began.
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(share.map { $0.formatted(.percent.precision(.fractionLength(0))) } ?? "—")
+                    .font(.body)
+                    .monospacedDigit()
+                    .foregroundStyle(move.map { GlanceFigure.tint($0) } ?? .primary)
+                Text(share == nil ? "No keyword pages" : move.map { "indexed, \(Trend.signed($0, fractionDigits: 0))pp" } ?? "indexed")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+
+            ProtoSparkline(values: weeks.map(\.clicks), color: Palette.blue)
+                .frame(width: Self.sparkWidth, height: 30)
+        }
+        .frame(height: Self.rowHeight)
+        .padding(.horizontal, Self.overhang)
+        .background(hoveredRow == site.id ? Palette.line.opacity(0.45) : Color.clear, in: .rect(cornerRadius: 6))
+        .padding(.horizontal, -Self.overhang)
+    }
+}
+
+/// One verdict: the ratio over the word. A source the site lacks is a dash over the reason.
+struct ProtoVerdictCell: View {
+    let growth: ProtoGrowth?
+    let absent: String?
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            Text(growth?.label ?? "—")
+                .font(.body)
+                .monospacedDigit()
+                .foregroundStyle(growth?.tint ?? .primary)
+            Text(growth?.verdict ?? absent ?? "")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+}
+
+// MARK: - G. Plan
+
+/// One card per project, two across: the registry as a funnel — planned, published,
+/// indexed, reached, clicked — each step a bar against the pages planned, the count at its
+/// end. The list-as-chart of the ranking cards, with the plan's steps for rows.
+struct ProtoPlanVariant: View {
     let sites: [PrototypeSiteSeries]
     let icon: (Site.ID) -> Image?
     let onOpen: (Site.ID) -> Void
@@ -491,7 +515,7 @@ struct ProtoCardsVariant: View {
             ForEach(Array(stride(from: 0, to: sites.count, by: 2)), id: \.self) { start in
                 HStack(alignment: .top, spacing: 20) {
                     ForEach(sites[start..<min(start + 2, sites.count)]) { site in
-                        ProtoSiteCard(site: site, icon: icon(site.id))
+                        ProtoPlanCard(site: site, icon: icon(site.id))
                             .onTapGesture(count: 2) { onOpen(site.id) }
                             .help(site.glance.errorMessage ?? "Double-click to open \(site.site.name)")
                     }
@@ -506,427 +530,62 @@ struct ProtoCardsVariant: View {
     }
 }
 
-struct ProtoSiteCard: View {
+struct ProtoPlanCard: View {
     let site: PrototypeSiteSeries
     let icon: Image?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            ProtoCardHeader(site: site, icon: icon, showsOrigin: false)
-
-            ProtoGroup(title: "Search", lines: ProtoGroups.search(site), columns: 2, pictureHeight: 56) {
-                ProtoPictures.search(site, height: 56)
+        let funnel = ProtoFunnel(targets: site.targets)
+        let clicks = ProtoGrowth.clicks(site)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                ProtoCardHeader(site: site, icon: icon, showsOrigin: false)
+                // The one figure beside the name: what the plan brings in, and how that moves.
+                Text(GlanceFigure.count(clicks.current) + " clicks")
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                Text(clicks.label)
+                    .font(.caption.weight(.medium))
+                    .monospacedDigit()
+                    .foregroundStyle(clicks.tint ?? .secondary)
             }
-            ProtoGroup(title: "Visitors", lines: ProtoGroups.visitors(site), columns: 2, pictureHeight: 40) {
-                ProtoPictures.visitors(site)
-            }
-            if let sales = ProtoGroups.sales(site) {
-                ProtoGroup(title: "Sales", lines: sales, columns: 2, pictureHeight: 40) {
-                    ProtoPictures.sales(site)
-                }
-            }
-            ProtoGroup(title: "Registry", lines: ProtoGroups.registry(site), columns: 2, pictureHeight: 40) {
-                ProtoPictures.registry(site)
-            }
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .cardSurface(cornerRadius: 12)
-        .contentShape(Rectangle())
-    }
-}
 
-// MARK: B3 / B4. Lean cards
-
-/// One card per site, or two across: the site, four figures — one per group — and one
-/// chart. A figure's group opens on hover as a panel of its four lines.
-struct ProtoLeanVariant: View {
-    let sites: [PrototypeSiteSeries]
-    let wide: Bool
-    let icon: (Site.ID) -> Image?
-    let onOpen: (Site.ID) -> Void
-
-    var body: some View {
-        VStack(spacing: 20) {
-            if wide {
-                ForEach(sites) { site in
-                    ProtoLeanCard(site: site, wide: true, icon: icon(site.id))
-                        .onTapGesture(count: 2) { onOpen(site.id) }
-                }
+            if funnel.planned == 0 {
+                Text(site.registry == nil ? "No registry yet." : "No page in the registry aims at a keyword yet.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
             } else {
-                ForEach(Array(stride(from: 0, to: sites.count, by: 2)), id: \.self) { start in
-                    HStack(alignment: .top, spacing: 20) {
-                        ForEach(sites[start..<min(start + 2, sites.count)]) { site in
-                            ProtoLeanCard(site: site, wide: false, icon: icon(site.id))
-                                .onTapGesture(count: 2) { onOpen(site.id) }
+                VStack(spacing: 6) {
+                    ForEach(funnel.steps) { step in
+                        HStack(spacing: 12) {
+                            Text(step.name)
+                            Spacer(minLength: 0)
+                            Text(step.count.formatted())
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
                         }
-                        if start + 1 >= sites.count {
-                            Color.clear.frame(maxWidth: .infinity)
-                        }
-                    }
-                }
-            }
-        }
-        .column()
-        .padding(.top, 36)
-    }
-}
-
-/// The one figure that stands for each group, with the group behind it for the panel.
-struct ProtoHero: Identifiable {
-    let group: String
-    let title: String
-    let value: String
-    var change: String? = nil
-    var tint: Color? = nil
-    var dot: Color? = nil
-    var footnote: String? = nil
-    let lines: [ProtoGroups.Line]
-
-    var id: String { group }
-
-    static func all(_ site: PrototypeSiteSeries) -> [ProtoHero] {
-        let search = ProtoGroups.search(site)
-        let visitors = ProtoGroups.visitors(site)
-        let sales = ProtoGroups.sales(site)
-        let registry = ProtoGroups.registry(site)
-        return [
-            ProtoHero(group: "Search", title: "Clicks", value: search[0].value, change: search[0].change, tint: search[0].tint,
-                      dot: Palette.blue, lines: search),
-            ProtoHero(group: "Visitors", title: "Visits", value: visitors[0].value, change: visitors[0].change, tint: visitors[0].tint,
-                      dot: visitors[0].value == "—" ? nil : visitsColor,
-                      footnote: visitors[0].value == "—" ? "No analytics" : nil, lines: visitors),
-            ProtoHero(group: "Sales", title: "Revenue", value: sales?[0].value ?? "—", change: sales?[0].change, tint: sales?[0].tint,
-                      dot: sales == nil ? nil : Palette.mint,
-                      footnote: sales == nil ? "No provider" : nil, lines: sales ?? []),
-            ProtoHero(group: "Registry", title: "Indexed", value: registry[1].value, change: registry[1].change, tint: registry[1].tint,
-                      footnote: registry[1].value == "—" ? "No keyword pages" : nil, lines: registry),
-        ]
-    }
-}
-
-struct ProtoLeanCard: View {
-    let site: PrototypeSiteSeries
-    let wide: Bool
-    let icon: Image?
-
-    /// The group whose panel is open.
-    @State private var hovered: String?
-    @Environment(\.isTabPreview) private var isPreview
-
-    var body: some View {
-        let heroes = ProtoHero.all(site)
-        VStack(alignment: .leading, spacing: wide ? 24 : 20) {
-            ProtoCardHeader(site: site, icon: icon, showsOrigin: wide)
-
-            // The figures, justified like the page's own strip. Wide: the strip's shape, the
-            // move beside the figure. Narrow: the move under the figure, so four fit.
-            HStack(alignment: .top, spacing: 0) {
-                ForEach(Array(heroes.enumerated()), id: \.element.id) { index, hero in
-                    if index > 0 { Spacer(minLength: 16) }
-                    figure(hero)
-                        .contentShape(Rectangle())
-                        .onHover { inside in
-                            guard !isPreview else { return }
-                            if inside { hovered = hero.group } else if hovered == hero.group { hovered = nil }
-                        }
-                        .overlay(alignment: .topLeading) {
-                            if hovered == hero.group, !hero.lines.isEmpty {
-                                ProtoGroupPanel(title: hero.group, lines: hero.lines)
-                                    .fixedSize()
-                                    .alignmentGuide(.top) { _ in -(wide ? 58 : 66) }
-                                    .allowsHitTesting(false)
-                                    .transition(.opacity)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(alignment: .leading) {
+                            GeometryReader { geometry in
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Palette.mint.opacity(0.16))
+                                    .frame(width: max(geometry.size.width * Double(step.count) / Double(funnel.planned), 6))
                             }
                         }
-                }
-            }
-            .animation(.easeOut(duration: 0.12), value: hovered)
-
-            ProtoTrendChart(days: site.days, height: wide ? 72 : 56, labelInset: 0, interactive: false, showsDates: false)
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .cardSurface(cornerRadius: 12)
-        .contentShape(Rectangle())
-        .zIndex(hovered == nil ? 0 : 1)
-        .help(site.glance.errorMessage ?? "Double-click to open \(site.site.name)")
-    }
-
-    @ViewBuilder
-    private func figure(_ hero: ProtoHero) -> some View {
-        if wide {
-            Metric(title: hero.title, value: hero.value, change: hero.change, tint: hero.tint, dot: hero.dot, footnote: hero.footnote)
-        } else {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    if let dot = hero.dot {
-                        Circle().fill(dot).frame(width: 5, height: 5)
+                        .help(step.note)
+                        .accessibilityElement(children: .combine)
                     }
-                    Text(hero.title)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
-                Text(hero.value)
-                    .font(.system(size: 20, weight: .medium))
-                    .monospacedDigit()
-                Text(hero.change ?? hero.footnote ?? " ")
-                    .font(.caption.weight(hero.change == nil ? .regular : .medium))
-                    .monospacedDigit()
-                    .foregroundStyle(hero.change == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(hero.tint ?? Color.secondary))
-            }
-            .fixedSize()
-            .accessibilityElement(children: .combine)
-        }
-    }
-}
-
-/// The group behind a figure, as the hover panel: the four lines, on the material the
-/// app's other tooltips use.
-struct ProtoGroupPanel: View {
-    let title: String
-    let lines: [ProtoGroups.Line]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.callout.weight(.semibold))
-            ForEach(lines) { line in
-                HStack(spacing: 8) {
-                    Text(line.label)
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 12)
-                    Text(line.value)
-                        .monospacedDigit()
-                    Text(line.change ?? "")
-                        .font(.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(line.tint ?? .secondary)
-                        .frame(width: 56, alignment: .leading)
-                }
-                .font(.callout)
-            }
-        }
-        .frame(width: 240)
-        .padding(12)
-        .background(.regularMaterial, in: .rect(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
-        .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
-    }
-}
-
-// MARK: - C. Sparklines
-
-/// The fleet's chart, then the rows with a zone for the period's clicks as a line.
-struct ProtoSparklinesVariant: View {
-    let sites: [PrototypeSiteSeries]
-    let total: [HistoryReportDay]
-    let icon: (Site.ID) -> Image?
-    let onOpen: (Site.ID) -> Void
-
-    var body: some View {
-        ProtoTrendChart(days: total)
-            .padding(.top, 36)
-
-        ProtoSparklineSitesCard(sites: sites, icon: icon, onOpen: onOpen)
-            .column()
-            .padding(.top, 36)
-    }
-}
-
-/// The shipped Sites card, with one more fixed zone after the site: its clicks by day as a
-/// line, in the clicks colour. Everything else keeps its place.
-struct ProtoSparklineSitesCard: View {
-    let sites: [PrototypeSiteSeries]
-    let icon: (Site.ID) -> Image?
-    let onOpen: (Site.ID) -> Void
-
-    @Environment(\.isTabPreview) private var isPreview
-    @State private var hoveredRow: Site.ID?
-
-    // The sparkline's room comes out of the site zone, the gaps and the move slot, so the
-    // five figures keep the width the shipped rows give them.
-    static let siteWidth: CGFloat = 152
-    static let sparkWidth: CGFloat = 88
-    static let spacing: CGFloat = 12
-    static let columns = ["Clicks", "Impressions", "CTR", "Position", "Visits"]
-    private static let overhang: CGFloat = 8
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: Self.spacing) {
-                Text("Sites")
-                    .font(.headline)
-                    .frame(width: Self.siteWidth, alignment: .leading)
-                Text("Clicks by day")
+                Text("\(funnel.planned) pages a keyword aims at; \(site.registry?.pages ?? funnel.planned) in the registry.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .frame(width: Self.sparkWidth, alignment: .leading)
-                ForEach(Self.columns, id: \.self) { column in
-                    Text(column)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
             }
-            .padding(.bottom, 4)
-
-            VStack(spacing: 0) {
-                ForEach(sites) { site in
-                    row(site)
-                        .contentShape(Rectangle())
-                        .onTapGesture(count: 2) { onOpen(site.id) }
-                        .onHover { inside in
-                            guard !isPreview else { return }
-                            if inside {
-                                hoveredRow = site.id
-                            } else if hoveredRow == site.id {
-                                hoveredRow = nil
-                            }
-                        }
-                        .help(site.glance.errorMessage ?? "Double-click to open \(site.site.name)")
-                }
-            }
-            .animation(.easeOut(duration: 0.12), value: hoveredRow)
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .cardSurface(cornerRadius: 12)
-    }
-
-    private func row(_ site: PrototypeSiteSeries) -> some View {
-        let comparison = site.glance.comparison
-        let stats = comparison.currentStats
-        return HStack(alignment: .center, spacing: Self.spacing) {
-            HStack(spacing: 8) {
-                ProtoFavicon(icon: icon(site.id))
-                Text(site.site.name)
-                    .font(.callout)
-                    .lineLimit(1)
-            }
-            .frame(width: Self.siteWidth, alignment: .leading)
-
-            ProtoSparkline(values: site.days.map(\.clicks), color: Palette.blue)
-                .frame(width: Self.sparkWidth, height: 26)
-
-            ProtoFigure(
-                value: GlanceFigure.count(stats.clicks),
-                change: comparison.clicks.map { Trend.signed($0.delta, fractionDigits: 0) },
-                tint: comparison.clicks.map { GlanceFigure.tint($0.delta) }
-            )
-            ProtoFigure(
-                value: GlanceFigure.count(stats.impressions),
-                change: comparison.impressions.map { Trend.signed($0.delta, fractionDigits: 0) },
-                tint: comparison.impressions.map { GlanceFigure.tint($0.delta) }
-            )
-            ProtoFigure(
-                value: GlanceFigure.rate(stats.ctr),
-                change: comparison.ctrPointsDelta.map { Trend.signed($0, fractionDigits: 1) + "pp" },
-                tint: comparison.ctrPointsDelta.map { GlanceFigure.tint($0) }
-            )
-            ProtoFigure(
-                value: GlanceFigure.position(stats.position),
-                change: comparison.positionDelta.map { Trend.signed($0, fractionDigits: 1) },
-                tint: comparison.positionDelta.map { GlanceFigure.tint($0, lowerIsBetter: true) }
-            )
-            ProtoFigure(
-                value: site.glance.visits.map { GlanceFigure.count($0.current) } ?? "—",
-                change: site.glance.visits?.trend.map { Trend.signed($0.delta, fractionDigits: 0) },
-                tint: site.glance.visits?.trend.map { GlanceFigure.tint($0.delta) }
-            )
-        }
-        .frame(height: SiteGlanceRow.height)
-        .padding(.horizontal, Self.overhang)
-        .background(hoveredRow == site.id ? Palette.line.opacity(0.45) : Color.clear, in: .rect(cornerRadius: 6))
-        .padding(.horizontal, -Self.overhang)
-    }
-}
-
-/// `Figure` with a narrower slot for the move, and never a second line.
-struct ProtoFigure: View {
-    let value: String
-    let change: String?
-    let tint: Color?
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(value)
-                .font(.body)
-                .monospacedDigit()
-                .lineLimit(1)
-            Text(change ?? "")
-                .font(.caption)
-                .monospacedDigit()
-                .lineLimit(1)
-                .foregroundStyle(tint ?? .secondary)
-                .frame(width: 44, alignment: .leading)
-        }
-        .frame(maxWidth: .infinity, alignment: .trailing)
-    }
-}
-
-// MARK: - D. Stacked
-
-/// One chart edge to edge, each site a band of the metric's colour, the metric switched in
-/// the line above it and the sites named in the line below, strongest first. The rows follow.
-struct ProtoStackedVariant: View {
-    let sites: [PrototypeSiteSeries]
-    let icon: (Site.ID) -> Image?
-    let onOpen: (Site.ID) -> Void
-
-    @State private var metric = PrototypeMetric.clicks
-
-    private var options: [PrototypeMetric] {
-        sites.contains { $0.glance.visits != nil } ? PrototypeMetric.allCases : [.clicks, .impressions]
-    }
-
-    private var chosen: PrototypeMetric { options.contains(metric) ? metric : .clicks }
-
-    var body: some View {
-        let chosen = chosen
-        let ordered = sites.sorted { $0.total(chosen) > $1.total(chosen) }
-
-        HStack(spacing: 12) {
-            Text("By site")
-                .font(.headline)
-            Spacer()
-            WordSwitch(options: options, selection: $metric, label: \.label, font: .subheadline)
-                .accessibilityLabel("Metric")
-        }
-        .column()
-        .padding(.top, 36)
-
-        ProtoStackedChart(sites: ordered, metric: chosen)
-            .padding(.top, 16)
-
-        // The legend, as a line of the page: a swatch at the band's strength, the site, and
-        // its period total. Double-click opens the site.
-        HStack(spacing: 24) {
-            ForEach(Array(ordered.enumerated()), id: \.element.id) { rank, site in
-                HStack(spacing: 8) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(chosen.color.opacity(ProtoStackedChart.opacity(rank: rank)))
-                        .frame(width: 10, height: 10)
-                    ProtoFavicon(icon: icon(site.id), size: 14)
-                    Text(site.site.name)
-                        .font(.callout)
-                    Text(GlanceFigure.count(site.total(chosen)))
-                        .font(.callout)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) { onOpen(site.id) }
-            }
-            Spacer()
-        }
-        .column()
-        .padding(.top, 10)
-        .animation(.snappy(duration: 0.25), value: chosen)
-
-        SitesCard(rows: sites.map(\.glance), icon: icon, onOpen: onOpen)
-            .column()
-            .padding(.top, 36)
+        .contentShape(Rectangle())
     }
 }
 #endif

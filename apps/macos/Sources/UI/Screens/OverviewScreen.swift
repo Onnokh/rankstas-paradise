@@ -113,10 +113,11 @@ struct OverviewScreen: View {
     /// PROTOTYPE: the page in the chosen variant, or nil for the shipped page.
     private var prototypeBody: OverviewPrototypeBody? {
         #if DEBUG
-        guard let prototype, prototype.variant != .current else { return nil }
+        guard let prototype else { return nil }
         return OverviewPrototypeBody(
             variant: prototype.variant,
             sites: OverviewSeries.sites(overviews: model.overviews, series: history.series, rankings: rankings, period: state.period),
+            period: state.period,
             icon: { favicons.image(for: $0) },
             onOpen: onOpenSite,
             header: AnyView(header),

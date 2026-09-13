@@ -23,12 +23,13 @@ final class OverviewPrototypeStillsTests: XCTestCase {
             let body = OverviewPrototypeBody(
                 variant: variant,
                 sites: sites,
+                period: .d28,
                 icon: { _ in Image(systemName: "seal.fill") },
                 onOpen: { _ in },
                 header: AnyView(Self.header),
                 footer: AnyView(Self.footer)
             )
-            let image = try XCTUnwrap(Self.draw(AnyView(body), height: variant == .cards ? 1900 : variant == .leanWide || variant == .lean ? 1300 : 1700))
+            let image = try XCTUnwrap(Self.draw(AnyView(body), height: 1400))
             let url = directory.appendingPathComponent("\(variant.key.lowercased())-\(variant.rawValue).png")
             let rep = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(image.tiffRepresentation)))
             try XCTUnwrap(rep.representation(using: .png, properties: [:])).write(to: url)
@@ -84,11 +85,26 @@ final class OverviewPrototypeStillsTests: XCTestCase {
 
     // MARK: The fixture
 
-    /// Fifty-six days per site, ending yesterday, so a 28-day period has the 28 before it.
+    /// A registry whose keyword pages fall through the funnel at the given counts.
+    private static func targets(planned: Int, published: Int, indexed: Int, reached: Int, clicked: Int) -> [RegistryTarget] {
+        (0..<planned).map { index in
+            RegistryTarget(
+                targetUrl: "/page-\(index)",
+                phase: index < clicked || index < reached ? RegistryPhase.live.rawValue
+                    : index < published ? RegistryPhase.measuring.rawValue : RegistryPhase.new.rawValue,
+                status: "active",
+                window: TidyMetrics(impressions: index < reached ? 40 : 0, clicks: index < clicked ? 3 : 0, ctr: 0, position: 12),
+                indexed: index < indexed ? "indexed" : (index < published ? "not-indexed" : "unknown"),
+                keywords: [RegistryKeyword(keyword: "keyword \(index)", cluster: "c", intent: "info")]
+            )
+        }
+    }
+
+    /// Two hundred days per site, ending yesterday: 26 whole weeks, and a 28-day period with the 28 before it.
     private static func fleet() -> [PrototypeSiteSeries] {
         let calendar = Calendar(identifier: .gregorian)
         let end = ISODay.date("2026-09-12")!
-        let dates = (0..<56).reversed().map { ISODay.string(calendar.date(byAdding: .day, value: -$0, to: end)!) }
+        let dates = (0..<200).reversed().map { ISODay.string(calendar.date(byAdding: .day, value: -$0, to: end)!) }
 
         struct Shape {
             let site: Site
@@ -105,11 +121,11 @@ final class OverviewPrototypeStillsTests: XCTestCase {
             Shape(site: Site(id: "sleevy", name: "Sleevy", origin: "https://sleevy.com"),
                   clicks: 0.7, impressions: 6, position: 23.5, visits: 5, from: nil, growth: 1.2),
             Shape(site: Site(id: "missingmounts", name: "Missingmounts", origin: "https://missingmounts.com"),
-                  clicks: 63, impressions: 720, position: 7.1, visits: 1050, from: nil, growth: 1.4),
+                  clicks: 63, impressions: 720, position: 7.1, visits: 1050, from: nil, growth: 1.25),
             Shape(site: Site(id: "printfeest", name: "Printfeest", origin: "https://printfeest.nl"),
-                  clicks: 0.3, impressions: 4, position: 25, visits: 5, from: 38, growth: 1),
+                  clicks: 0.3, impressions: 4, position: 25, visits: 5, from: 182, growth: 1),
             Shape(site: Site(id: "shadertown", name: "Shadertown", origin: "https://shadertown.dev"),
-                  clicks: 1, impressions: 10, position: 7, visits: 70, from: 34, growth: 1),
+                  clicks: 1, impressions: 10, position: 7, visits: 70, from: 150, growth: 0.9),
         ]
 
         var seed: UInt64 = 7
@@ -126,7 +142,7 @@ final class OverviewPrototypeStillsTests: XCTestCase {
                 let counting = shape.from.map { index >= $0 } ?? true
                 let weekday = calendar.component(.weekday, from: ISODay.date(date)!)
                 let weekend = weekday == 1 || weekday == 7 ? 0.7 : 1
-                let ramp = index < 28 ? 1 : shape.growth
+                let ramp = index < 172 ? 0.55 + 0.45 * Double(index) / 172 : shape.growth
                 let wobble = 0.7 + noise() * 0.6
                 let impressions = counting ? (shape.impressions * weekend * ramp * wobble).rounded() : 0
                 let clicks = counting ? min((shape.clicks * weekend * ramp * (0.5 + noise())).rounded(), impressions) : 0
@@ -159,7 +175,7 @@ final class OverviewPrototypeStillsTests: XCTestCase {
             switch site.id {
             case "missingmounts":
                 site.rating = RatingMove(history: [
-                    DomainRatingDay(date: dates[0], rating: 31.8), DomainRatingDay(date: dates[55], rating: 32.4),
+                    DomainRatingDay(date: dates[0], rating: 31.8), DomainRatingDay(date: dates[199], rating: 32.4),
                 ], days: 28)
                 let salesDays = dates.suffix(28).map { date in
                     let orders = (2 + noise() * 6).rounded()
@@ -178,20 +194,23 @@ final class OverviewPrototypeStillsTests: XCTestCase {
                     delta: RevenueTotals(orders: current.orders - previous.orders, revenue: current.revenue - previous.revenue, net: current.net - previous.net)
                 )
                 site.registry = RegistryTotals(pages: 142, withKeywords: 96, keywords: 210, indexed: 81, notIndexed: 9)
+                site.targets = Self.targets(planned: 96, published: 90, indexed: 81, reached: 60, clicked: 44)
                 site.coverage = dates.suffix(12).enumerated().map { index, date in
                     IndexCoverageDay(date: date, keywordTargets: 96, indexed: 74 + index / 2, notIndexed: 9)
                 }
                 site.monthlyVolume = 18_400
             case "shadertown":
-                site.rating = RatingMove(history: [DomainRatingDay(date: dates[55], rating: 4.0)], days: 28)
+                site.rating = RatingMove(history: [DomainRatingDay(date: dates[199], rating: 4.0)], days: 28)
                 site.registry = RegistryTotals(pages: 38, withKeywords: 30, keywords: 61, indexed: 12, notIndexed: 11)
+                site.targets = Self.targets(planned: 30, published: 24, indexed: 12, reached: 10, clicked: 5)
                 site.coverage = dates.suffix(5).enumerated().map { index, date in
                     IndexCoverageDay(date: date, keywordTargets: 30, indexed: 8 + index, notIndexed: 11)
                 }
                 site.monthlyVolume = 6_900
             case "sleevy":
-                site.rating = RatingMove(history: [DomainRatingDay(date: dates[55], rating: 12.3)], days: 28)
+                site.rating = RatingMove(history: [DomainRatingDay(date: dates[199], rating: 12.3)], days: 28)
                 site.registry = RegistryTotals(pages: 20, withKeywords: 14, keywords: 22, indexed: 14, notIndexed: 0)
+                site.targets = Self.targets(planned: 14, published: 14, indexed: 14, reached: 9, clicked: 4)
                 site.monthlyVolume = 1_200
             default:
                 site.registry = RegistryTotals(pages: 9, withKeywords: 0, keywords: 0, indexed: 0, notIndexed: 0)

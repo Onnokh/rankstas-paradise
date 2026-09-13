@@ -3,46 +3,32 @@ import SwiftUI
 
 // PROTOTYPE — throwaway. Not for main.
 //
-// Question: the Overview is a strip of totals and one quiet row per site. It reads as a
-// table dropped into the app rather than as one of its screens. A site's dashboard is the
-// screen the reader knows: the strip, the chart edge to edge under it, the provider's cards
-// side by side, the ranked lists as bars. What does the Overview look like built the same way?
+// Question: the Overview is a strip of totals and one quiet row per site. Onno wants to
+// "actually see how the projects do" — not what the counts are this period, but whether
+// each project is getting somewhere. Three rounds of cards (a dashboard per site, four
+// groups of four lines, four figures and a chart) all answered a different question: what
+// the numbers are. Round four answers his.
 //
-// Four shapes of the same stored data, switchable from the floating bar at the bottom of the
-// window (⌘⌥← / ⌘⌥→) while the Overview is in front, with real data. The shipped page is
-// kept in the cycle as the baseline. Nothing here polls: every figure and every line is read
-// from the stores the site dashboards read.
+// What "how a project does" can be read from, with what is stored:
+//   - direction: this period against the one before, as a ratio — a ratio makes a site
+//     with 26 clicks comparable to one with 2,419
+//   - the long run: the daily series reaches back up to a year, so 26 weeks of clicks or
+//     visits shows the shape, where 28 days shows noise
+//   - the plan: the registry's phases are a funnel — pages planned, published, indexed,
+//     reached by a search, clicked — and the funnel is Ranksta's own reading of progress
 //
-//   Current — the strip and the rows (as shipped)
-//   B1 — Cards, wide: one card per site, the full column; four groups side by side —
-//        Search, Visitors, Sales, Registry — each four lines and a small chart
-//   B2 — Cards, two across: the same four groups stacked, the lines two to a row
-//   A — Dashboard: the site screen's skeleton for the fleet — the strip, the fleet's chart
-//       edge to edge, the visits card beside the sites as bars, then the rows
-//   C — Sparklines: the rows kept, each with the period's clicks as a line in a zone of its
-//       own, under the fleet's chart
-//   D — Stacked: one chart, each site a band of the metric's one colour, the metric switched
-//       above it; the rows under it
+// Three shapes, switchable from the floating bar at the bottom of the window (⌘⌥← / ⌘⌥→)
+// while the Overview is in front, with real data:
 //
-// Round three ("this ain't it, way too much information"): a card is four figures, one per
-// group — Clicks, Visits, Revenue, Indexed — and one chart. Everything a group knows beyond
-// its figure waits in a panel that opens on hover over the figure.
+//   E — Trajectory: one card per project; for Search, Visitors, Sales and Plan the growth
+//       as one large percentage, and under it the last 26 weeks, the compared period lit
+//   F — Scorecard: one row per project, one verdict per source — the ratio and a word —
+//       and the 26 weeks of clicks as a line at the row's end
+//   G — Plan: one card per project, the registry as a funnel: planned, published, indexed,
+//       reached, clicked, each a bar against the pages planned
 //
-//   B3 — Cards, wide: one per site, the four figures as a strip, the chart under it
-//   B4 — Cards, two across: the four figures with their moves under them, the chart under
-//
-// Round two (B won round one, "but the cards need work — not just a small detail page"):
-// a card carries the three things the app knows about a site, in groups. Search is Search
-// Console and Ahrefs: clicks, impressions, CTR, domain rating. Visitors is the analytics
-// provider: visits, visitors a day, pageviews, pages a visit — bounce rate and time on page
-// are left out of the domain's schema on purpose, every vendor defines them differently.
-// Sales is the commerce provider, for the sites that have one. Registry is Ranksta's own:
-// pages, the indexed share, the backlog, the plan's monthly search volume.
-//
-// Every variant reads `PrototypeSiteSeries`, built once per body from the glance and the days
-// behind it. The fleet's days come from `OverviewSeries.total`, which sums the way
-// `OverviewGlance.total` does: clicks and impressions add, the position is weighted by
-// impressions, visits add where a site has them.
+// Every variant reads `PrototypeSiteSeries`, built once per body from the glance, the whole
+// stored series and what the ranking store holds for the site.
 
 // MARK: - Variant
 
@@ -53,33 +39,23 @@ import SwiftUI
 final class OverviewPrototype {
     enum Variant: String, CaseIterable, Identifiable {
         // Declaration order is the order the floating bar cycles through.
-        case current, leanWide, lean, cardsWide, cards, dashboard, sparklines, stacked
+        case trajectory, scorecard, plan
 
         var id: String { rawValue }
 
         var key: String {
             switch self {
-            case .current: "Current"
-            case .leanWide: "B3"
-            case .lean: "B4"
-            case .cardsWide: "B1"
-            case .cards: "B2"
-            case .dashboard: "A"
-            case .sparklines: "C"
-            case .stacked: "D"
+            case .trajectory: "E"
+            case .scorecard: "F"
+            case .plan: "G"
             }
         }
 
         var name: String {
             switch self {
-            case .current: "The strip and the rows (as shipped)"
-            case .leanWide: "Cards, wide: four figures, one chart; the rest on hover"
-            case .lean: "Cards, two across: four figures, one chart; the rest on hover"
-            case .cardsWide: "Cards, wide: one per site, the four groups side by side"
-            case .cards: "Cards, two across: the four groups stacked"
-            case .dashboard: "Dashboard: the site screen's skeleton, for the fleet"
-            case .sparklines: "Sparklines: the rows, each with its clicks as a line"
-            case .stacked: "Stacked: one chart, each site a band; switch the metric"
+            case .trajectory: "Trajectory: growth per source, and the last 26 weeks"
+            case .scorecard: "Scorecard: one verdict per source, per project"
+            case .plan: "Plan: the registry as a funnel, per project"
             }
         }
     }
@@ -92,7 +68,7 @@ final class OverviewPrototype {
 
     init() {
         let stored = UserDefaults.standard.string(forKey: Self.defaultsKey)
-        variant = stored.flatMap(Variant.init(rawValue:)) ?? .current
+        variant = stored.flatMap(Variant.init(rawValue:)) ?? .trajectory
     }
 
     func cycle(_ step: Int) {
@@ -160,6 +136,10 @@ struct PrototypeSiteSeries: Identifiable {
     let days: [HistoryReportDay]
     /// The period before, for the moves of the figures the glance does not carry.
     var previousDays: [HistoryReportDay] = []
+    /// Every stored day, oldest first: the long run.
+    var allDays: [HistoryReportDay] = []
+    /// The registry's pages, for the funnel.
+    var targets: [RegistryTarget] = []
     var rating: RatingMove? = nil
     /// Nil for a site without a commerce provider, or before its report has landed.
     var revenue: RevenueReport? = nil
@@ -237,6 +217,8 @@ enum OverviewSeries {
                 glance: glance,
                 days: Array(days.suffix(window)),
                 previousDays: Array(days[max(0, count - window * 2)..<max(0, count - window)]),
+                allDays: days,
+                targets: rankings?.registry[overview.id] ?? [],
                 rating: rating(of: overview, days: window),
                 revenue: rankings?.revenue[key],
                 registry: rankings?.registry[overview.id].map(RegistryList.totals),
@@ -308,6 +290,7 @@ enum OverviewSeries {
 struct OverviewPrototypeBody: View {
     let variant: OverviewPrototype.Variant
     let sites: [PrototypeSiteSeries]
+    let period: Period
     let icon: (Site.ID) -> Image?
     let onOpen: (Site.ID) -> Void
     let header: AnyView
@@ -315,7 +298,6 @@ struct OverviewPrototypeBody: View {
 
     var body: some View {
         let rows = sites.map(\.glance)
-        let total = OverviewSeries.total(sites)
         VStack(alignment: .leading, spacing: 0) {
             header
                 .column()
@@ -330,24 +312,12 @@ struct OverviewPrototypeBody: View {
             .column()
 
             switch variant {
-            case .current:
-                SitesCard(rows: rows, icon: icon, onOpen: onOpen)
-                    .column()
-                    .padding(.top, 36)
-            case .dashboard:
-                ProtoDashboardVariant(sites: sites, total: total, icon: icon, onOpen: onOpen)
-            case .leanWide:
-                ProtoLeanVariant(sites: sites, wide: true, icon: icon, onOpen: onOpen)
-            case .lean:
-                ProtoLeanVariant(sites: sites, wide: false, icon: icon, onOpen: onOpen)
-            case .cardsWide:
-                ProtoWideCardsVariant(sites: sites, icon: icon, onOpen: onOpen)
-            case .cards:
-                ProtoCardsVariant(sites: sites, icon: icon, onOpen: onOpen)
-            case .sparklines:
-                ProtoSparklinesVariant(sites: sites, total: total, icon: icon, onOpen: onOpen)
-            case .stacked:
-                ProtoStackedVariant(sites: sites, icon: icon, onOpen: onOpen)
+            case .trajectory:
+                ProtoTrajectoryVariant(sites: sites, period: period, icon: icon, onOpen: onOpen)
+            case .scorecard:
+                ProtoScorecardVariant(sites: sites, icon: icon, onOpen: onOpen)
+            case .plan:
+                ProtoPlanVariant(sites: sites, icon: icon, onOpen: onOpen)
             }
 
             footer
