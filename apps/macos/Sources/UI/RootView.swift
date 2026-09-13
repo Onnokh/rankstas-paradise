@@ -47,6 +47,8 @@ struct RootView: View {
     @State private var log = LogStore()
     /// One rendered still per tab, which is what the peek's cards show. See `TabSnapshots`.
     @State private var snapshots = TabSnapshots()
+    /// PROTOTYPE: which colour scheme the window wears. See `ColorSchemePrototype`.
+    @State private var scheme = SchemePrototype()
     @State private var drag: DragSession?
 
     /// One live three-finger gesture.
@@ -169,6 +171,21 @@ struct RootView: View {
                 keyboardShortcuts
             }
             .clipped()
+            // PROTOTYPE: the palette is read on access, so a new identity re-reads it
+            // everywhere; the text colour is the scheme's, or the system's.
+            .id(scheme.variant)
+            .foregroundStyle(scheme.textStyle)
+            .overlay(alignment: .bottom) {
+                #if DEBUG
+                PrototypeSchemeSwitcher(prototype: scheme)
+                    .padding(.bottom, 18)
+                #endif
+            }
+        }
+        // PROTOTYPE: the stills were drawn in the old scheme.
+        .onChange(of: scheme.variant) {
+            snapshots.invalidate()
+            snapshots.scheduleAll(workspace.tabs) { cardContent(for: $0) }
         }
         // Extend under the title bar so the tab bar can take its place.
         .ignoresSafeArea(.container, edges: .top)

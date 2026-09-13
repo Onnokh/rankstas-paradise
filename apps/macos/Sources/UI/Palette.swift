@@ -14,7 +14,8 @@ enum Palette {
     /// Errors and alarms. The mascot's own color.
     static let coral = Color(nsColor: srgb(0xFB3949))
     /// The interface accent — the headband, carried through the interface.
-    static let acid = Color(nsColor: srgb(0xC4FA04))
+    /// PROTOTYPE: read from the scheme under trial. See `ColorSchemePrototype`.
+    static var acid: Color { Color(nsColor: srgb(SchemePrototype.current.accent)) }
     /// The cool half of a two-series chart.
     static let blue = Color(nsColor: srgb(0x4C8DFF))
     /// Gains, and anything measured as healthy.
@@ -27,14 +28,17 @@ enum Palette {
 
     // MARK: Surfaces
 
+    // PROTOTYPE: the dark side of every surface is read from the scheme under trial, on
+    // every access, so a remount picks the new scheme up. See `ColorSchemePrototype`.
+
     /// The canvas the window is built on: behind the tab bar, around the pane.
-    static let void = adaptive(dark: 0x08090A, light: 0xE8EAE9)
+    static var void: Color { adaptive(dark: SchemePrototype.current.void, light: 0xE8EAE9) }
     /// Grouped content — the screen a tab shows.
-    static let panel = adaptive(dark: 0x15181D, light: 0xF7F8F8)
+    static var panel: Color { adaptive(dark: SchemePrototype.current.panel, light: 0xF7F8F8) }
     /// Floating UI: peek cards, and the cards inside a screen.
-    static let raised = adaptive(dark: 0x1C2026, light: 0xFFFFFF)
+    static var raised: Color { adaptive(dark: SchemePrototype.current.raised, light: 0xFFFFFF) }
     /// The hairline that separates one surface from the next.
-    static let line = adaptive(dark: 0x292E36, light: 0xDCDFDE)
+    static var line: Color { adaptive(dark: SchemePrototype.current.line, light: 0xDCDFDE) }
 
     /// A surface that carries the guide's value in dark and its paper-side
     /// equivalent in light. `NSColor`'s dynamic provider is asked for a value
@@ -45,7 +49,7 @@ enum Palette {
         })
     }
 
-    private static func srgb(_ hex: UInt32) -> NSColor {
+    static func srgb(_ hex: UInt32) -> NSColor {
         NSColor(
             srgbRed: Double((hex >> 16) & 0xFF) / 255,
             green: Double((hex >> 8) & 0xFF) / 255,

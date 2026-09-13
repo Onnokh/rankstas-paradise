@@ -49,6 +49,14 @@ final class TabSnapshots {
         cards[tab]
     }
 
+    /// PROTOTYPE: drops every still and everything waiting to become one, so the cards are
+    /// drawn again in the scheme under trial.
+    func invalidate() {
+        for task in pendingCards.values { task.cancel() }
+        pendingCards.removeAll()
+        cards.removeAll()
+    }
+
     /// Draws a tab's card still after a beat, replacing one already waiting for that tab.
     func scheduleCard(_ tab: TabID, after extra: Duration = .zero, content: @escaping @MainActor () -> AnyView) {
         pendingCards[tab]?.cancel()
