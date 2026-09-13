@@ -18,6 +18,10 @@ struct OverviewScreen: View {
     let onRefresh: () -> Void
 
     @Environment(\.isTabPreview) private var isPreview
+    #if DEBUG
+    /// PROTOTYPE: which shape the page is drawn in. Nil outside the prototype's host.
+    @Environment(OverviewPrototype.self) private var prototype: OverviewPrototype?
+    #endif
 
     /// Nothing loaded yet and nothing to report: the body itself shows a spinner.
     private var isFirstLoad: Bool {
@@ -59,6 +63,8 @@ struct OverviewScreen: View {
         } else if let errorMessage = model.errorMessage, model.sites.isEmpty {
             ErrorView(message: errorMessage, retry: onRefresh)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let prototypeBody {
+            prototypeBody
         } else {
             // The same page as a site's tab: one reading column, centred, header at the top,
             // the numbers under it, the card below, the footer last.
@@ -91,6 +97,23 @@ struct OverviewScreen: View {
             }
             .readingColumn()
         }
+    }
+
+    /// PROTOTYPE: the page in the chosen variant, or nil for the shipped page.
+    private var prototypeBody: OverviewPrototypeBody? {
+        #if DEBUG
+        guard let prototype, prototype.variant != .current else { return nil }
+        return OverviewPrototypeBody(
+            variant: prototype.variant,
+            sites: OverviewSeries.sites(overviews: model.overviews, series: history.series, period: state.period),
+            icon: { favicons.image(for: $0) },
+            onOpen: onOpenSite,
+            header: AnyView(header),
+            footer: AnyView(footer)
+        )
+        #else
+        return nil
+        #endif
     }
 
     /// One row, centred, like a site's header: the mark and the name; at the trailing edge
@@ -190,7 +213,7 @@ enum GlanceFigure {
 /// All sites' numbers in one row, in the metric strip's place: Search Console's four summed
 /// over every site with their moves, then, beyond the hairline, the visits and how many
 /// sites there are.
-private struct GlanceStrip: View {
+struct GlanceStrip: View {
     let comparison: PeriodComparison
     let visits: VisitsComparison?
     let siteCount: Int
@@ -255,7 +278,7 @@ private struct GlanceStrip: View {
 /// One line per site, in the tab bar's order, under a row of column names. Fixed zones left
 /// to right: the site, then five figures, each with its move in a slot of its own so the
 /// figures line up down the card. Double-click opens the site's tab.
-private struct SitesCard: View {
+struct SitesCard: View {
     let rows: [SiteGlance]
     let icon: (Site.ID) -> Image?
     let onOpen: (Site.ID) -> Void
@@ -307,7 +330,7 @@ private struct SitesCard: View {
 /// with its move in caption beside it — mint or coral, the one colour with one meaning on
 /// the row. A site whose dashboard could not be loaded keeps whatever is cached and carries
 /// the reason in its tooltip.
-private struct SiteGlanceRow: View {
+struct SiteGlanceRow: View {
     let row: SiteGlance
     let icon: Image?
     let isHovered: Bool
@@ -373,7 +396,7 @@ private struct SiteGlanceRow: View {
 
 /// One figure and its move, right-aligned in a flexible zone. The move has a slot of its
 /// own whether or not there is one, so the figures of every row end on the same line.
-private struct Figure: View {
+struct Figure: View {
     let value: String
     let change: String?
     let tint: Color?
