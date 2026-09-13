@@ -113,9 +113,7 @@ private struct ScreenRailButton: View {
                 // The headband stands in the gap between the window edge and the icon,
                 // centred in it, the way it marks the active row in the guide's nav.
                 .overlay(alignment: .leading) {
-                    Headband()
-                        .fill(Palette.acid)
-                        .frame(width: Headband.markerSize.height, height: Headband.markerSize.width)
+                    UprightHeadband()
                         .offset(x: -(PeekLayout.contentInset + Headband.markerSize.height) / 2)
                         .opacity(isActive ? 1 : 0)
                 }

@@ -47,4 +47,15 @@ final class ClientConfigurationTests: XCTestCase {
         try write(apiUrl: "https://file.example", token: "")
         XCTAssertThrowsError(try ClientConfiguration.load(environment: [:], file: file))
     }
+
+    func testTheSourceNamesTheEnvironmentOnlyWhenItHasBoth() {
+        XCTAssertEqual(
+            ClientConfiguration.sourceDescription(environment: ["RP_API_URL": "https://env.example", "RP_TOKEN": "env"]),
+            "RP_API_URL and RP_TOKEN in the environment"
+        )
+        XCTAssertEqual(
+            ClientConfiguration.sourceDescription(environment: ["RP_API_URL": "https://env.example", "XDG_CONFIG_HOME": "/tmp/xdg"]),
+            "/tmp/xdg/rankstas-paradise/client.json"
+        )
+    }
 }

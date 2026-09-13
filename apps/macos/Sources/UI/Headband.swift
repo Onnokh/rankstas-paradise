@@ -45,3 +45,18 @@ struct HeadbandMarker: View {
             .accessibilityHidden(true)
     }
 }
+
+/// The marker stood upright, beside an active row rather than under an active word.
+///
+/// Drawn at the marker's own 14×4 and turned, not drawn into a 4×14 box: the shear is taken
+/// out of the bar's width, and a box 4 wide leaves nothing after a 14-tall shear.
+struct UprightHeadband: View {
+    var body: some View {
+        Headband()
+            .fill(Palette.acid)
+            .frame(width: Headband.markerSize.width, height: Headband.markerSize.height)
+            .rotationEffect(.degrees(90))
+            .frame(width: Headband.markerSize.height, height: Headband.markerSize.width)
+            .accessibilityHidden(true)
+    }
+}
