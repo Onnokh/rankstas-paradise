@@ -30,11 +30,19 @@ struct FeedQuietLine: Identifiable, Equatable {
     /// "3 visits since 12 Aug", for the tooltip.
     let returnsHelp: String?
     let age: String
+    /// "from google.com": how the visit began, when the provider says. The caption's words
+    /// for a row that has no history yet.
+    let origin: String?
 
     var newest: FeedLogStep? { steps.last }
 }
 
 enum FeedQuiet {
+    /// "/eu/ravencrest/bãrlah", not "/eu/ravencrest/b%C3%A3rlah": a path is read, not sent.
+    static func readable(_ path: String) -> String {
+        path.removingPercentEncoding ?? path
+    }
+
     /// "now", "3m", "14m", then the clock time. Shorter than the log's "3m ago": the column
     /// is a gutter, not a sentence.
     static func age(_ date: Date?, now: Date) -> String {
@@ -66,7 +74,8 @@ enum FeedQuiet {
                 who: head.who,
                 returns: head.visits,
                 returnsHelp: head.visitsHelp,
-                age: age(head.event.date, now: now)
+                age: age(head.event.date, now: now),
+                origin: byID[group.steps.last?.id ?? ""]?.detail
             )
         }
     }
@@ -82,7 +91,7 @@ enum FeedQuiet {
                 lines[lines.count - 1] = FeedQuietLine(
                     id: last.id, siteID: last.siteID, siteName: last.siteName, steps: [step],
                     country: last.country, flag: last.flag, who: last.who, returns: last.returns,
-                    returnsHelp: last.returnsHelp, age: last.age
+                    returnsHelp: last.returnsHelp, age: last.age, origin: last.origin
                 )
                 continue
             }
@@ -100,7 +109,8 @@ enum FeedQuiet {
                 who: row.who,
                 returns: row.visits,
                 returnsHelp: row.visitsHelp,
-                age: age(row.event.date, now: now)
+                age: age(row.event.date, now: now),
+                origin: row.event.kind == .pageview ? row.detail : nil
             ))
         }
         return lines
@@ -470,19 +480,19 @@ struct FeedHierarchyRow: View {
     let icon: Image?
     var isHovered = false
 
-    static let height: CGFloat = 50
-    private static let gutter: CGFloat = 44
+    static let height: CGFloat = 44
+    private static let gutter: CGFloat = 40
     private static let siteWidth: CGFloat = 136
-    /// How many of the steps before the newest the caption names.
-    private static let shownEarlier = 2
 
     /// Where the words start: where the tooltip hangs from.
     private var wordsX: CGFloat { 12 + Self.gutter + 16 + (showsSite ? Self.siteWidth + 16 : 0) }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
+        // Three sizes for three roles: the headline at body, the site at callout, and the
+        // age and caption at caption size. One size in three greys was not a hierarchy.
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
             Text(line.age)
-                .font(.callout)
+                .font(.caption)
                 .monospacedDigit()
                 .foregroundStyle(.tertiary)
                 .frame(width: Self.gutter, alignment: .trailing)
@@ -502,9 +512,9 @@ struct FeedHierarchyRow: View {
                 .frame(width: Self.siteWidth, alignment: .leading)
             }
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 headline
-                    .font(.callout)
+                    .font(.body)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 caption
@@ -516,12 +526,12 @@ struct FeedHierarchyRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(line.flag)
-                .font(.callout)
+                .font(.body)
                 .frame(width: 24, alignment: .trailing)
                 .help(line.country)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
         .frame(height: Self.height, alignment: .top)
         .background(isHovered ? Palette.line.opacity(0.45) : Color.clear, in: .rect(cornerRadius: 6))
         .contentShape(Rectangle())
@@ -549,9 +559,9 @@ struct FeedHierarchyRow: View {
                         .fontWeight(.medium)
                         .foregroundStyle(visitsColor)
                 case .outbound:
-                    Text("→ \(newest.primary)")
+                    Text("→ \(FeedQuiet.readable(newest.primary))")
                 case .pageview:
-                    Text(newest.primary)
+                    Text(FeedQuiet.readable(newest.primary))
                 }
                 if newest.repeats > 1 {
                     Text("×\(newest.repeats)")
@@ -564,26 +574,24 @@ struct FeedHierarchyRow: View {
         }
     }
 
-    /// Everything else, in one grey: "3rd visit · after search-character › /eu/drakthul".
-    /// Empty for a first-time visitor on their first page, and the line stays: every row is
-    /// the same height.
+    /// Everything else, in one grey: "3rd visit · after /eu/drakthul/felmasakr · 5 steps".
+    /// Only the step before this one is named, in full — two, shortened, cut paths in the
+    /// middle of a word, and the whole trail is the tooltip's. A row with no history says
+    /// how the visit began instead, when the provider knows: "from google.com". The line is
+    /// kept even when it is empty, so every row is the same height.
     private var caption: Text {
-        var parts: [Text] = []
+        var parts: [String] = []
         if let returns = line.returns, let count = Int(returns.dropFirst()) {
-            parts.append(Text("\(FeedShapes.ordinal(count)) visit"))
+            parts.append("\(FeedShapes.ordinal(count)) visit")
         }
-        let earlier = Array(line.steps.dropLast())
-        if !earlier.isEmpty {
-            let shown = earlier.suffix(Self.shownEarlier).map { step in
-                FeedShapes.short(step.primary, limit: 28) + (step.repeats > 1 ? " ×\(step.repeats)" : "")
+        if line.steps.count > 1, let previous = line.steps.dropLast().last {
+            parts.append("after \(FeedQuiet.readable(previous.primary))\(previous.repeats > 1 ? " ×\(previous.repeats)" : "")")
+            if line.steps.count > 2 {
+                parts.append("\(line.steps.count) steps")
             }
-            let rest = earlier.count - shown.count
-            parts.append(Text("after \(shown.joined(separator: " › "))\(rest > 0 ? " · +\(rest) earlier" : "")"))
+        } else if let origin = line.origin {
+            parts.append(origin)
         }
-        var text = Text(" ")
-        for (index, part) in parts.enumerated() {
-            text = text + (index > 0 ? Text("  ·  ") : Text("")) + part
-        }
-        return text
+        return Text(parts.isEmpty ? " " : parts.joined(separator: "  ·  "))
     }
 }
