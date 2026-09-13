@@ -573,11 +573,6 @@ struct FeedHierarchyRow: View {
                 case .pageview:
                     Text(FeedQuiet.readable(newest.primary))
                 }
-                if newest.repeats > 1 {
-                    Text("×\(newest.repeats)")
-                        .monospacedDigit()
-                        .foregroundStyle(.tertiary)
-                }
             }
         } else {
             Text("—")
@@ -592,8 +587,13 @@ struct FeedHierarchyRow: View {
     /// kept even when it is empty, so every row is the same height.
     private var caption: Text {
         var parts: [String] = []
+        // The same page loaded again and again is said in words here, not as "×3" on the
+        // headline: "×3" at the row's end already means a third visit.
+        if let newest = line.newest, newest.repeats > 1 {
+            parts.append("loaded \(newest.repeats) times")
+        }
         if line.steps.count > 1, let previous = line.steps.dropLast().last {
-            parts.append("after \(FeedQuiet.readable(previous.primary))\(previous.repeats > 1 ? " ×\(previous.repeats)" : "")")
+            parts.append("after \(FeedQuiet.readable(previous.primary))")
             if line.steps.count > 2 {
                 parts.append("\(line.steps.count) steps")
             }
