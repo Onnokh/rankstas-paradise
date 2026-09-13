@@ -335,10 +335,12 @@ struct LiveFeedRow: Identifiable, Equatable, Sendable {
     }
 
     /// "🇪🇸" from an ISO code: two regional indicator symbols. Empty for anything that is
-    /// not a two-letter code, so a row never shows a made-up glyph.
+    /// not a region the system knows — a provider also sends codes like "T1" (an anonymous
+    /// proxy) and "EU", and the two indicators of those have no flag to become. They drew as
+    /// two boxes, and at the row's size the boxes wrapped and made the row taller.
     static func flag(_ code: String) -> String {
         let upper = code.uppercased()
-        guard upper.count == 2 else { return "" }
+        guard upper.count == 2, Locale.Region.isoRegions.contains(Locale.Region(upper)) else { return "" }
         return upper.unicodeScalars
             .compactMap { UnicodeScalar(0x1F1E6 + $0.value - 0x41) }
             .map { String(Character($0)) }

@@ -225,6 +225,18 @@ final class LiveFeedTests: XCTestCase {
         XCTAssertEqual(outRow.caption, "on /pricing")
     }
 
+    func testOnlyARegionTheSystemKnowsBecomesAFlag() {
+        XCTAssertEqual(LiveFeedRow.flag("es"), "🇪🇸")
+        // An anonymous proxy, a typo: codes a provider sends that are not regions. Their
+        // indicator pairs have no flag and drew as boxes. ("EU" is a region to Locale, and
+        // has a flag of its own, so it stays.)
+        XCTAssertEqual(LiveFeedRow.flag("T1"), "")
+        XCTAssertEqual(LiveFeedRow.flag("ESP"), "")
+        XCTAssertEqual(LiveFeedRow.flag("EU"), "🇪🇺")
+        XCTAssertEqual(LiveFeedRow.place("T1"), "T1")
+        XCTAssertTrue(LiveFeedRow.place("ES").hasPrefix("🇪🇸 "))
+    }
+
     func testARunIsHeadedByItsNewestStepAndSaysTheRestInOneCaption() {
         let run = [
             event("1", at: "2026-09-08T10:00:00.000Z", page: "/"),

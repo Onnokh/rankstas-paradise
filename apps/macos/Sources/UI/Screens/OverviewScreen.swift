@@ -515,6 +515,10 @@ struct FeedCard: View {
                                 hoveredRow = nil
                             }
                         }
+                        // Over the rows below it, or its tooltip is painted under them. On
+                        // the stack's own child: set inside the row, the trait did not reach
+                        // the stack through the wrappers above.
+                        .zIndex(hoveredRow == row.id ? 1 : 0)
                     }
                 }
                 .animation(.easeOut(duration: 0.12), value: hoveredRow)
@@ -611,6 +615,7 @@ private struct FeedRow: View, Equatable {
                     .help(row.visitsHelp ?? "First visit")
                 Text(row.flag)
                     .font(.body)
+                    .lineLimit(1)
                     .frame(width: 20, alignment: .trailing)
                     .help(row.who)
             }
@@ -620,7 +625,6 @@ private struct FeedRow: View, Equatable {
         .background(isHovered ? Palette.line.opacity(0.45) : Color.clear, in: .rect(cornerRadius: 6))
         .padding(.horizontal, -Self.overhang)
         .contentShape(Rectangle())
-        // Over the rows below it, or the tooltip is painted under them.
         .overlay(alignment: .topLeading) {
             if isHovered {
                 FeedTooltip(row: row, now: Date())
@@ -630,7 +634,6 @@ private struct FeedRow: View, Equatable {
                     .transition(.opacity)
             }
         }
-        .zIndex(isHovered ? 1 : 0)
         .accessibilityElement(children: .combine)
     }
 }
