@@ -49,6 +49,12 @@ struct PeriodComparison: Equatable {
         previous = Array(days[previousStart..<previousEnd])
     }
 
+    /// Two runs already cut — several sites' periods laid together, for a total.
+    init(current: [HistoryDay], previous: [HistoryDay]) {
+        self.current = current
+        self.previous = previous
+    }
+
     var currentStats: DashboardStats { DashboardStats(days: current) }
     var previousStats: DashboardStats? { previous.isEmpty ? nil : DashboardStats(days: previous) }
 
@@ -78,6 +84,12 @@ struct VisitsComparison: Equatable {
         current = currentDays.reduce(0) { $0 + ($1.visits?.visits ?? 0) }
         let earlier = previousDays.filter { $0.visits != nil }
         previous = earlier.isEmpty ? nil : earlier.reduce(0) { $0 + ($1.visits?.visits ?? 0) }
+    }
+
+    /// Two sums already made — several sites' visits laid together, for a total.
+    init(current: Double, previous: Double?) {
+        self.current = current
+        self.previous = previous
     }
 
     var trend: Trend? { previous.map { Trend(current: current, previous: $0) } }

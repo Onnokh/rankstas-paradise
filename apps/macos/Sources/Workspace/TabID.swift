@@ -1,9 +1,14 @@
 import Foundation
 import Observation
 
-/// Identifies one tab: the overview or a site.
+/// Identifies one tab: the overview, the realtime, or a site.
+///
+/// The overview and the realtime are the two tabs every server has, in that order, ahead of
+/// the sites. The overview is the sites compared over a stored period; the realtime is the
+/// sites watched — who is on them now, what today has brought, what visitors are doing.
 enum TabID: Hashable, Sendable {
     case overview
+    case realtime
     case site(Site.ID)
 }
 
@@ -75,6 +80,19 @@ final class SiteTabState {
 @MainActor
 @Observable
 final class OverviewTabState {
+    /// The span every site's figures cover, and the span before it they are set against.
+    var period: Period = .d28
+
+    /// The periods the overview offers: every stored one. Today is left out — it is read
+    /// live from the provider and has no stored days to compare, so it belongs to the
+    /// Realtime tab, where the sites are watched rather than compared.
+    static let periods: [Period] = Period.allCases.filter { $0 != .today }
+}
+
+/// UI state of the realtime tab.
+@MainActor
+@Observable
+final class RealtimeTabState {
     var selectedSiteID: Site.ID?
     /// The sites the page is kept to — its numbers, its Sites card and its feed. Empty keeps
     /// every one. A selection, so it survives a tab switch like the site above.

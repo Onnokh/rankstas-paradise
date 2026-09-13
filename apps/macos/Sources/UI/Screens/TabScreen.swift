@@ -102,10 +102,19 @@ struct TabScreen: View, Equatable {
             OverviewScreen(
                 model: model,
                 state: workspace.overviewState,
-                live: live,
+                history: history,
                 favicons: favicons,
                 onOpenSite: { actions.activate(.site($0)) },
                 onRefresh: { actions.refresh(.overview) }
+            )
+        case .realtime:
+            RealtimeScreen(
+                model: model,
+                state: workspace.realtimeState,
+                live: live,
+                favicons: favicons,
+                onOpenSite: { actions.activate(.site($0)) },
+                onRefresh: { actions.refresh(.realtime) }
             )
         case .site(let siteID):
             if let overview = model.overviews.first(where: { $0.id == siteID }) {
@@ -139,6 +148,8 @@ extension TabID {
         switch self {
         case .overview:
             "Overview"
+        case .realtime:
+            "Realtime"
         case .site(let siteID):
             model.sites.first { $0.id == siteID }?.name ?? siteID
         }

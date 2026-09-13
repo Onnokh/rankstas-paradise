@@ -3,17 +3,17 @@ import XCTest
 
 @MainActor
 final class WorkspaceTests: XCTestCase {
-    func testReconcileBuildsTabsWithOverviewFirst() {
+    func testReconcileBuildsTabsWithOverviewAndRealtimeFirst() {
         let workspace = Workspace()
         workspace.reconcile(siteIDs: ["a", "b"])
-        XCTAssertEqual(workspace.tabs, [.overview, .site("a"), .site("b")])
+        XCTAssertEqual(workspace.tabs, [.overview, .realtime, .site("a"), .site("b")])
     }
 
     func testNeighbourTabStepsAlongTheBarAndWraps() {
         let workspace = Workspace()
         workspace.reconcile(siteIDs: ["a", "b"])
 
-        XCTAssertEqual(workspace.neighbourTab(1), .site("a"))
+        XCTAssertEqual(workspace.neighbourTab(1), .realtime)
         XCTAssertEqual(workspace.neighbourTab(-1), .site("b"), "Left from the first tab wraps to the last.")
 
         workspace.activate(.site("b"))
@@ -42,7 +42,7 @@ final class WorkspaceTests: XCTestCase {
     func testSteppingAlongTheWholeBarStopsRebuildingOnceEachTabHasBeenSeen() {
         let workspace = Workspace()
         workspace.reconcile(siteIDs: ["a", "b", "c", "d"])
-        XCTAssertEqual(workspace.tabs.count, 5)
+        XCTAssertEqual(workspace.tabs.count, 6)
 
         // The first walk builds each tab once. It is every walk after it that has to be free.
         for _ in workspace.tabs.indices {
@@ -114,7 +114,7 @@ final class WorkspaceTests: XCTestCase {
         let workspace = Workspace()
         workspace.reconcile(siteIDs: ["a", "b"])
 
-        workspace.activateTab(at: 2)
+        workspace.activateTab(at: 3)
         XCTAssertEqual(workspace.activeTabID, .site("b"))
 
         workspace.activateTab(at: 9)

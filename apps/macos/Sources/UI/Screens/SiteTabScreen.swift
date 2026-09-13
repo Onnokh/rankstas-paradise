@@ -1425,12 +1425,7 @@ private struct SiteDashboard: View {
 
     /// The long daily series when it is loaded, else the dashboard's own 28 days.
     private var days: [HistoryReportDay] {
-        if let series = history.series[overview.id], !series.isEmpty {
-            return series
-        }
-        return (overview.dashboard?.history ?? []).map {
-            HistoryReportDay(date: $0.date, provisional: false, impressions: $0.impressions, clicks: $0.clicks, ctr: $0.ctr, position: $0.position)
-        }
+        OverviewGlance.days(for: overview, series: history.series[overview.id])
     }
 
     private var comparison: PeriodComparison {
