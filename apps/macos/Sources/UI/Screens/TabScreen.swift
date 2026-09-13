@@ -103,6 +103,7 @@ struct TabScreen: View, Equatable {
                 model: model,
                 state: workspace.overviewState,
                 history: history,
+                rankings: rankings,
                 favicons: favicons,
                 onOpenSite: { actions.activate(.site($0)) },
                 onRefresh: { actions.refresh(.overview) }

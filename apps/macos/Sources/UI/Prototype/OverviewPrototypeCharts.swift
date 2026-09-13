@@ -19,6 +19,8 @@ struct ProtoTrendChart: View {
     var height: CGFloat = 240
     var labelInset: CGFloat = SiteTabScreen.columnInset
     var interactive = true
+    /// Whether the first and last day are set under the plot.
+    var showsDates = true
 
     @Environment(\.isTabPreview) private var isPreview
     @State private var hovered: HistoryReportDay?
@@ -30,14 +32,16 @@ struct ProtoTrendChart: View {
         if days.count >= 2 {
             VStack(spacing: 6) {
                 chart
-                HStack {
-                    Text(days.first!.day, format: .dateTime.day().month(.abbreviated))
-                    Spacer()
-                    Text(days.last!.day, format: .dateTime.day().month(.abbreviated))
+                if showsDates {
+                    HStack {
+                        Text(days.first!.day, format: .dateTime.day().month(.abbreviated))
+                        Spacer()
+                        Text(days.last!.day, format: .dateTime.day().month(.abbreviated))
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, labelInset)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, labelInset)
             }
         } else {
             Text("Not enough days yet.")
@@ -303,6 +307,71 @@ struct ProtoDayBars: View {
     }
 }
 
+// MARK: - Mini bars
+
+/// One bar per day for any series of dated values, no axes, no hover: a group's small
+/// picture inside a site card. The baseline is a rule so the bars meet it exactly.
+struct ProtoMiniBars: View {
+    struct Point: Identifiable {
+        let day: Date
+        let value: Double
+        var id: Date { day }
+    }
+
+    let points: [Point]
+    let color: Color
+
+    var body: some View {
+        Chart {
+            RuleMark(y: .value("Value", 0))
+                .foregroundStyle(Palette.line)
+                .lineStyle(StrokeStyle(lineWidth: 1))
+            ForEach(points) { point in
+                BarMark(x: .value("Date", point.day, unit: .day), y: .value("Value", point.value))
+                    .foregroundStyle(color)
+                    .cornerRadius(1.5)
+            }
+        }
+        .chartYScale(domain: .automatic(includesZero: true))
+        .chartXAxis(.hidden)
+        .chartYAxis(.hidden)
+        .chartPlotStyle { plot in
+            plot.padding(.top, 2)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Index band
+
+/// The registry's keyword pages as one band: indexed in mint, not indexed in coral, the
+/// pages Google has said nothing about in the line colour. The one picture of the plan
+/// that needs no series.
+struct ProtoIndexBand: View {
+    let totals: RegistryTotals
+
+    var body: some View {
+        GeometryReader { geometry in
+            let whole = max(Double(totals.withKeywords), 1)
+            let width = geometry.size.width
+            HStack(spacing: 2) {
+                if totals.indexed > 0 {
+                    Capsule().fill(Palette.mint).frame(width: width * Double(totals.indexed) / whole)
+                }
+                if totals.notIndexed > 0 {
+                    Capsule().fill(Palette.coral).frame(width: width * Double(totals.notIndexed) / whole)
+                }
+                if totals.unknown > 0 || totals.withKeywords == 0 {
+                    Capsule().fill(Palette.line)
+                }
+            }
+            .frame(width: width, height: geometry.size.height, alignment: .leading)
+        }
+        .frame(height: 6)
+        .accessibilityHidden(true)
+    }
+}
+
 // MARK: - Sparkline
 
 /// The period as one small line with a faint area under it, no axes, no hover: a row's own
@@ -310,6 +379,9 @@ struct ProtoDayBars: View {
 struct ProtoSparkline: View {
     let values: [Double]
     let color: Color
+    /// Whether the floor is zero. A share that moves between 77 and 84 wants its own range,
+    /// or the line is a slab.
+    var fromZero = true
 
     var body: some View {
         Chart {
@@ -326,7 +398,7 @@ struct ProtoSparkline: View {
         }
         .chartXAxis(.hidden)
         .chartYAxis(.hidden)
-        .chartYScale(domain: .automatic(includesZero: true))
+        .chartYScale(domain: .automatic(includesZero: fromZero))
         .chartPlotStyle { plot in
             plot.padding(.vertical, 2)
         }

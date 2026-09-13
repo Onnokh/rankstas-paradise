@@ -386,8 +386,10 @@ struct RootView: View {
         let siteIDs = model.sites.map(\.id)
         switch tab {
         case .overview:
+            let period = workspace.overviewState.period
             for siteID in siteIDs {
                 Task { await history.refresh(siteID) }
+                Task { await rankings.refresh(siteID, period: period) }  // PROTOTYPE
             }
         case .realtime:
             Task { await live.refreshAll(siteIDs) }

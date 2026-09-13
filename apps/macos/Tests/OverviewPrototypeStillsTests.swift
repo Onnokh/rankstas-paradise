@@ -28,7 +28,7 @@ final class OverviewPrototypeStillsTests: XCTestCase {
                 header: AnyView(Self.header),
                 footer: AnyView(Self.footer)
             )
-            let image = try XCTUnwrap(Self.draw(AnyView(body), height: variant == .cards ? 1500 : 1700))
+            let image = try XCTUnwrap(Self.draw(AnyView(body), height: variant == .cards ? 1900 : 1700))
             let url = directory.appendingPathComponent("\(variant.key.lowercased())-\(variant.rawValue).png")
             let rep = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(image.tiffRepresentation)))
             try XCTUnwrap(rep.representation(using: .png, properties: [:])).write(to: url)
@@ -150,6 +150,53 @@ final class OverviewPrototypeStillsTests: XCTestCase {
             series[shape.site.id] = days
             overviews.append(SiteOverview(site: shape.site, dashboard: nil, errorMessage: nil))
         }
-        return OverviewSeries.sites(overviews: overviews, series: series, period: .d28)
+        let plain = OverviewSeries.sites(overviews: overviews, series: series, period: .d28)
+
+        // What the ranking store would hold: Missingmounts sells and has a plan, Shadertown
+        // has a young plan and a short indexing series, the other two have a registry only.
+        return plain.map { site in
+            var site = site
+            switch site.id {
+            case "missingmounts":
+                site.rating = RatingMove(history: [
+                    DomainRatingDay(date: dates[0], rating: 31.8), DomainRatingDay(date: dates[55], rating: 32.4),
+                ], days: 28)
+                let salesDays = dates.suffix(28).map { date in
+                    let orders = (2 + noise() * 6).rounded()
+                    return RevenueDay(date: date, orders: orders, revenue: orders * 4_850, net: orders * 4_100, currency: "EUR")
+                }
+                let current = RevenueTotals(
+                    orders: salesDays.reduce(0) { $0 + $1.orders },
+                    revenue: salesDays.reduce(0) { $0 + $1.revenue },
+                    net: salesDays.reduce(0) { $0 + $1.net }
+                )
+                let previous = RevenueTotals(orders: current.orders * 0.8, revenue: current.revenue * 0.78, net: current.net * 0.78)
+                site.revenue = RevenueReport(
+                    generatedAt: "2026-09-13T12:00:00Z",
+                    revenue: RevenueStatus(provider: "shopify", accountId: nil, ready: true, reason: nil),
+                    windowDays: 28, currency: "EUR", days: salesDays, current: current, previous: previous,
+                    delta: RevenueTotals(orders: current.orders - previous.orders, revenue: current.revenue - previous.revenue, net: current.net - previous.net)
+                )
+                site.registry = RegistryTotals(pages: 142, withKeywords: 96, keywords: 210, indexed: 81, notIndexed: 9)
+                site.coverage = dates.suffix(12).enumerated().map { index, date in
+                    IndexCoverageDay(date: date, keywordTargets: 96, indexed: 74 + index / 2, notIndexed: 9)
+                }
+                site.monthlyVolume = 18_400
+            case "shadertown":
+                site.rating = RatingMove(history: [DomainRatingDay(date: dates[55], rating: 4.0)], days: 28)
+                site.registry = RegistryTotals(pages: 38, withKeywords: 30, keywords: 61, indexed: 12, notIndexed: 11)
+                site.coverage = dates.suffix(5).enumerated().map { index, date in
+                    IndexCoverageDay(date: date, keywordTargets: 30, indexed: 8 + index, notIndexed: 11)
+                }
+                site.monthlyVolume = 6_900
+            case "sleevy":
+                site.rating = RatingMove(history: [DomainRatingDay(date: dates[55], rating: 12.3)], days: 28)
+                site.registry = RegistryTotals(pages: 20, withKeywords: 14, keywords: 22, indexed: 14, notIndexed: 0)
+                site.monthlyVolume = 1_200
+            default:
+                site.registry = RegistryTotals(pages: 9, withKeywords: 0, keywords: 0, indexed: 0, notIndexed: 0)
+            }
+            return site
+        }
     }
 }

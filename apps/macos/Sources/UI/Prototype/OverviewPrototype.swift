@@ -14,13 +14,23 @@ import SwiftUI
 // from the stores the site dashboards read.
 //
 //   Current — the strip and the rows (as shipped)
+//   B1 — Cards, wide: one card per site, the full column; four groups side by side —
+//        Search, Visitors, Sales, Registry — each four lines and a small chart
+//   B2 — Cards, two across: the same four groups stacked, the lines two to a row
 //   A — Dashboard: the site screen's skeleton for the fleet — the strip, the fleet's chart
 //       edge to edge, the visits card beside the sites as bars, then the rows
-//   B — Cards: one small dashboard per site, two across — its figures, then its chart
 //   C — Sparklines: the rows kept, each with the period's clicks as a line in a zone of its
 //       own, under the fleet's chart
 //   D — Stacked: one chart, each site a band of the metric's one colour, the metric switched
 //       above it; the rows under it
+//
+// Round two (B won round one, "but the cards need work — not just a small detail page"):
+// a card carries the three things the app knows about a site, in groups. Search is Search
+// Console and Ahrefs: clicks, impressions, CTR, domain rating. Visitors is the analytics
+// provider: visits, visitors a day, pageviews, pages a visit — bounce rate and time on page
+// are left out of the domain's schema on purpose, every vendor defines them differently.
+// Sales is the commerce provider, for the sites that have one. Registry is Ranksta's own:
+// pages, the indexed share, the backlog, the plan's monthly search volume.
 //
 // Every variant reads `PrototypeSiteSeries`, built once per body from the glance and the days
 // behind it. The fleet's days come from `OverviewSeries.total`, which sums the way
@@ -36,15 +46,16 @@ import SwiftUI
 final class OverviewPrototype {
     enum Variant: String, CaseIterable, Identifiable {
         // Declaration order is the order the floating bar cycles through.
-        case current, dashboard, cards, sparklines, stacked
+        case current, cardsWide, cards, dashboard, sparklines, stacked
 
         var id: String { rawValue }
 
         var key: String {
             switch self {
             case .current: "Current"
+            case .cardsWide: "B1"
+            case .cards: "B2"
             case .dashboard: "A"
-            case .cards: "B"
             case .sparklines: "C"
             case .stacked: "D"
             }
@@ -53,8 +64,9 @@ final class OverviewPrototype {
         var name: String {
             switch self {
             case .current: "The strip and the rows (as shipped)"
+            case .cardsWide: "Cards, wide: one per site, the four groups side by side"
+            case .cards: "Cards, two across: the four groups stacked"
             case .dashboard: "Dashboard: the site screen's skeleton, for the fleet"
-            case .cards: "Cards: one small dashboard per site"
             case .sparklines: "Sparklines: the rows, each with its clicks as a line"
             case .stacked: "Stacked: one chart, each site a band; switch the metric"
             }
@@ -129,14 +141,28 @@ struct OverviewPrototypeSwitcher: View {
 
 // MARK: - Series
 
-/// One site as the prototype draws it: the glance's figures, and the period's days behind
-/// them, oldest first.
+/// One site as the prototype draws it: the glance's figures, the period's days behind them,
+/// oldest first, and what the ranking store holds for the site — its sales, its registry,
+/// its indexing series and its plan's demand — plus the dashboard's domain rating.
 struct PrototypeSiteSeries: Identifiable {
     let glance: SiteGlance
     let days: [HistoryReportDay]
+    /// The period before, for the moves of the figures the glance does not carry.
+    var previousDays: [HistoryReportDay] = []
+    var rating: RatingMove? = nil
+    /// Nil for a site without a commerce provider, or before its report has landed.
+    var revenue: RevenueReport? = nil
+    /// Nil before the registry has landed; a registry with no pages is a total of zeros.
+    var registry: RegistryTotals? = nil
+    var coverage: [IndexCoverageDay] = []
+    /// Searches a month behind the whole plan, from the health report.
+    var monthlyVolume: Double? = nil
 
     var id: Site.ID { glance.id }
     var site: Site { glance.site }
+
+    /// Whether the site sells: its revenue report names a provider.
+    var sells: Bool { revenue?.revenue != nil }
 
     /// The period's total for a metric, as the glance already counts it.
     func total(_ metric: PrototypeMetric) -> Double {
@@ -180,14 +206,43 @@ enum PrototypeMetric: String, CaseIterable, Identifiable {
     }
 }
 
+@MainActor
 enum OverviewSeries {
-    /// One series per site, in the server's order, cut to the period.
-    static func sites(overviews: [SiteOverview], series: [Site.ID: [HistoryReportDay]], period: Period) -> [PrototypeSiteSeries] {
+    /// One series per site, in the server's order, cut to the period. The ranking store is
+    /// optional so a still can be drawn without one.
+    static func sites(
+        overviews: [SiteOverview],
+        series: [Site.ID: [HistoryReportDay]],
+        rankings: RankingStore? = nil,
+        period: Period
+    ) -> [PrototypeSiteSeries] {
         let rows = OverviewGlance.rows(overviews: overviews, series: series, period: period)
         return zip(overviews, rows).map { overview, glance in
             let days = OverviewGlance.days(for: overview, series: series[overview.id])
-            return PrototypeSiteSeries(glance: glance, days: Array(days.suffix(period.days)))
+            let count = days.count
+            let window = period.days
+            let key = RankingStore.KeywordsKey(siteID: overview.id, period: period)
+            return PrototypeSiteSeries(
+                glance: glance,
+                days: Array(days.suffix(window)),
+                previousDays: Array(days[max(0, count - window * 2)..<max(0, count - window)]),
+                rating: rating(of: overview, days: window),
+                revenue: rankings?.revenue[key],
+                registry: rankings?.registry[overview.id].map(RegistryList.totals),
+                coverage: RegistryList.coverageDays(rankings?.coverage[overview.id] ?? []),
+                monthlyVolume: rankings?.health[overview.id]?.totals.monthlyVolume
+            )
         }
+    }
+
+    /// The Domain Rating's move over the period, as the site dashboard reads it.
+    static func rating(of overview: SiteOverview, days: Int) -> RatingMove? {
+        guard let dashboard = overview.dashboard else { return nil }
+        var series = dashboard.domainRatingHistory ?? []
+        if series.isEmpty, let rating = dashboard.domainRating {
+            series = [DomainRatingDay(date: String(rating.fetchedAt.prefix(10)), rating: rating.rating)]
+        }
+        return RatingMove(history: series, days: days)
     }
 
     /// Every site's days as one series, by date. Clicks and impressions add; the position is
@@ -270,6 +325,8 @@ struct OverviewPrototypeBody: View {
                     .padding(.top, 36)
             case .dashboard:
                 ProtoDashboardVariant(sites: sites, total: total, icon: icon, onOpen: onOpen)
+            case .cardsWide:
+                ProtoWideCardsVariant(sites: sites, icon: icon, onOpen: onOpen)
             case .cards:
                 ProtoCardsVariant(sites: sites, icon: icon, onOpen: onOpen)
             case .sparklines:

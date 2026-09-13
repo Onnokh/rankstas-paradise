@@ -13,6 +13,7 @@ struct OverviewScreen: View {
     let model: OverviewModel
     @Bindable var state: OverviewTabState
     let history: HistoryStore
+    let rankings: RankingStore
     let favicons: FaviconStore
     let onOpenSite: (Site.ID) -> Void
     let onRefresh: () -> Void
@@ -30,6 +31,12 @@ struct OverviewScreen: View {
 
     private var siteIDs: [Site.ID] { model.sites.map(\.id) }
 
+    /// What the loading task is keyed on: the sites, and the period the ranked lists are for.
+    private struct LoadKey: Equatable {
+        let siteIDs: [Site.ID]
+        let period: Period
+    }
+
     private var rows: [SiteGlance] {
         OverviewGlance.rows(overviews: model.overviews, series: history.series, period: state.period)
     }
@@ -45,11 +52,15 @@ struct OverviewScreen: View {
             // six months with the six before. Loaded once per session per site, cache first,
             // the way a site tab loads its own: a fetch, not a poll. The site list is the id,
             // so a site added in Settings is read without a relaunch.
-            .task(id: siteIDs) {
+            .task(id: LoadKey(siteIDs: siteIDs, period: state.period)) {
                 guard !isPreview, !siteIDs.isEmpty else { return }
+                let period = state.period
                 await withTaskGroup(of: Void.self) { group in
                     for siteID in siteIDs {
                         group.addTask { await history.load(siteID) }
+                        // PROTOTYPE: the cards read the ranking store — sales, registry,
+                        // indexing, demand — so it is loaded here the way a site tab loads it.
+                        group.addTask { await rankings.load(siteID, period: period) }
                     }
                 }
             }
@@ -105,7 +116,7 @@ struct OverviewScreen: View {
         guard let prototype, prototype.variant != .current else { return nil }
         return OverviewPrototypeBody(
             variant: prototype.variant,
-            sites: OverviewSeries.sites(overviews: model.overviews, series: history.series, period: state.period),
+            sites: OverviewSeries.sites(overviews: model.overviews, series: history.series, rankings: rankings, period: state.period),
             icon: { favicons.image(for: $0) },
             onOpen: onOpenSite,
             header: AnyView(header),
@@ -154,7 +165,7 @@ struct OverviewScreen: View {
 
     /// Whether anything on the page is still on its way: the dashboards, or any site's series.
     private var busy: Bool {
-        model.isRefreshing || !history.refreshing.isEmpty
+        model.isRefreshing || !history.refreshing.isEmpty || !rankings.loading.isEmpty
     }
 
     private var footer: some View {
@@ -423,6 +434,7 @@ struct Figure: View {
         model: .preview,
         state: OverviewTabState(),
         history: HistoryStore(),
+        rankings: RankingStore(),
         favicons: FaviconStore(),
         onOpenSite: { _ in },
         onRefresh: {}
