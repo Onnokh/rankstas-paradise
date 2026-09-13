@@ -105,7 +105,7 @@ struct RootView: View {
             ZStack(alignment: .topLeading) {
                 Palette.void
 
-                ScreenRail(workspace: workspace) { select(.overview) }
+                ScreenRail(workspace: workspace, activate: select)
                     .frame(width: railWidth, height: pane.height, alignment: .top)
                     .offset(x: pane.minX, y: pane.minY)
                     .modifier(SlideY(y: paneTravel(layout)).ignoredByLayout())
@@ -361,17 +361,25 @@ struct RootView: View {
         }
     }
 
-    /// Fetches everything a tab shows again. The overview feeds every tab, so it is always
-    /// part of it; the overview tab adds every site's live count and feed, and a site tab its
-    /// own series, live count and ranked lists for the period it is on. Each store keeps what
-    /// it shows until its answer lands, so nothing blanks. Reached from the screens' refresh
-    /// buttons and from View > Refresh (⌘R).
+    /// Fetches everything a tab shows again. The dashboards feed every tab, so they are
+    /// always part of it; the overview tab adds every site's series, the realtime tab every
+    /// site's live count and feed, and a site tab its own series, live count and ranked
+    /// lists for the period it is on. Each store keeps what it shows until its answer lands,
+    /// so nothing blanks. Reached from the screens' refresh buttons and from View > Refresh
+    /// (⌘R).
     private func refresh(_ tab: TabID) {
         Task { await model.refresh() }
-        if case .overview = tab {
-            let siteIDs = model.sites.map(\.id)
+        let siteIDs = model.sites.map(\.id)
+        switch tab {
+        case .overview:
+            for siteID in siteIDs {
+                Task { await history.refresh(siteID) }
+            }
+        case .realtime:
             Task { await live.refreshAll(siteIDs) }
             Task { await live.refreshFeeds(siteIDs) }
+        case .site:
+            break
         }
         guard case .site(let siteID) = tab else { return }
         let period = workspace.state(for: siteID).period

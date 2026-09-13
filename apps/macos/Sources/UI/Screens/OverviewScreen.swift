@@ -1,17 +1,18 @@
 import SwiftUI
 
-/// The overview: every site at once, live, on the same page as a site's own tab. The header
-/// and the metric strip say how many people are on all the sites now and what today has
-/// brought; the site tiles give each site its own — online now, the last half hour by the
-/// minute, today so far; the Feed card is what visitors are doing on all of them, newest
-/// first. Search Console has its figures on each site's tab; this page is the glance.
+/// The overview: every site at a glance, read from what is stored. The strip sums the sites
+/// over the period; under it, one line per site — Search Console's clicks, impressions,
+/// click-through rate and position, and the analytics provider's visits over the same days —
+/// each figure with its move against the period before. Nothing here polls: the Realtime tab
+/// is where the sites are watched, and this page is where they are compared.
 ///
-/// The header's site menu keeps the whole page to the sites it names: the strip sums them,
-/// the tiles draw them, the feed shows them. Nothing chosen is every site.
+/// The figures come from the same stores a site's dashboard reads, so the two never
+/// disagree: the site's daily series once it is loaded, and until then the 28 days the
+/// dashboard keeps on disk, which is what makes a warm launch land with numbers.
 struct OverviewScreen: View {
     let model: OverviewModel
     @Bindable var state: OverviewTabState
-    let live: LiveStore
+    let history: HistoryStore
     let favicons: FaviconStore
     let onOpenSite: (Site.ID) -> Void
     let onRefresh: () -> Void
@@ -25,67 +26,33 @@ struct OverviewScreen: View {
 
     private var siteIDs: [Site.ID] { model.sites.map(\.id) }
 
-    private func isShown(_ siteID: Site.ID) -> Bool {
-        state.siteFilter.isEmpty || state.siteFilter.contains(siteID)
+    private var rows: [SiteGlance] {
+        OverviewGlance.rows(overviews: model.overviews, series: history.series, period: state.period)
     }
 
-    /// The sites the page is kept to. Every site is still polled: the filter is a view.
-    private var shownSites: [Site] { model.sites.filter { isShown($0.id) } }
-
-    private var shownOverviews: [SiteOverview] { model.overviews.filter { isShown($0.id) } }
-
-    /// The sites as the header's menu takes them, each under its favicon so the pill's
-    /// cluster is the same picture as the tab bar.
-    private var siteOptions: [FilterOption<Site.ID>] {
-        model.sites.map { site in
-            FilterOption(
-                id: site.id,
-                label: site.name,
-                icon: favicons.image(for: site.id).map(FilterIcon.image) ?? .symbol("globe", tint: .secondary)
-            )
-        }
-    }
-
-    /// The feed's rows, kept to the sites and kinds the state names. Fifty is plenty for a
-    /// glance and keeps every poll's redraw small.
-    private var rows: [LiveFeedRow] {
-        LiveFeedRow.rows(feeds: live.feeds, sites: model.sites, only: state.siteFilter, hiding: state.feedKinds.hidden, limit: 50)
-    }
-
-    /// When the newest feed answer was fetched, over every site: the footer's figure.
-    private var feedFetchedAt: Date? {
-        live.feeds.values.compactMap(\.fetchedAt).max()
-    }
-
-    private var windowMinutes: Int {
-        live.feeds.values.first?.windowMinutes ?? 30
-    }
-
-    private var totalOnline: Double {
-        shownSites.compactMap { live.reports[$0.id]?.live?.onlineNow }.reduce(0, +)
+    /// When the newest dashboard was generated, over every site: the footer's figure.
+    private var generatedAt: Date? {
+        model.overviews.compactMap { SiteTabScreen.instant($0.dashboard?.generatedAt) }.max()
     }
 
     var body: some View {
-        // The ages in the feed and the footer tick from this timeline, every quarter minute:
-        // coarse enough to cost nothing, fine enough for "just now" to turn into "1m ago"
-        // when it should. Never SwiftUI's relative date text, which redraws every frame.
-        TimelineView(.periodic(from: .now, by: 15)) { context in
-            content(now: context.date)
-        }
-        // Both polls live exactly as long as the real screen is shown: a preview is a still.
-        // The site list is the id, so a site added or removed restarts them over the new list.
-        .task(id: siteIDs) {
-            guard !isPreview, !siteIDs.isEmpty else { return }
-            await live.pollAll(siteIDs)
-        }
-        .task(id: siteIDs) {
-            guard !isPreview, !siteIDs.isEmpty else { return }
-            await live.pollFeeds(siteIDs)
-        }
+        content
+            // The series is what carries the visits and reaches back far enough to compare
+            // six months with the six before. Loaded once per session per site, cache first,
+            // the way a site tab loads its own: a fetch, not a poll. The site list is the id,
+            // so a site added in Settings is read without a relaunch.
+            .task(id: siteIDs) {
+                guard !isPreview, !siteIDs.isEmpty else { return }
+                await withTaskGroup(of: Void.self) { group in
+                    for siteID in siteIDs {
+                        group.addTask { await history.load(siteID) }
+                    }
+                }
+            }
     }
 
     @ViewBuilder
-    private func content(now: Date) -> some View {
+    private var content: some View {
         if isFirstLoad {
             ProgressView("Loading sites…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -94,42 +61,30 @@ struct OverviewScreen: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             // The same page as a site's tab: one reading column, centred, header at the top,
-            // the numbers under it, the cards below, the footer last.
+            // the numbers under it, the card below, the footer last.
+            let rows = rows
             VStack(alignment: .leading, spacing: 0) {
                 header
                     .column()
                     .padding(.top, SiteTabScreen.columnInset)
                     .padding(.bottom, 40)
 
-                OverviewStrip(sites: shownSites, live: live)
-                    .column()
+                GlanceStrip(
+                    comparison: OverviewGlance.total(rows),
+                    visits: OverviewGlance.totalVisits(rows),
+                    siteCount: rows.count
+                )
+                .column()
 
-                SiteTiles(
-                    overviews: shownOverviews,
-                    live: live,
-                    favicons: favicons,
-                    selection: state.selectedSiteID,
-                    onSelect: { state.selectedSiteID = $0 },
+                SitesCard(
+                    rows: rows,
+                    icon: { favicons.image(for: $0) },
                     onOpen: onOpenSite
                 )
                 .column()
                 .padding(.top, 36)
 
-                FeedCard(
-                    rows: rows,
-                    // One site kept means every row is that site's; the name would only
-                    // repeat the header.
-                    showsSite: shownSites.count != 1,
-                    kinds: $state.feedKinds,
-                    windowMinutes: windowMinutes,
-                    waiting: live.feeds.isEmpty && live.feedErrors.isEmpty,
-                    now: now,
-                    icon: { favicons.image(for: $0) }
-                )
-                .column()
-                .padding(.top, 20)
-
-                footer(now: now)
+                footer
                     .column()
                     .padding(.top, 24)
                     .padding(.bottom, SiteTabScreen.columnInset)
@@ -138,12 +93,12 @@ struct OverviewScreen: View {
         }
     }
 
-    /// One row, centred, like a site's header: the mark, the name, and the people on the
-    /// shown sites now — the one figure on the page that moves on its own. At the trailing
-    /// edge, the menu that keeps the page to some sites, beside the refresh button.
+    /// One row, centred, like a site's header: the mark and the name; at the trailing edge
+    /// the period, beside the refresh button. No live figure — nothing on this page moves on
+    /// its own.
     private var header: some View {
         HStack(spacing: 10) {
-            Image(systemName: "square.grid.2x2")
+            Image(systemName: ScreenRail.overviewSymbol)
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .frame(width: 20, height: 20)
@@ -151,46 +106,37 @@ struct OverviewScreen: View {
             Text("Overview")
                 .font(.title3.weight(.semibold))
 
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(visitsColor)
-                    .frame(width: 7, height: 7)
-                Text("\(Self.count(totalOnline)) online")
-                    .monospacedDigit()
-            }
-            .foregroundStyle(.secondary)
-            .padding(.leading, 6)
-            .help("Distinct people on the shown sites in the last few minutes")
-
             Spacer()
 
-            FilterMenu(
-                options: siteOptions,
-                selection: $state.siteFilter,
-                allLabel: "All sites",
-                severalLabel: { "\($0) sites" }
-            )
-            .accessibilityLabel("Sites")
-            .disabled(isPreview)
+            HStack(spacing: 20) {
+                WordSwitch(options: OverviewTabState.periods, selection: $state.period, label: \.label)
+                    .accessibilityLabel("Period")
+                    .disabled(isPreview)
 
-            HStack(spacing: 14) {
-                if model.isRefreshing {
-                    ProgressView()
-                        .controlSize(.small)
+                HStack(spacing: 10) {
+                    if busy {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
+                        .labelStyle(.iconOnly)
+                        .disabled(busy)
+                        .help("Refresh (⌘R)")
                 }
-                Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
-                    .labelStyle(.iconOnly)
-                    .disabled(model.isRefreshing)
-                    .help("Refresh (⌘R)")
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
         }
     }
 
-    private func footer(now: Date) -> some View {
+    /// Whether anything on the page is still on its way: the dashboards, or any site's series.
+    private var busy: Bool {
+        model.isRefreshing || !history.refreshing.isEmpty
+    }
+
+    private var footer: some View {
         HStack {
-            if let error = model.errorMessage ?? live.errors.values.first ?? live.feedErrors.values.first {
+            if let error = model.errorMessage ?? history.errors.values.first {
                 Text(error)
                     .foregroundStyle(Palette.coral)
                     .lineLimit(1)
@@ -200,59 +146,102 @@ struct OverviewScreen: View {
             if model.isCached {
                 Text("Cached")
             }
-            if let feedFetchedAt {
-                Text("Feed updated \(RelativeAge.label(from: feedFetchedAt, to: now) ?? "at \(feedFetchedAt.formatted(date: .omitted, time: .shortened))")")
-                    .help(feedFetchedAt.formatted(date: .abbreviated, time: .standard))
+            if let generatedAt {
+                // Ticks from a coarse timeline, not SwiftUI's relative date text: that style
+                // asks for a new frame continuously and costs a fifth of a core while idle.
+                TimelineView(.periodic(from: .now, by: 15)) { context in
+                    Text("Updated \(RelativeAge.label(from: generatedAt, to: context.date) ?? "at \(generatedAt.formatted(date: .omitted, time: .shortened))")")
+                        .help(generatedAt.formatted(date: .abbreviated, time: .standard))
+                }
             }
         }
         .font(.callout)
         .foregroundStyle(.secondary)
     }
+}
 
-    static func count(_ value: Double?) -> String {
-        (value ?? 0).formatted(.number.precision(.fractionLength(0)))
+// MARK: - Figures
+
+/// How the Overview writes its numbers: whole counts, a rate in percent to one place, a
+/// position to one place, and a move with its sign. One place for every cell, so a row and
+/// the strip above it say the same thing the same way.
+enum GlanceFigure {
+    static func count(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0)))
+    }
+
+    static func rate(_ value: Double) -> String {
+        value.formatted(.percent.precision(.fractionLength(1)))
+    }
+
+    /// A position of zero is no position: no impression put the site anywhere.
+    static func position(_ value: Double) -> String {
+        value > 0 ? value.formatted(.number.precision(.fractionLength(1))) : "—"
+    }
+
+    /// Mint when the move is the good way, coral otherwise. For a position, down is up.
+    static func tint(_ delta: Double, lowerIsBetter: Bool = false) -> Color {
+        (lowerIsBetter ? delta <= 0 : delta >= 0) ? Palette.mint : Palette.coral
     }
 }
 
 // MARK: - Strip
 
-/// All sites' numbers in one row, in the metric strip's place: the people online now and
-/// today so far summed over every site, then, beyond the hairline, how many sites there are.
-private struct OverviewStrip: View {
-    let sites: [Site]
-    let live: LiveStore
-
-    private var todays: [TodayVisits] {
-        sites.compactMap { live.todays[$0.id]?.today }
-    }
-
-    private var withAnalytics: Int {
-        sites.filter { live.reports[$0.id]?.analytics != nil }.count
-    }
+/// All sites' numbers in one row, in the metric strip's place: Search Console's four summed
+/// over every site with their moves, then, beyond the hairline, the visits and how many
+/// sites there are.
+private struct GlanceStrip: View {
+    let comparison: PeriodComparison
+    let visits: VisitsComparison?
+    let siteCount: Int
 
     var body: some View {
-        let online = sites.compactMap { live.reports[$0.id]?.live?.onlineNow }.reduce(0, +)
-        let visits = todays.compactMap { $0.site?.visits }.reduce(0, +)
-        let pageviews = todays.compactMap { $0.site?.pageviews }.reduce(0, +)
-        let events = todays.map(\.eventCount).reduce(0, +)
+        let stats = comparison.currentStats
         HStack(alignment: .top, spacing: 0) {
-            Metric(title: "Online", value: OverviewScreen.count(online), dot: visitsColor)
+            Metric(
+                title: "Clicks",
+                value: GlanceFigure.count(stats.clicks),
+                change: comparison.clicks.map { Trend.signed($0.delta, fractionDigits: 0) },
+                tint: comparison.clicks.map { GlanceFigure.tint($0.delta) },
+                dot: Palette.blue
+            )
             gap
-            Metric(title: "Visits today", value: OverviewScreen.count(visits))
+            Metric(
+                title: "Impressions",
+                value: GlanceFigure.count(stats.impressions),
+                change: comparison.impressions.map { Trend.signed($0.delta, fractionDigits: 0) },
+                tint: comparison.impressions.map { GlanceFigure.tint($0.delta) },
+                dot: Palette.amber
+            )
             gap
-            Metric(title: "Pageviews today", value: OverviewScreen.count(pageviews))
+            Metric(
+                title: "Click-through rate",
+                value: GlanceFigure.rate(stats.ctr),
+                change: comparison.ctrPointsDelta.map { Trend.signed($0, fractionDigits: 1) + "pp" },
+                tint: comparison.ctrPointsDelta.map { GlanceFigure.tint($0) }
+            )
             gap
-            Metric(title: "Events today", value: OverviewScreen.count(events))
+            Metric(
+                title: "Position",
+                value: GlanceFigure.position(stats.position),
+                change: comparison.positionDelta.map { Trend.signed($0, fractionDigits: 1) },
+                tint: comparison.positionDelta.map { GlanceFigure.tint($0, lowerIsBetter: true) }
+            )
             gap
             Rectangle()
                 .fill(Palette.line)
                 .frame(width: 1, height: 48)
             gap
             Metric(
-                title: "Sites",
-                value: String(sites.count),
-                footnote: withAnalytics == sites.count ? nil : "\(withAnalytics) with analytics"
+                title: "Visits",
+                value: visits.map { GlanceFigure.count($0.current) } ?? "—",
+                change: visits?.trend.map { Trend.signed($0.delta, fractionDigits: 0) },
+                tint: visits?.trend.map { GlanceFigure.tint($0.delta) },
+                dot: visits == nil ? nil : visitsColor,
+                footnote: visits == nil ? "No analytics" : nil
             )
+            gap
+            Metric(title: "Sites", value: String(siteCount))
         }
     }
 
@@ -263,259 +252,38 @@ private struct OverviewStrip: View {
 
 // MARK: - Sites
 
-/// One tile per shown site, built to be read from across the room when the window is left
-/// open: the people online now as a large figure, lilac while there is anyone, and the last
-/// half hour as a strip of minutes that deepen with the crowd. A tile lights up while someone
-/// is on the site, so a glance at the grid says which sites are alive.
-///
-/// The grid follows the count: one site fills the width, two share it, three sit in thirds,
-/// four are two by two — and so on in twos. Busiest first, so the live sites are at the top
-/// left; the quiet ones keep their alphabetical order after them. Double-click opens the
-/// site's tab.
-private struct SiteTiles: View {
-    let overviews: [SiteOverview]
-    let live: LiveStore
-    let favicons: FaviconStore
-    let selection: Site.ID?
-    let onSelect: (Site.ID) -> Void
+/// One line per site, in the tab bar's order, under a row of column names. Fixed zones left
+/// to right: the site, then five figures, each with its move in a slot of its own so the
+/// figures line up down the card. Double-click opens the site's tab.
+private struct SitesCard: View {
+    let rows: [SiteGlance]
+    let icon: (Site.ID) -> Image?
     let onOpen: (Site.ID) -> Void
 
-    private func online(_ siteID: Site.ID) -> Double {
-        live.reports[siteID]?.live?.onlineNow ?? -1
-    }
-
-    private var ordered: [SiteOverview] {
-        overviews.sorted { left, right in
-            let leftOnline = online(left.id)
-            let rightOnline = online(right.id)
-            if leftOnline != rightOnline { return leftOnline > rightOnline }
-            return left.site.name.localizedStandardCompare(right.site.name) == .orderedAscending
-        }
-    }
-
-    /// How many tiles share a row. Three is the one count that is not two: a lone third tile
-    /// under a pair would read as an afterthought.
-    private var columns: Int {
-        switch ordered.count {
-        case 0, 1: 1
-        case 3: 3
-        default: 2
-        }
-    }
-
-    /// The online figure's size, shrinking as tiles share the width.
-    private var heroSize: CGFloat {
-        switch ordered.count {
-        case 1: 72
-        case 2: 56
-        default: 44
-        }
-    }
-
-    var body: some View {
-        LazyVGrid(
-            columns: Array(repeating: GridItem(.flexible(), spacing: 16, alignment: .top), count: columns),
-            alignment: .leading,
-            spacing: 16
-        ) {
-            ForEach(ordered) { overview in
-                SiteTile(
-                    overview: overview,
-                    report: live.reports[overview.id],
-                    today: live.todays[overview.id]?.today,
-                    icon: favicons.image(for: overview.id),
-                    heroSize: heroSize,
-                    isSelected: overview.id == selection,
-                    onSelect: { onSelect(overview.id) },
-                    onOpen: { onOpen(overview.id) }
-                )
-            }
-        }
-        .animation(.snappy(duration: 0.3), value: ordered.map(\.id))
-    }
-}
-
-private struct SiteTile: View {
-    let overview: SiteOverview
-    let report: LiveReport?
-    let today: TodayVisits?
-    let icon: Image?
-    let heroSize: CGFloat
-    let isSelected: Bool
-    let onSelect: () -> Void
-    let onOpen: () -> Void
-
-    private var live: LiveVisitors? { report?.live }
-
-    /// Someone is on the site: the tile's lit state.
-    private var isLit: Bool { (live?.onlineNow ?? 0) > 0 }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 8) {
-                Group {
-                    if let icon {
-                        icon.resizable().interpolation(.high).scaledToFit().clipShape(.rect(cornerRadius: 4))
-                    } else {
-                        Image(systemName: "globe").foregroundStyle(.secondary)
-                    }
-                }
-                .frame(width: 16, height: 16)
-
-                Text(overview.site.name)
-                    .font(.subheadline.weight(.medium))
-                Spacer()
-                trailing
-                    .font(.subheadline)
-                    .monospacedDigit()
-            }
-
-            hero
-
-            HeatStrip(values: live?.bars ?? [])
-                .frame(height: heroSize > 50 ? 14 : 10)
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isLit ? visitsColor.opacity(0.08) : Palette.raised, in: .rect(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(isLit ? visitsColor.opacity(0.35) : Palette.line, lineWidth: isSelected ? 2 : 1)
-        )
-        .animation(.snappy(duration: 0.3), value: isLit)
-        .contentShape(Rectangle())
-        // The double-click is declared first so it wins: a single click only selects.
-        .onTapGesture(count: 2, perform: onOpen)
-        .onTapGesture(perform: onSelect)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-    }
-
-    /// Today's visits — or, for a site the overview could not load, the reason.
-    @ViewBuilder private var trailing: some View {
-        if let error = overview.errorMessage {
-            Text(error)
-                .foregroundStyle(Palette.coral)
-                .lineLimit(1)
-                .help(error)
-        } else if let today {
-            Text("\(OverviewScreen.count(today.site?.visits)) today")
-                .foregroundStyle(.secondary)
-                .help("\(OverviewScreen.count(today.site?.visits)) visits and \(OverviewScreen.count(today.eventCount)) events today")
-        }
-    }
-
-    /// The people on the site now. A site whose provider is configured but not ready says
-    /// so; one without a provider says that; both in the figure's place, so a quiet tile and
-    /// a blind one cannot be confused.
-    @ViewBuilder private var hero: some View {
-        if let live {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(OverviewScreen.count(live.onlineNow))
-                    .font(.system(size: heroSize, weight: .medium))
-                    .monospacedDigit()
-                    .foregroundStyle(isLit ? AnyShapeStyle(visitsColor) : AnyShapeStyle(.tertiary))
-                    .contentTransition(.numericText())
-                Text("online")
-                    .foregroundStyle(.secondary)
-            }
-            .help("Distinct people on the site in the last \(live.onlineMinutes) minutes")
-        } else {
-            let status = report?.analytics
-            Text(status.map { $0.ready ? "No analytics" : "Not ready" } ?? "—")
-                .font(.system(size: heroSize * 0.5, weight: .medium))
-                .foregroundStyle(.tertiary)
-                .frame(height: heroSize * 1.2, alignment: .center)
-                .help(status?.reason ?? "The site has no analytics provider.")
-        }
-    }
-}
-
-/// One cell per minute of the window, oldest on the left. A quiet minute is a stub in the
-/// line colour; a busy one is lilac, deeper the more people were there against the window's
-/// busiest minute. Not `MinuteBars`: height is what that one varies, and a tile wants a
-/// strip of even height that reads as a barcode of activity from a distance.
-private struct HeatStrip: View {
-    let values: [Double]
-
-    var body: some View {
-        let peak = max(values.max() ?? 1, 1)
-        let cells = values.isEmpty ? Array(repeating: 0.0, count: 30) : values
-        HStack(spacing: 3) {
-            ForEach(cells.indices, id: \.self) { index in
-                let value = cells[index]
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(value > 0 ? visitsColor.opacity(0.35 + 0.65 * value / peak) : Palette.line)
-            }
-        }
-        .animation(.snappy(duration: 0.3), value: values)
-        .accessibilityHidden(true)
-    }
-}
-
-// MARK: - Feed
-
-/// What visitors are doing on the shown sites, one row per person, newest first. A row is
-/// the person's newest step, large; the steps before it in one caption; how often they have
-/// been here and where they are at the end; and, under the pointer, the whole run. The
-/// header's words keep it to page loads or events, the way a site tab's period switch works.
-/// The feed keeps moving under the pointer: a new row appears at the top.
-///
-/// The rows are a plain stack, drawn in full, and their layout is never animated. A lazy
-/// stack here kept the main thread busy re-phasing its items on every poll, and a layout
-/// animation over the rows every five seconds is what turned that into a hang; the rows are
-/// capped instead. What does move is the row that arrives: the others step down at once,
-/// and it comes in where it landed — see `FeedArrivals` for which rows those are.
-struct FeedCard: View {
-    let rows: [LiveFeedRow]
-    /// Whether a row names its site: not when the page is kept to one.
-    let showsSite: Bool
-    @Binding var kinds: FeedKinds
-    let windowMinutes: Int
-    /// No feed has answered yet, and nothing has failed.
-    let waiting: Bool
-    /// The moment the ages are measured from; ticks from the screen's timeline.
-    let now: Date
-    /// A site's favicon, when the store has it: the mark a row leads with.
-    var icon: (Site.ID) -> Image? = { _ in nil }
-
     @Environment(\.isTabPreview) private var isPreview
-    /// The row under the pointer: it lifts a little, and its tooltip opens.
-    @State private var hoveredRow: LiveFeedRow.ID?
-    /// Which rows have just arrived: they come in, and their tint fades.
-    @State private var arrivals = FeedArrivals()
-    /// How wide the rows are, as laid out: what the caption's zone is cut from. Nil until
-    /// the first layout, when the rows take the column's full width.
-    @State private var rowWidth: CGFloat?
+    /// The row under the pointer: it takes a faint fill, the same as a feed row.
+    @State private var hoveredRow: Site.ID?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 16) {
-                Text("Feed")
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: SiteGlanceRow.spacing) {
+                Text("Sites")
                     .font(.headline)
-                Spacer()
-                WordSwitch(options: FeedKinds.allCases, selection: $kinds, label: \.label, font: .subheadline)
-                    .accessibilityLabel("Kinds")
+                    .frame(width: SiteGlanceRow.siteWidth, alignment: .leading)
+                ForEach(SiteGlanceRow.columns, id: \.self) { column in
+                    Text(column)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
             }
-            .disabled(isPreview)
+            .padding(.bottom, 4)
 
-            if rows.isEmpty {
-                Text(waiting ? "Waiting for the provider…" : "Nothing in the last \(windowMinutes) minutes.")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(rows) { row in
-                        FeedRow(
-                            row: row,
-                            age: RelativeAge.compact(from: row.newestAt, to: now),
-                            showsSite: showsSite,
-                            icon: icon(row.siteID),
-                            isHovered: hoveredRow == row.id,
-                            isArriving: arrivals.fresh.contains(row.id),
-                            captionWidth: FeedRow.captionWidth(in: rowWidth, showsSite: showsSite)
-                        )
-                        .equatable()
+            VStack(spacing: 0) {
+                ForEach(rows) { row in
+                    SiteGlanceRow(row: row, icon: icon(row.id), isHovered: hoveredRow == row.id)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) { onOpen(row.id) }
                         .onHover { inside in
                             guard !isPreview else { return }
                             if inside {
@@ -524,267 +292,117 @@ struct FeedCard: View {
                                 hoveredRow = nil
                             }
                         }
-                        // Over the rows below it, or its tooltip is painted under them. On
-                        // the stack's own child: set inside the row, the trait did not reach
-                        // the stack through the wrappers above.
-                        .zIndex(hoveredRow == row.id ? 1 : 0)
-                    }
+                        .help(row.errorMessage ?? "Double-click to open \(row.site.name)")
                 }
-                .animation(.easeOut(duration: 0.12), value: hoveredRow)
-                // The rows' width sets the zones: the caption's gives way first, so the
-                // headline keeps its room in a narrow window.
-                .onGeometryChange(for: CGFloat.self, of: \.size.width) { rowWidth = $0 }
             }
+            .animation(.easeOut(duration: 0.12), value: hoveredRow)
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .cardSurface(cornerRadius: 12)
-        // Every poll and every change of kind is noted; a preview is a still and notes
-        // nothing. The kinds are noted on their own too, for the switch that leaves the
-        // rows as they were.
-        .onChange(of: rows, initial: true) { _, rows in
-            guard !isPreview else { return }
-            arrivals.note(rows, kinds: kinds, at: Date())
-        }
-        .onChange(of: kinds) { _, kinds in
-            guard !isPreview else { return }
-            arrivals.note(rows, kinds: kinds, at: Date())
-        }
-        // An arriving row is drawn once as it starts — unseen, tinted — and then let go, so
-        // it comes in and its tint fades from there. The two states have to be two frames.
-        .task(id: arrivals.fresh) {
-            guard !arrivals.fresh.isEmpty else { return }
-            try? await Task.sleep(for: .milliseconds(32))
-            arrivals.settle()
-        }
     }
 }
 
-/// One row, one line, fixed zones left to right: when, where, what, the rest, who. Three
-/// sizes for three roles — the headline at body, the site at callout, everything else at
-/// caption — and one colour with one meaning: a thing done is set in the analytics colour,
-/// a page loaded in grey. Nothing on the row changes width between rows but the words
-/// themselves, so the eye lands on the same place every time.
-///
-/// The words come ready from the row; nothing is formatted here, so an unchanged row is
-/// skipped. Flush with the card: the age starts where the title starts, the flag ends where
-/// the kind switch ends.
-private struct FeedRow: View, Equatable {
-    let row: LiveFeedRow
-    /// "now", "3m", or the clock time once it is an hour old.
-    let age: String
-    /// Whether the site's name is shown: not when the feed is kept to one site.
-    let showsSite: Bool
+/// One site's line. The site at callout with its favicon; every figure at body, monospaced,
+/// with its move in caption beside it — mint or coral, the one colour with one meaning on
+/// the row. A site whose dashboard could not be loaded keeps whatever is cached and carries
+/// the reason in its tooltip.
+private struct SiteGlanceRow: View {
+    let row: SiteGlance
     let icon: Image?
     let isHovered: Bool
-    /// Whether the row is at the start of coming in: unseen and tinted, for one frame. When
-    /// it stops being so the row fades in and lifts, and the tint goes over a few seconds.
-    let isArriving: Bool
-    /// The caption's zone, cut from the row's width by `captionWidth(in:showsSite:)`. Zero
-    /// hides the caption; the tooltip still has it.
-    let captionWidth: CGFloat
 
-    static let height: CGFloat = 36
-    /// How long the tint of a row that arrived stays: long enough to find it after a glance
-    /// away, short enough that two arrivals a minute apart never both show.
-    private static let tintFade: TimeInterval = 4
-    private static let gutter: CGFloat = 40
-    private static let siteWidth: CGFloat = 136
-    private static let spacing: CGFloat = 16
-    /// The caption's zone at its widest, in the column at full width.
-    private static let captionMax: CGFloat = 300
-    /// The least the headline gets before the caption gives way: it is the row's point, and
-    /// a route cut to "/eu/…tion" says nothing.
-    private static let headlineMin: CGFloat = 220
-    /// A caption narrower than this is an ellipsis; it goes instead.
-    private static let captionMin: CGFloat = 100
-    /// The two slots at the end: the visit count, its gap, the flag.
-    private static let whoWidth: CGFloat = 26 + 10 + 20
-    /// How far the hover's highlight reaches past the row's words on either side.
+    static let height: CGFloat = 40
+    static let spacing: CGFloat = 16
+    static let siteWidth: CGFloat = 200
+    static let columns = ["Clicks", "Impressions", "CTR", "Position", "Visits"]
+    /// How far the hover's fill reaches past the row's words on either side.
     private static let overhang: CGFloat = 8
 
-    /// The caption's zone for rows this wide: what is left after the fixed zones and the
-    /// headline's least, up to `captionMax`, or nothing when that is too little to read. The
-    /// same for every row of the stack, so the zones stay fixed between rows; only the window
-    /// moves them. Nil is before the first layout: the column at full width.
-    static func captionWidth(in rowWidth: CGFloat?, showsSite: Bool) -> CGFloat {
-        let width = rowWidth ?? (SiteTabScreen.columnWidth - 40)
-        let fixed = gutter + spacing + (showsSite ? siteWidth + spacing : 0) + spacing + whoWidth
-        let words = width - fixed
-        let caption = min(captionMax, words - headlineMin - spacing)
-        return caption < captionMin ? 0 : caption
-    }
-    /// An `Image` cannot be compared, and the favicon arrives once: what matters is whether
-    /// the row has one.
-    nonisolated static func == (left: FeedRow, right: FeedRow) -> Bool {
-        left.row == right.row && left.age == right.age && left.showsSite == right.showsSite
-            && (left.icon == nil) == (right.icon == nil) && left.isHovered == right.isHovered
-            && left.isArriving == right.isArriving && left.captionWidth == right.captionWidth
-    }
-
-    /// Where the words start: where the tooltip hangs from.
-    private var wordsX: CGFloat { Self.gutter + 16 + (showsSite ? Self.siteWidth + 16 : 0) }
-
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 16) {
-            Text(age)
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(.tertiary)
-                .frame(width: Self.gutter, alignment: .leading)
-                .help(row.newest.time)
-
-            if showsSite {
-                HStack(spacing: 8) {
+        let stats = row.comparison.currentStats
+        HStack(alignment: .firstTextBaseline, spacing: Self.spacing) {
+            HStack(spacing: 8) {
+                Group {
                     if let icon {
-                        icon.resizable().interpolation(.high).scaledToFit()
-                            .frame(width: 16, height: 16)
-                            .clipShape(.rect(cornerRadius: 3))
+                        icon.resizable().interpolation(.high).scaledToFit().clipShape(.rect(cornerRadius: 3))
+                    } else {
+                        Image(systemName: "globe").foregroundStyle(.secondary)
                     }
-                    Text(row.siteName)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
                 }
-                .frame(width: Self.siteWidth, alignment: .leading)
-            }
-
-            Text(row.headline)
-                .font(.body)
-                .fontWeight(row.isAction ? .medium : .regular)
-                .foregroundStyle(row.isAction ? AnyShapeStyle(visitsColor) : AnyShapeStyle(.primary))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            if captionWidth > 0 {
-                Text(row.caption)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                .frame(width: 16, height: 16)
+                Text(row.site.name)
+                    .font(.callout)
                     .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(width: captionWidth, alignment: .trailing)
             }
+            .frame(width: Self.siteWidth, alignment: .leading)
 
-            // Who, in two fixed slots: how often they have been here, and where they are.
-            HStack(spacing: 10) {
-                Text(row.visits ?? "")
-                    .font(.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 26, alignment: .trailing)
-                    .help(row.visitsHelp ?? "First visit")
-                Text(row.flag)
-                    .font(.body)
-                    .lineLimit(1)
-                    .frame(width: 20, alignment: .trailing)
-                    .help(row.who)
-            }
+            Figure(
+                value: GlanceFigure.count(stats.clicks),
+                change: row.comparison.clicks.map { Trend.signed($0.delta, fractionDigits: 0) },
+                tint: row.comparison.clicks.map { GlanceFigure.tint($0.delta) }
+            )
+            Figure(
+                value: GlanceFigure.count(stats.impressions),
+                change: row.comparison.impressions.map { Trend.signed($0.delta, fractionDigits: 0) },
+                tint: row.comparison.impressions.map { GlanceFigure.tint($0.delta) }
+            )
+            Figure(
+                value: GlanceFigure.rate(stats.ctr),
+                change: row.comparison.ctrPointsDelta.map { Trend.signed($0, fractionDigits: 1) + "pp" },
+                tint: row.comparison.ctrPointsDelta.map { GlanceFigure.tint($0) }
+            )
+            Figure(
+                value: GlanceFigure.position(stats.position),
+                change: row.comparison.positionDelta.map { Trend.signed($0, fractionDigits: 1) },
+                tint: row.comparison.positionDelta.map { GlanceFigure.tint($0, lowerIsBetter: true) }
+            )
+            Figure(
+                value: row.visits.map { GlanceFigure.count($0.current) } ?? "—",
+                change: row.visits?.trend.map { Trend.signed($0.delta, fractionDigits: 0) },
+                tint: row.visits?.trend.map { GlanceFigure.tint($0.delta) }
+            )
         }
         .frame(height: Self.height)
         .padding(.horizontal, Self.overhang)
-        // The one colour, faint, under a row that arrived; it fades from the moment the row
-        // starts coming in. Instant on the way in: the animation is the one of the new state.
-        .background {
-            RoundedRectangle(cornerRadius: 6)
-                .fill(visitsColor.opacity(isArriving ? 0.14 : 0))
-                .animation(isArriving ? nil : .easeOut(duration: Self.tintFade), value: isArriving)
-        }
         .background(isHovered ? Palette.line.opacity(0.45) : Color.clear, in: .rect(cornerRadius: 6))
         .padding(.horizontal, -Self.overhang)
-        // The row comes in from a little below. Not a layout move: the rows under it have
-        // already stepped down, and this row's slot is where it lands.
-        .opacity(isArriving ? 0 : 1)
-        .offset(y: isArriving ? 4 : 0)
-        .animation(isArriving ? nil : .easeOut(duration: 0.35), value: isArriving)
-        .contentShape(Rectangle())
-        .overlay(alignment: .topLeading) {
-            if isHovered {
-                FeedTooltip(row: row, now: Date())
-                    .fixedSize()
-                    .offset(x: wordsX, y: Self.height + 2)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-            }
-        }
         .accessibilityElement(children: .combine)
     }
 }
 
-/// What the row does not say, under the pointer: who this is, how often they have been
-/// here, and every step of the run with its age and its data — oldest first, so it reads as
-/// it was walked. The same panel as the realtime bars' minute label.
-private struct FeedTooltip: View {
-    let row: LiveFeedRow
-    let now: Date
+/// One figure and its move, right-aligned in a flexible zone. The move has a slot of its
+/// own whether or not there is one, so the figures of every row end on the same line.
+private struct Figure: View {
+    let value: String
+    let change: String?
+    let tint: Color?
 
-    /// Past this many steps the oldest are counted, not listed.
-    private static let limit = 12
+    private static let changeWidth: CGFloat = 52
 
     var body: some View {
-        let shown = Array(row.steps.suffix(Self.limit))
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Text(row.who.isEmpty ? "Unknown visitor" : row.who)
-                    .fontWeight(.medium)
-                Text("·").foregroundStyle(.tertiary)
-                Text(row.visitsHelp ?? "first visit")
-                    .foregroundStyle(.secondary)
-            }
-            .font(.callout)
-
-            VStack(alignment: .leading, spacing: 4) {
-                if row.steps.count > shown.count {
-                    Text("\(row.steps.count - shown.count) earlier steps")
-                        .foregroundStyle(.quaternary)
-                }
-                ForEach(shown) { step in
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(RelativeAge.labelOrTime(from: step.at, to: now))
-                            .monospacedDigit()
-                            .foregroundStyle(.tertiary)
-                            .frame(width: 60, alignment: .trailing)
-                        Text(step.primary)
-                            .fontWeight(step.isAction ? .medium : .regular)
-                            .foregroundStyle(step.isAction ? AnyShapeStyle(visitsColor) : AnyShapeStyle(.primary))
-                        if step.repeats > 1 {
-                            Text("×\(step.repeats)")
-                                .monospacedDigit()
-                                .foregroundStyle(.tertiary)
-                        }
-                        if let detail = step.detail {
-                            Text(detail)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .lineLimit(1)
-                }
-            }
-            .font(.callout)
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(value)
+                .font(.body)
+                .monospacedDigit()
+            Text(change ?? "")
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(tint ?? .secondary)
+                .frame(width: Self.changeWidth, alignment: .leading)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(maxWidth: 520, alignment: .leading)
-        .background(.regularMaterial, in: .rect(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
-        .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 }
 
-private struct ErrorView: View {
-    let message: String
-    let retry: () -> Void
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.title)
-                .foregroundStyle(.secondary)
-            Text(message)
-                .multilineTextAlignment(.center)
-                .textSelection(.enabled)
-            Button("Try Again", action: retry)
-        }
-        .frame(maxWidth: .infinity)
-    }
+#Preview("Overview") {
+    OverviewScreen(
+        model: .preview,
+        state: OverviewTabState(),
+        history: HistoryStore(),
+        favicons: FaviconStore(),
+        onOpenSite: { _ in },
+        onRefresh: {}
+    )
+    .frame(width: 1100, height: 640)
 }

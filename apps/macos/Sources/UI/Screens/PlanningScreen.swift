@@ -586,7 +586,7 @@ private struct PlanningRow: View, Equatable {
 /// an eager stack made opening the screen cost the whole run: 522 ms of layout for 544 rows
 /// against 13 ms lazy, measured in `ProposalsListTests`.
 ///
-/// The hazard a lazy stack is banned for elsewhere (see OverviewScreen's feed, which sat at
+/// The hazard a lazy stack is banned for elsewhere (see RealtimeScreen's feed, which sat at
 /// 15–20% CPU idle) is a lazy stack under a REPEATING invalidation: it re-phases its realized
 /// items every time. It does not apply here. Everything on this screen comes from the
 /// registry read, once per session, and the site tab's 5-second live poll cannot reach it —

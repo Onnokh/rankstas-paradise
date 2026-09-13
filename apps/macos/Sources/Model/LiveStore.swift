@@ -11,7 +11,7 @@ import Observation
 /// seconds for live, a minute for today), so polling at that pace costs the provider one
 /// round per memo however many windows are open.
 ///
-/// The feed is the same, faster: the overview polls it every few seconds, sending the newest
+/// The feed is the same, faster: the Realtime tab polls it every few seconds, sending the newest
 /// row it has so the server only answers with what is newer, and `LiveFeed` folds that in.
 @MainActor
 @Observable
@@ -51,7 +51,7 @@ final class LiveStore {
         }
     }
 
-    /// The overview's version of `poll`: every site at once, on the same timer.
+    /// The Realtime tab's version of `poll`: every site at once, on the same timer.
     func pollAll(_ siteIDs: [Site.ID]) async {
         while !Task.isCancelled {
             await refreshAll(siteIDs)

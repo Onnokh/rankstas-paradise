@@ -18,6 +18,7 @@ import Observation
 @Observable
 final class Workspace {
     let overviewState = OverviewTabState()
+    let realtimeState = RealtimeTabState()
     /// How many tabs keep a view. Nine, the range ⌘1…⌘9 addresses: a tab the reader can
     /// reach in one keystroke is a tab that has to swap instantly, and above the bar's own
     /// count nothing is ever evicted. It stays a bound rather than "every tab" because a
@@ -25,7 +26,8 @@ final class Workspace {
     /// dozens of sites still stops growing here.
     let mountedLimit: Int
 
-    private(set) var tabs: [TabID] = [.overview]
+    /// The two tabs every server has come first, then one per site. See `fixedTabs`.
+    private(set) var tabs: [TabID] = Workspace.fixedTabs
     private(set) var siteStates: [Site.ID: SiteTabState] = [:]
     private(set) var activeTabID: TabID = .overview
 
@@ -44,6 +46,10 @@ final class Workspace {
     /// How long after its last move the peek is taken to have landed. Its animations are
     /// springs of 0.4-0.55 s (see `RootView`), and a spring's tail runs a little past that.
     static let peekSettleTime: Duration = .milliseconds(750)
+
+    /// The tabs that stand ahead of the sites whatever the server lists: the overview, then
+    /// the realtime. ⌘1 and ⌘2, always.
+    static let fixedTabs: [TabID] = [.overview, .realtime]
 
     init(mountedLimit: Int = 9) {
         precondition(mountedLimit >= 1, "At least the active tab must be mounted.")
@@ -107,7 +113,7 @@ final class Workspace {
 
     /// Rebuilds the tab list from the server's sites, keeping state for sites that remain.
     func reconcile(siteIDs: [Site.ID]) {
-        tabs = [.overview] + siteIDs.map(TabID.site)
+        tabs = Self.fixedTabs + siteIDs.map(TabID.site)
         let known = Set(siteIDs)
         for siteID in siteIDs where siteStates[siteID] == nil {
             siteStates[siteID] = SiteTabState(siteID: siteID)

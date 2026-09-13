@@ -103,22 +103,26 @@ bundle, and a replacement leaves it alone.
 ## Layout
 
 - `Sources/App` — the app entry and its menu bar additions (`ViewCommands`).
-- `Sources/Model` — API client, DTOs, cache-first repository, `OverviewModel`, `LiveStore` (live counts and the live feed, polled, never cached). Data only, shared by every tab.
+- `Sources/Model` — API client, DTOs, cache-first repository, `OverviewModel`, `OverviewGlance` (the Overview's per-site arithmetic), `LiveStore` (live counts and the live feed, polled, never cached). Data only, shared by every tab.
 - `Sources/Workspace` — `Workspace` (tabs, active tab, bounded mounted set), per-tab state, `PeekProgress` (0 closed, 1 strip, 2 grid).
 - `Sources/Gesture` — three-finger trackpad drag recogniser streaming travel and velocity.
 - `Sources/UI` — `RootView`, `TabBar`, `PeekOverlay`, `TabContentStack`, `ScreenRail`, and `PeekLayout`, the pure struct that turns window size plus peek progress into every frame.
 - `Sources/UI/Screens` — one screen per tab kind, rendered from tab state. A site's peek preview always shows its dashboard.
-  The rail stands beside every tab's pane: the app icon at the top, the Overview right under it so it can be
-  reached from any tab, a site's own screens centred below, and a stand-in account icon at the bottom.
+  The first two tabs are the same on every server. The Overview is the sites compared: one row per site with its
+  clicks, impressions, click-through rate, position and visits over a chosen period, each against the period
+  before, read from what is stored and never polled. The Realtime is the sites watched: who is on each site now,
+  the last half hour by the minute, today so far, and the feed of what visitors are doing — the one tab that polls.
+  The rail stands beside every tab's pane: the app icon at the top, the Overview and the Realtime right under it so
+  they can be reached from any tab, a site's own screens centred below, and a stand-in account icon at the bottom.
   A site tab has four screens, peers chosen from the rail beside the pane: Dashboard; Registry, which lists
   every target page with its window, phase and keywords; Planning, which judges the plan's keywords on
   demand; and Log, the site's work record as a timeline of days. Pages Google reports as not indexed are
   dimmed in the Registry and in the ranking card. One header row — favicon, name, origin, people online, the
   period on the dashboard, refresh — is pinned above all four.
 
-Peek: swipe down with three fingers (or ⌘⇧P) to reveal live previews under the tabs; keep swiping for the grid. Esc or a click closes it. ⌘1…⌘9 select tabs; ⌘← and ⌘→ step between them. ⌘⌥1…⌘⌥4 choose a site's screen in the rail's order. View > Refresh (⌘R) refreshes the active tab.
+Peek: swipe down with three fingers (or ⌘⇧P) to reveal live previews under the tabs; keep swiping for the grid. Esc or a click closes it. ⌘1…⌘9 select tabs (⌘1 is the Overview, ⌘2 the Realtime); ⌘← and ⌘→ step between them. ⌘⌥1…⌘⌥4 choose a site's screen in the rail's order. View > Refresh (⌘R) refreshes the active tab.
 
-Refreshing and loading never blank the screen. Every store keeps what it shows until the server's answer lands, and the overview, history, ranked lists and work record are read from a local cache first, so a warm launch and a refresh only change the numbers, not the layout. The live count is the one exception: it is never cached, because a stale "3 people" would be a lie.
+Refreshing and loading never blank the screen. Every store keeps what it shows until the server's answer lands, and the overview, history, ranked lists and work record are read from a local cache first, so a warm launch and a refresh only change the numbers, not the layout. The live count and the feed are the one exception: they are never cached, because a stale "3 people" would be a lie, and only the Realtime tab and a site's dashboard read them.
 
 ## Judging animation feel
 

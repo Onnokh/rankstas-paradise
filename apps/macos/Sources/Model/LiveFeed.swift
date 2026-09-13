@@ -100,7 +100,7 @@ struct LiveFeedStep: Identifiable, Equatable, Sendable {
     var isAction: Bool { kind.isAction }
 }
 
-/// One row of the overview's feed: one visitor's run through one site — every Live event of
+/// One row of the Realtime feed: one visitor's run through one site — every Live event of
 /// theirs that is within `gap` of the next — and the words the row shows, worked out once
 /// here rather than every time the screen draws. The screen's rows are rebuilt on every
 /// poll, so a row's body must be trivial: text in, text out.

@@ -1,15 +1,15 @@
 import SwiftUI
 
 /// The rail standing on the canvas beside the pane: the app icon at the top, the Overview
-/// under it, the active site's screens one icon each in the middle, and the account at the
-/// bottom.
+/// and the Realtime under it, the active site's screens one icon each in the middle, and the
+/// account at the bottom.
 ///
 /// The rail is window chrome, like the tab bar: it sits on the void, not in the pane, so the
 /// pane stays one surface and its rounded corner is kept. It stands beside every tab. The
-/// Overview is always in the same place, right under the icon, so it is the one screen that
-/// can be reached from anywhere; a site tab adds its four screens below it. Choosing a screen
-/// is an instant pane swap, the same as choosing a tab — and the Overview is a tab, so
-/// choosing it there is choosing that tab.
+/// Overview and the Realtime are always in the same place, right under the icon, so they are
+/// the two screens that can be reached from anywhere; a site tab adds its four screens below
+/// them. Choosing a screen is an instant pane swap, the same as choosing a tab — and those
+/// two are tabs, so choosing one there is choosing that tab.
 ///
 /// Every measure comes from the pane's own inset, so the rail reads as part of the same
 /// grid: an icon starts where the pane would have, `PeekLayout.contentInset` from the window
@@ -18,8 +18,8 @@ import SwiftUI
 /// screens are centred between the Overview and the account.
 struct ScreenRail: View {
     let workspace: Workspace
-    /// Brings the Overview tab to the front, the way the tab bar does.
-    let activateOverview: () -> Void
+    /// Brings the Overview or the Realtime tab to the front, the way the tab bar does.
+    let activate: (TabID) -> Void
 
     static let iconSize: CGFloat = 40
     static let spacing: CGFloat = 8
@@ -28,8 +28,9 @@ struct ScreenRail: View {
     static let width: CGFloat = iconSize + PeekLayout.contentInset
     /// The app icon is drawn larger than a symbol: it is a sign, not a control.
     static let markSize: CGFloat = 30
-    /// The Overview wears its header's own symbol.
+    /// The Overview and the Realtime wear their headers' own symbols.
     static let overviewSymbol = "square.grid.2x2"
+    static let realtimeSymbol = "dot.radiowaves.left.and.right"
 
     /// The room above the app icon and below the account icon: what centres a slot on the header row.
     private static let endInset = (SiteTabScreen.headerHeight - iconSize) / 2
@@ -46,7 +47,12 @@ struct ScreenRail: View {
                 .accessibilityLabel("Ranksta's Paradise")
                 .accessibilityAddTraits(.isHeader)
 
-            ScreenRailButton(symbol: Self.overviewSymbol, title: "Overview", isActive: isOverview, action: activateOverview)
+            ScreenRailButton(symbol: Self.overviewSymbol, title: "Overview", isActive: workspace.activeTabID == .overview) {
+                activate(.overview)
+            }
+            ScreenRailButton(symbol: Self.realtimeSymbol, title: "Realtime", isActive: workspace.activeTabID == .realtime) {
+                activate(.realtime)
+            }
 
             Spacer(minLength: 0)
 
@@ -75,11 +81,6 @@ struct ScreenRail: View {
         .frame(width: Self.width, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Screens")
-    }
-
-    private var isOverview: Bool {
-        if case .overview = workspace.activeTabID { return true }
-        return false
     }
 }
 

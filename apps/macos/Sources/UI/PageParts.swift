@@ -93,3 +93,24 @@ struct Metric: View {
         .accessibilityElement(children: .combine)
     }
 }
+
+// MARK: - Error
+
+/// A screen that has nothing to show but why: the message, and a way to ask again.
+struct ErrorView: View {
+    let message: String
+    let retry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.title)
+                .foregroundStyle(.secondary)
+            Text(message)
+                .multilineTextAlignment(.center)
+                .textSelection(.enabled)
+            Button("Try Again", action: retry)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
