@@ -21,6 +21,8 @@ struct FeedQuietLine: Identifiable, Equatable {
     /// Oldest first, ending at the newest step. One entry for a plain row.
     let steps: [FeedLogStep]
     let country: String
+    /// "🇩🇪": the country as one glyph, for the end of a row.
+    let flag: String
     /// "🇩🇪 Germany · Chrome · Desktop": the tooltip's first line.
     let who: String
     /// "×3" for a returning visitor; nil on a first visit.
@@ -60,6 +62,7 @@ enum FeedQuiet {
                 siteName: group.siteName,
                 steps: group.steps.reversed(),
                 country: country(head.event),
+                flag: head.event.country.map(FeedShapes.flag) ?? "",
                 who: head.who,
                 returns: head.visits,
                 returnsHelp: head.visitsHelp,
@@ -78,7 +81,7 @@ enum FeedQuiet {
                 step.repeats += 1
                 lines[lines.count - 1] = FeedQuietLine(
                     id: last.id, siteID: last.siteID, siteName: last.siteName, steps: [step],
-                    country: last.country, who: last.who, returns: last.returns,
+                    country: last.country, flag: last.flag, who: last.who, returns: last.returns,
                     returnsHelp: last.returnsHelp, age: last.age
                 )
                 continue
@@ -93,6 +96,7 @@ enum FeedQuiet {
                     time: row.time, age: age(row.event.date, now: now), repeats: 1
                 )],
                 country: country(row.event),
+                flag: row.event.country.map(FeedShapes.flag) ?? "",
                 who: row.who,
                 returns: row.visits,
                 returnsHelp: row.visitsHelp,
@@ -413,10 +417,11 @@ private struct FeedQuietNarrowRow: View {
 
 // MARK: - T · Hierarchy
 
-/// One row per person, two lines, every row the same. The first line is one thing only:
-/// what they are doing now — a page in grey, an action in the analytics colour, a link out
-/// with an arrow. The second line is one caption in one grey: the site, who they are, how
-/// often they have been here, and the steps that led here. The age is a gutter on the left.
+/// One row per person, two lines, every row the same. The site leads, under its favicon;
+/// then the first line is one thing only — what they are doing now: a page in grey, an
+/// action in the analytics colour, a link out with an arrow — and the second line is one
+/// caption in one grey: how often they have been here, and the steps that led here. The age
+/// is a gutter on the left; the country is a flag at the end.
 ///
 /// R put six things on one line at four greys and three strengths of lilac, each row
 /// starting with a different one of them. Here a row has three tones and a fixed order,
@@ -425,15 +430,18 @@ struct FeedHierarchyVariant: View {
     let rows: [LiveFeedRow]
     let showsSite: Bool
     let now: Date
+    /// A site's favicon, when the store has it.
+    var icon: (Site.ID) -> Image? = { _ in nil }
 
     var body: some View {
-        FeedHierarchyList(lines: FeedQuiet.lines(grouping: rows, now: now), showsSite: showsSite)
+        FeedHierarchyList(lines: FeedQuiet.lines(grouping: rows, now: now), showsSite: showsSite, icon: icon)
     }
 }
 
 struct FeedHierarchyList: View {
     let lines: [FeedQuietLine]
     let showsSite: Bool
+    let icon: (Site.ID) -> Image?
 
     @Environment(\.isTabPreview) private var isPreview
     @State private var hovered: String?
@@ -441,7 +449,7 @@ struct FeedHierarchyList: View {
     var body: some View {
         VStack(spacing: 0) {
             ForEach(lines) { line in
-                FeedHierarchyRow(line: line, showsSite: showsSite, isHovered: hovered == line.id)
+                FeedHierarchyRow(line: line, showsSite: showsSite, icon: icon(line.siteID), isHovered: hovered == line.id)
                     .onHover { inside in
                         guard !isPreview else { return }
                         if inside {
@@ -459,12 +467,17 @@ struct FeedHierarchyList: View {
 struct FeedHierarchyRow: View {
     let line: FeedQuietLine
     let showsSite: Bool
+    let icon: Image?
     var isHovered = false
 
     static let height: CGFloat = 50
     private static let gutter: CGFloat = 44
+    private static let siteWidth: CGFloat = 136
     /// How many of the steps before the newest the caption names.
     private static let shownEarlier = 2
+
+    /// Where the words start: where the tooltip hangs from.
+    private var wordsX: CGFloat { 12 + Self.gutter + 16 + (showsSite ? Self.siteWidth + 16 : 0) }
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
@@ -473,7 +486,21 @@ struct FeedHierarchyRow: View {
                 .monospacedDigit()
                 .foregroundStyle(.tertiary)
                 .frame(width: Self.gutter, alignment: .trailing)
-                .padding(.top, 1)
+
+            if showsSite {
+                HStack(spacing: 7) {
+                    if let icon {
+                        icon.resizable().interpolation(.high).scaledToFit()
+                            .frame(width: 14, height: 14)
+                            .clipShape(.rect(cornerRadius: 3))
+                    }
+                    Text(line.siteName)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(width: Self.siteWidth, alignment: .leading)
+            }
 
             VStack(alignment: .leading, spacing: 3) {
                 headline
@@ -487,6 +514,11 @@ struct FeedHierarchyRow: View {
                     .truncationMode(.tail)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(line.flag)
+                .font(.callout)
+                .frame(width: 24, alignment: .trailing)
+                .help(line.country)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -497,7 +529,7 @@ struct FeedHierarchyRow: View {
             if isHovered {
                 FeedQuietTooltip(line: line)
                     .fixedSize()
-                    .offset(x: 12 + Self.gutter + 16, y: Self.height + 2)
+                    .offset(x: wordsX, y: Self.height + 2)
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }
@@ -532,17 +564,11 @@ struct FeedHierarchyRow: View {
         }
     }
 
-    /// Everything else, in one grey: "Missingmounts · Czechia · Chrome · 3rd visit · after
-    /// search-character › /eu/drakthul/felmasakr".
+    /// Everything else, in one grey: "3rd visit · after search-character › /eu/drakthul".
+    /// Empty for a first-time visitor on their first page, and the line stays: every row is
+    /// the same height.
     private var caption: Text {
         var parts: [Text] = []
-        if showsSite {
-            parts.append(Text(line.siteName))
-        }
-        parts.append(Text(line.country))
-        if let browser = line.who.split(separator: " · ").dropFirst().first {
-            parts.append(Text(String(browser)))
-        }
         if let returns = line.returns, let count = Int(returns.dropFirst()) {
             parts.append(Text("\(FeedShapes.ordinal(count)) visit"))
         }
@@ -554,10 +580,9 @@ struct FeedHierarchyRow: View {
             let rest = earlier.count - shown.count
             parts.append(Text("after \(shown.joined(separator: " › "))\(rest > 0 ? " · +\(rest) earlier" : "")"))
         }
-        var text = Text("")
+        var text = Text(" ")
         for (index, part) in parts.enumerated() {
-            if index > 0 { text = text + Text("  ·  ") }
-            text = text + part
+            text = text + (index > 0 ? Text("  ·  ") : Text("")) + part
         }
         return text
     }

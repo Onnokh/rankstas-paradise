@@ -126,7 +126,8 @@ struct OverviewScreen: View {
                     kinds: $state.feedKinds,
                     windowMinutes: windowMinutes,
                     waiting: live.feeds.isEmpty && live.feedErrors.isEmpty,
-                    now: now
+                    now: now,
+                    icon: { favicons.image(for: $0) }
                 )
                 .column()
                 .padding(.top, 20)

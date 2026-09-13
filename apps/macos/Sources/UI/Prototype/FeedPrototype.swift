@@ -178,6 +178,8 @@ struct FeedPrototypeHost: View {
     let windowMinutes: Int
     let waiting: Bool
     let now: Date
+    /// A site's favicon, for the variants that lead a row with its site.
+    var icon: (Site.ID) -> Image? = { _ in nil }
 
     @Environment(FeedPrototype.self) private var prototype: FeedPrototype?
     @Environment(\.isTabPreview) private var isPreview
@@ -194,7 +196,7 @@ struct FeedPrototypeHost: View {
                 now: now
             )
         case .hierarchy:
-            logCard { FeedHierarchyVariant(rows: rows, showsSite: showsSite, now: now) }
+            logCard { FeedHierarchyVariant(rows: rows, showsSite: showsSite, now: now, icon: icon) }
         case .quiet:
             logCard { FeedQuietVariant(rows: rows, showsSite: showsSite, now: now) }
         case .quietPath:
