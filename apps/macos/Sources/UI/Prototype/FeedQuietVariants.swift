@@ -498,10 +498,10 @@ struct FeedHierarchyRow: View {
                 .frame(width: Self.gutter, alignment: .trailing)
 
             if showsSite {
-                HStack(spacing: 7) {
+                HStack(spacing: 8) {
                     if let icon {
                         icon.resizable().interpolation(.high).scaledToFit()
-                            .frame(width: 14, height: 14)
+                            .frame(width: 16, height: 16)
                             .clipShape(.rect(cornerRadius: 3))
                     }
                     Text(line.siteName)
@@ -525,10 +525,20 @@ struct FeedHierarchyRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(line.flag)
-                .font(.body)
-                .frame(width: 24, alignment: .trailing)
-                .help(line.country)
+            // Who, at the end, in two fixed slots: how often they have been here, and where
+            // they are. In the caption the count made every row's words start somewhere else.
+            HStack(spacing: 10) {
+                Text(line.returns ?? "")
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 26, alignment: .trailing)
+                    .help(line.returnsHelp ?? "first visit")
+                Text(line.flag)
+                    .font(.body)
+                    .frame(width: 24, alignment: .trailing)
+                    .help(line.country)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -574,16 +584,14 @@ struct FeedHierarchyRow: View {
         }
     }
 
-    /// Everything else, in one grey: "3rd visit · after /eu/drakthul/felmasakr · 5 steps".
+    /// Everything else, in one grey: "after /eu/drakthul/felmasakr · 5 steps". Always
+    /// opening with "after" or "from", so every row's words start at the same place.
     /// Only the step before this one is named, in full — two, shortened, cut paths in the
     /// middle of a word, and the whole trail is the tooltip's. A row with no history says
     /// how the visit began instead, when the provider knows: "from google.com". The line is
     /// kept even when it is empty, so every row is the same height.
     private var caption: Text {
         var parts: [String] = []
-        if let returns = line.returns, let count = Int(returns.dropFirst()) {
-            parts.append("\(FeedShapes.ordinal(count)) visit")
-        }
         if line.steps.count > 1, let previous = line.steps.dropLast().last {
             parts.append("after \(FeedQuiet.readable(previous.primary))\(previous.repeats > 1 ? " ×\(previous.repeats)" : "")")
             if line.steps.count > 2 {
