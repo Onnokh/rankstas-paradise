@@ -1,6 +1,8 @@
 import SwiftUI
 
-/// The overview tab's peek content: totals across all sites and one quick line per site.
+/// The Overview's card in the peek grid: totals across all sites and one quick line per site.
+/// The Overview is no tab, so the card has no pill to grow from; it belongs to the grid alone
+/// and opens the Overview when chosen. See `PeekLayout.overviewCardFrame`.
 /// Lays itself out for whatever size the card gives it, from a strip card to the tall grid card.
 struct OverviewSummaryCard: View {
     let model: OverviewModel

@@ -1,13 +1,15 @@
 import Foundation
 import Observation
 
-/// Owns the tabs, which one is active, which few keep a live view, and the peek progress.
+/// Owns the tabs, what the pane shows, which few panes keep a live view, and the peek progress.
 ///
-/// Every known site has a tab and a state object at all times. Only the `mountedLimit` most
-/// recently activated tabs keep a view in the hierarchy; the others are rebuilt from their
-/// state when activated again, so memory stays flat as sites are added. The view mounts
-/// every tab it can in the idle moments after launch (see `mount`), so the first visit to a
-/// tab is a swap and not a build.
+/// Every known site has a tab and a state object at all times. The Overview and the Realtime
+/// are not tabs: they are the two screens every server has, reached from the rail beside the
+/// pane, and the pane shows one of them or a site tab (see `panes`). Only the `mountedLimit`
+/// most recently activated panes keep a view in the hierarchy; the others are rebuilt from
+/// their state when activated again, so memory stays flat as sites are added. The view
+/// mounts every pane it can in the idle moments after launch (see `mount`), so the first
+/// visit to one is a swap and not a build.
 ///
 /// The limit has to cover the tab bar, because a rebuild is not free. Building a site tab
 /// costs about 31 ms of update and layout in a Release build, against 6 ms to bring a
@@ -26,9 +28,10 @@ final class Workspace {
     /// dozens of sites still stops growing here.
     let mountedLimit: Int
 
-    /// The two tabs every server has come first, then one per site. See `fixedTabs`.
-    private(set) var tabs: [TabID] = Workspace.fixedTabs
+    /// The tab bar: one tab per site, in the server's order. Nothing else stands in it.
+    private(set) var tabs: [TabID] = []
     private(set) var siteStates: [Site.ID: SiteTabState] = [:]
+    /// What the pane shows: one of the rail's screens, or a tab.
     private(set) var activeTabID: TabID = .overview
 
     /// Most recently activated first.
@@ -47,9 +50,15 @@ final class Workspace {
     /// springs of 0.4-0.55 s (see `RootView`), and a spring's tail runs a little past that.
     static let peekSettleTime: Duration = .milliseconds(750)
 
-    /// The tabs that stand ahead of the sites whatever the server lists: the overview, then
-    /// the realtime. ⌘1 and ⌘2, always.
-    static let fixedTabs: [TabID] = [.overview, .realtime]
+    /// The two screens every server has, in the rail's order: the overview, then the
+    /// realtime. Reached from the rail, never from the tab bar, so they take no ⌘-number.
+    static let screens: [TabID] = [.overview, .realtime]
+
+    /// Everything the pane can show: the rail's screens, then the tabs. The set a view is
+    /// mounted from, and the order the mounted panes are kept in.
+    var panes: [TabID] {
+        Self.screens + tabs
+    }
 
     init(mountedLimit: Int = 9) {
         precondition(mountedLimit >= 1, "At least the active tab must be mounted.")
@@ -70,7 +79,7 @@ final class Workspace {
         !isPeeking && peekMovedAt.duration(to: now) > Self.peekSettleTime
     }
 
-    /// The tabs that keep a live view. The active tab is always first.
+    /// The panes that keep a live view. The active one is always first.
     var mountedTabIDs: [TabID] {
         Array(recency.prefix(mountedLimit))
     }
@@ -86,15 +95,15 @@ final class Workspace {
         activeTabID = tab
     }
 
-    /// Gives a tab a view without bringing it to the front: it joins the mounted set behind
-    /// every tab used so far, so nothing the reader has been to is evicted for it. Nothing
-    /// changes if the tab is mounted already, or if the mounted set is full.
+    /// Gives a pane a view without bringing it to the front: it joins the mounted set behind
+    /// every pane used so far, so nothing the reader has been to is evicted for it. Nothing
+    /// changes if the pane is mounted already, or if the mounted set is full.
     ///
     /// This is what makes the first visit to a project a swap. A tab built on the click
     /// cost 60-100 ms on the frame of the click and two more late frames as its charts and
     /// lists filled in; brought to the front already mounted, the same click costs 25-45 ms.
     func mount(_ tab: TabID) {
-        guard tabs.contains(tab), !recency.contains(tab) else { return }
+        guard panes.contains(tab), !recency.contains(tab) else { return }
         recency.append(tab)
     }
 
@@ -104,7 +113,8 @@ final class Workspace {
     }
 
     /// The tab `step` places along from the active one, wrapping at both ends: ⌘→ is +1,
-    /// ⌘← is −1. Nil when there is no tab to move to.
+    /// ⌘← is −1. From a rail screen, which stands in no tab, either step goes to the first
+    /// tab. Nil when there is no tab to move to.
     func neighbourTab(_ step: Int) -> TabID? {
         guard !tabs.isEmpty, let index = tabs.firstIndex(of: activeTabID) else { return tabs.first }
         let count = tabs.count
@@ -113,7 +123,7 @@ final class Workspace {
 
     /// Rebuilds the tab list from the server's sites, keeping state for sites that remain.
     func reconcile(siteIDs: [Site.ID]) {
-        tabs = Self.fixedTabs + siteIDs.map(TabID.site)
+        tabs = siteIDs.map(TabID.site)
         let known = Set(siteIDs)
         for siteID in siteIDs where siteStates[siteID] == nil {
             siteStates[siteID] = SiteTabState(siteID: siteID)

@@ -32,6 +32,24 @@ final class ProjectTrajectoryTests: XCTestCase {
         XCTAssertEqual(ComparisonRun.smoothed([1, 2, 3], window: 7), [1, 2, 3], "a run shorter than the window is left alone")
     }
 
+    /// The line is drawn through the mean, but a point still knows its own day: two clicks
+    /// on one day of a month are a bump at 0.29 and a label that says 2. Checked by
+    /// neutering: let `smoothed` drop `measured` and this fails.
+    func testASmoothedPointKeepsWhatItsDayMeasured() {
+        var days = (0..<28).map { (Date(timeIntervalSinceReferenceDate: Double($0) * 86_400), 0.0) }
+        days[20].1 = 2
+        var before = Array(repeating: 0.0, count: 28)
+        before[20] = 5
+        let run = ComparisonRun.make(current: days, previous: before, period: .d28)
+
+        XCTAssertEqual(run.current[20].value, 2.0 / 7, accuracy: 0.0001, "drawn at the seven-day mean")
+        XCTAssertEqual(run.current[20].measured, 2, "but the day measured two")
+        XCTAssertEqual(run.current[22].measured, 0, "and the days after it measured nothing, though the line is still up")
+        XCTAssertEqual(run.previous[20], 5.0 / 7, accuracy: 0.0001)
+        XCTAssertEqual(run.previousMeasured[20], 5)
+        XCTAssertEqual(run.previousMeasured.count, run.previous.count)
+    }
+
     func testADayIsAPointUpToAMonthAndAWeekBeyond() {
         XCTAssertEqual(ComparisonRun.bucketSize(for: .d7), 1)
         XCTAssertEqual(ComparisonRun.bucketSize(for: .d28), 1)

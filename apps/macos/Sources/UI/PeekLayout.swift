@@ -154,13 +154,14 @@ struct PeekLayout {
 
     // MARK: Grid
     //
-    // Tab 0 is the overview. In the grid it becomes a summary card on the left, two rows tall.
-    // The site tabs fill a two-column grid to its right, under the "Projects" heading.
-
-    var siteCount: Int { max(tabCount - 1, 0) }
+    // Every tab is a site, and the site cards fill a two-column grid under the "Projects"
+    // heading. The Overview's summary card stands to their left, two rows tall. It is no
+    // tab: it has no pill to grow from, so it belongs to the grid alone and travels in from
+    // the window's left edge on the same morph the site cards travel down on (see
+    // `overviewCardFrame`).
 
     var gridRows: Int {
-        max(1, Int((Double(siteCount) / Double(Self.gridColumns)).rounded(.up)))
+        max(1, Int((Double(tabCount) / Double(Self.gridColumns)).rounded(.up)))
     }
 
     /// Rows the block is sized for: the overview card needs at least two.
@@ -198,6 +199,27 @@ struct PeekLayout {
         return CGPoint(x: (size.width - block.width) / 2, y: (size.height - block.height) / 2)
     }
 
+    /// Where the Overview's card stands in the grid: left of the site grid, level with its
+    /// first row, two rows tall.
+    var overviewGridFrame: CGRect {
+        CGRect(origin: CGPoint(x: gridOrigin.x, y: gridOrigin.y + Self.gridHeadingHeight), size: overviewCardSize)
+    }
+
+    /// The Overview's card at this progress. It has no pill to grow from, so it waits wholly
+    /// off the window's left edge and travels to its place on the morph, the same number
+    /// the site cards travel down on: everything in the grid arrives together, and nothing
+    /// appears on top of a card still moving.
+    var overviewCardFrame: CGRect {
+        let home = overviewGridFrame
+        let parked = CGRect(x: -home.width, y: home.minY, width: home.width, height: home.height)
+        return interpolate(parked, home, by: morph)
+    }
+
+    /// The card fades up as it travels, so it is fully there only when it is in place.
+    var overviewCardOpacity: Double {
+        Double(morph)
+    }
+
     /// Left edge of the site grid, right of the overview card.
     private var siteGridMinX: CGFloat {
         gridOrigin.x + overviewCardSize.width + Self.gridGap
@@ -216,17 +238,12 @@ struct PeekLayout {
     }
 
     func gridFrame(_ index: Int) -> CGRect {
-        let top = gridOrigin.y + Self.gridHeadingHeight
-        if index == 0 {
-            return CGRect(origin: CGPoint(x: gridOrigin.x, y: top), size: overviewCardSize)
-        }
         let card = gridCardSize
-        let slot = index - 1
-        let column = CGFloat(slot % Self.gridColumns)
-        let row = CGFloat(slot / Self.gridColumns)
+        let column = CGFloat(index % Self.gridColumns)
+        let row = CGFloat(index / Self.gridColumns)
         return CGRect(
             x: siteGridMinX + column * (card.width + Self.gridGap),
-            y: top + row * (card.height + Self.gridGap),
+            y: gridOrigin.y + Self.gridHeadingHeight + row * (card.height + Self.gridGap),
             width: card.width,
             height: card.height
         )

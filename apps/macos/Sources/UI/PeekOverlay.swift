@@ -26,41 +26,47 @@ struct PeekOverlay: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(layout.gridOpacity < 0.5)
 
+            // The Overview's summary, laid out natively for the card's size. No tab and so
+            // no pill: it belongs to the grid and travels in from the left edge as the site
+            // cards travel down, behind them — it is first in the stack — so it never
+            // stands on top of a card still moving.
+            let overview = layout.overviewCardFrame
+            PeekCard(
+                title: TabID.overview.title(in: model),
+                icon: nil,
+                shortcut: nil,
+                showsShortcut: false,
+                isActive: workspace.activeTabID == .overview,
+                layout: layout,
+                size: overview.size,
+                hint: "Open the overview",
+                action: { onSelect(.overview) }
+            ) {
+                OverviewSummaryCard(model: model)
+            }
+            .frame(width: overview.width, height: overview.height)
+            .position(x: overview.midX, y: overview.midY)
+            .opacity(layout.overviewCardOpacity)
+            .allowsHitTesting(layout.morph > 0.5)
+            .accessibilityHidden(layout.morph < 0.5)
+
             ForEach(Array(workspace.tabs.enumerated()), id: \.element) { index, tab in
                 let frame = layout.cardFrame(index)
                 let isActive = tab == workspace.activeTabID
                 let shortcut: Int? = index < 9 ? index + 1 : nil
                 let icon: Image? = if case .site(let siteID) = tab { favicons.image(for: siteID) } else { nil }
 
-                Group {
-                    if tab == .overview {
-                        // The overview is a summary, laid out natively for the card's size.
-                        PeekCard(
-                            title: tab.title(in: model),
-                            icon: icon,
-                            shortcut: shortcut,
-                            showsShortcut: showsShortcuts,
-                            isActive: isActive,
-                            layout: layout,
-                            size: frame.size,
-                            action: { onSelect(tab) }
-                        ) {
-                            OverviewSummaryCard(model: model)
-                        }
-                    } else {
-                        PeekCard(
-                            title: tab.title(in: model),
-                            icon: icon,
-                            shortcut: shortcut,
-                            showsShortcut: showsShortcuts,
-                            isActive: isActive,
-                            layout: layout,
-                            size: frame.size,
-                            action: { onSelect(tab) }
-                        ) {
-                            TabSnapshotView(image: snapshots.card(for: tab))
-                        }
-                    }
+                PeekCard(
+                    title: tab.title(in: model),
+                    icon: icon,
+                    shortcut: shortcut,
+                    showsShortcut: showsShortcuts,
+                    isActive: isActive,
+                    layout: layout,
+                    size: frame.size,
+                    action: { onSelect(tab) }
+                ) {
+                    TabSnapshotView(image: snapshots.card(for: tab))
                 }
                 .frame(width: frame.width, height: frame.height)
                 .position(x: frame.midX, y: frame.midY)
@@ -80,6 +86,7 @@ private struct PeekCard<Screen: View>: View {
     let isActive: Bool
     let layout: PeekLayout
     let size: CGSize
+    var hint = "Open this project"
     let action: () -> Void
     @ViewBuilder let screen: () -> Screen
 
@@ -133,7 +140,7 @@ private struct PeekCard<Screen: View>: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
-        .accessibilityHint("Open this project")
+        .accessibilityHint(hint)
         .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 

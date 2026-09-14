@@ -148,21 +148,42 @@ struct Growth: Equatable {
 
 /// The period and the period before as two runs on one axis, the same length: a day per
 /// point up to a month, a week per point beyond, so a half year is 26 points. A daily run
-/// is read through a seven-day trailing mean, so a site with one click a day draws a shape
-/// and not a square wave.
+/// is drawn through a seven-day trailing mean, so a site with one click a day draws a shape
+/// and not a square wave — but a point keeps what its day measured beside the mean it is
+/// drawn at, because a reader who points at a day asks what happened that day. Two clicks
+/// on one day are a bump in the line and a mean of 0.3; the label says 2.
 struct ComparisonRun: Equatable {
     struct Point: Equatable, Identifiable {
         /// The last day the point sums.
         let date: Date
+        /// What the line is drawn at: the day's sum, or the trailing mean once smoothed.
         let value: Double
+        /// What the day itself summed to, whatever the line is drawn at.
+        let measured: Double
         var id: Date { date }
+
+        init(date: Date, value: Double, measured: Double? = nil) {
+            self.date = date
+            self.value = value
+            self.measured = measured ?? value
+        }
     }
 
     let current: [Point]
-    /// The earlier run's values, index for index with `current`. Empty when there is none.
+    /// The earlier run's values as drawn, index for index with `current`. Empty when there
+    /// is none.
     let previous: [Double]
+    /// The earlier run's values as measured, index for index with `previous`.
+    let previousMeasured: [Double]
     /// The earlier run is a stand-in — one total spread evenly — and is drawn as such.
     let previousIsAverage: Bool
+
+    init(current: [Point], previous: [Double], previousMeasured: [Double]? = nil, previousIsAverage: Bool) {
+        self.current = current
+        self.previous = previous
+        self.previousMeasured = previousMeasured ?? previous
+        self.previousIsAverage = previousIsAverage
+    }
 
     /// Days summed into one point: one up to a month, seven beyond.
     static func bucketSize(for period: Period) -> Int {
@@ -177,12 +198,13 @@ struct ComparisonRun: Equatable {
     static func make(current: [(Date, Double)], previous: [Double], period: Period) -> ComparisonRun {
         let size = bucketSize(for: period)
         var now = buckets(current, size: size)
-        var was = buckets(previous.map { (Date.distantPast, $0) }, size: size).map(\.value)
+        let wasMeasured = buckets(previous.map { (Date.distantPast, $0) }, size: size).map(\.value)
+        var was = wasMeasured
         if smooths(period) {
             now = smoothed(now, window: 7)
             was = smoothed(was, window: 7)
         }
-        return ComparisonRun(current: now, previous: was, previousIsAverage: false)
+        return ComparisonRun(current: now, previous: was, previousMeasured: wasMeasured, previousIsAverage: false)
     }
 
     /// A run whose earlier period is known only as a total.
@@ -210,13 +232,18 @@ struct ComparisonRun: Equatable {
         return out.reversed()
     }
 
-    /// A trailing mean over `window` points. A run no longer than the window is left alone.
+    /// A trailing mean over `window` points, drawn at the mean and still measuring what each
+    /// point did. A run no longer than the window is left alone.
     static func smoothed(_ points: [Point], window: Int) -> [Point] {
         guard window > 1, points.count > window else { return points }
         return points.indices.map { index in
             let start = max(0, index - window + 1)
             let run = points[start...index]
-            return Point(date: points[index].date, value: run.reduce(0) { $0 + $1.value } / Double(run.count))
+            return Point(
+                date: points[index].date,
+                value: run.reduce(0) { $0 + $1.value } / Double(run.count),
+                measured: points[index].measured
+            )
         }
     }
 

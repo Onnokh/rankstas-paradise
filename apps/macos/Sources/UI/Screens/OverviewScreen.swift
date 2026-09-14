@@ -105,7 +105,6 @@ struct OverviewScreen: View {
                     ForEach(projects) { project in
                         ProjectCard(project: project, period: state.period, icon: favicons.image(for: project.id))
                             .onTapGesture(count: 2) { onOpenSite(project.id) }
-                            .help(project.errorMessage ?? "Double-click to open \(project.site.name)")
                     }
                 }
                 .column()
@@ -346,6 +345,8 @@ private struct ProjectCard: View {
         .contentShape(Rectangle())
     }
 
+    /// The double-click hint stands on the name only. On the whole card it rose wherever the
+    /// pointer rested — over a chart, beside the chart's own hover label.
     private var nameZone: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
@@ -361,6 +362,7 @@ private struct ProjectCard: View {
                     .font(.headline)
                     .lineLimit(1)
             }
+            .help("Double-click to open \(project.site.name)")
             Text(project.site.origin.replacingOccurrences(of: "https://", with: ""))
                 .font(.caption)
                 .foregroundStyle(.secondary)

@@ -191,14 +191,15 @@ struct RootView: View {
             workspace.reconcile(siteIDs: siteIDs)
             snapshots.scheduleAll(workspace.tabs) { cardContent(for: $0) }
         }
-        // Mount every tab in the idle moments after launch, one per beat, so the first visit
-        // to a project is a swap and not a build. See `Workspace.mount`. Each build lands
-        // with the pane at rest — never in a frame of the peek — and after the stills, which
-        // the peek needs first. A mounted tab warms its own screens (see `SiteTabScreen`),
-        // so the beat leaves room for those before the next tab.
+        // Mount every pane in the idle moments after launch, one per beat — the Realtime
+        // first, then the tabs — so the first visit to a project is a swap and not a build.
+        // See `Workspace.mount`. Each build lands with the pane at rest — never in a frame
+        // of the peek — and after the stills, which the peek needs first. A mounted tab
+        // warms its own screens (see `SiteTabScreen`), so the beat leaves room for those
+        // before the next tab.
         .task(id: workspace.tabs) {
             try? await Task.sleep(for: Self.premountDelay)
-            for tab in workspace.tabs where !workspace.mountedTabIDs.contains(tab) {
+            for tab in workspace.panes where !workspace.mountedTabIDs.contains(tab) {
                 while !Task.isCancelled, !workspace.isPeekAtRest() {
                     try? await Task.sleep(for: .milliseconds(250))
                 }
@@ -209,7 +210,10 @@ struct RootView: View {
         }
         // A tab is rasterised a beat after the reader leaves it, so its card shows what was
         // last on screen there. See `TabSnapshots` for why a card cannot hold a live screen.
+        // Only a tab: the Overview and the Realtime have no card, so leaving one of them
+        // draws nothing.
         .onChange(of: workspace.activeTabID) { left, _ in
+            guard workspace.tabs.contains(left) else { return }
             snapshots.scheduleCard(left) { cardContent(for: left) }
         }
         .task(id: model.sites.map(\.id)) {
@@ -363,10 +367,10 @@ struct RootView: View {
         }
     }
 
-    /// Fetches everything a tab shows again. The dashboards feed every tab, so they are
-    /// always part of it; the overview tab adds every site's series, the realtime tab every
-    /// site's live count and feed, and a site tab its own series, live count and ranked
-    /// lists for the period it is on. Each store keeps what it shows until its answer lands,
+    /// Fetches everything a pane shows again. The dashboards feed every pane, so they are
+    /// always part of it; the Overview adds every site's series, the Realtime every site's
+    /// live count and feed, and a site tab its own series, live count and ranked lists for
+    /// the period it is on. Each store keeps what it shows until its answer lands,
     /// so nothing blanks. Reached from the screens' refresh buttons and from View > Refresh
     /// (⌘R).
     private func refresh(_ tab: TabID) {
@@ -423,6 +427,12 @@ struct RootView: View {
                 .keyboardShortcut("p", modifiers: [.command, .shift])
             Button("Close peek", action: closePeek)
                 .keyboardShortcut(.cancelAction)
+            // The rail's two screens, which stand in no tab and so take no ⌘-number. ⌘⇧
+            // and a letter, like the peek.
+            Button("Overview") { select(.overview) }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+            Button("Realtime") { select(.realtime) }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
             ForEach(0..<9, id: \.self) { index in
                 Button("Tab \(index + 1)") {
                     if workspace.tabs.indices.contains(index) {

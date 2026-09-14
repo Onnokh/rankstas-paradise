@@ -8,8 +8,9 @@ import SwiftUI
 /// pane stays one surface and its rounded corner is kept. It stands beside every tab. The
 /// Overview and the Realtime are always in the same place, right under the icon, so they are
 /// the two screens that can be reached from anywhere; a site tab adds its four screens below
-/// them. Choosing a screen is an instant pane swap, the same as choosing a tab — and those
-/// two are tabs, so choosing one there is choosing that tab.
+/// them. Choosing a screen is an instant pane swap, the same as choosing a tab. The Overview
+/// and the Realtime are only here: they stand in no tab, so while one of them is in front no
+/// tab in the bar is active.
 ///
 /// Every measure comes from the pane's own inset, so the rail reads as part of the same
 /// grid: an icon starts where the pane would have, `PeekLayout.contentInset` from the window
@@ -18,7 +19,7 @@ import SwiftUI
 /// screens are centred between the Overview and the account.
 struct ScreenRail: View {
     let workspace: Workspace
-    /// Brings the Overview or the Realtime tab to the front, the way the tab bar does.
+    /// Brings the Overview or the Realtime to the front, the way the tab bar brings a tab.
     let activate: (TabID) -> Void
 
     static let iconSize: CGFloat = 40

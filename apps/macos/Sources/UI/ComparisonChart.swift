@@ -6,7 +6,9 @@ import SwiftUI
 /// no legend; the figure above the chart is its caption. An earlier run that is a stand-in
 /// (one total spread evenly) is dashed, so it never reads as measured days.
 ///
-/// Hover finds the nearest point and says both values in a label above it; the label is
+/// Hover finds the nearest point and says both values in a label above it — the values the
+/// day measured, not the mean a smoothed line is drawn at, because a reader pointing at a
+/// day asks what happened that day (see `ComparisonRun.Point.measured`). The label is
 /// always present and shown by opacity, never inserted, so the hover survives (see
 /// `MinuteBars`). Previews and stills get no hover.
 struct ComparisonChart: View {
@@ -41,8 +43,8 @@ struct ComparisonChart: View {
                         let centre = slot * (CGFloat(index) + 0.5)
                         ComparisonLabel(
                             date: run.current[index].date,
-                            now: format(run.current[index].value),
-                            was: index < run.previous.count ? format(run.previous[index]) : nil,
+                            now: format(run.current[index].measured),
+                            was: index < run.previousMeasured.count ? format(run.previousMeasured[index]) : nil,
                             wasIsAverage: run.previousIsAverage
                         )
                         .fixedSize()
