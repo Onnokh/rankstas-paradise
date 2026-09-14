@@ -112,8 +112,6 @@ struct RealtimeScreen: View {
                     overviews: shownOverviews,
                     live: live,
                     favicons: favicons,
-                    selection: state.selectedSiteID,
-                    onSelect: { state.selectedSiteID = $0 },
                     onOpen: onOpenSite
                 )
                 .column()
@@ -253,14 +251,12 @@ private struct RealtimeStrip: View {
 ///
 /// The grid follows the count: one site fills the width, two share it, three sit in thirds,
 /// four are two by two — and so on in twos. Busiest first, so the live sites are at the top
-/// left; the quiet ones keep their alphabetical order after them. Double-click opens the
-/// site's tab.
+/// left; the quiet ones keep their alphabetical order after them. A click opens the site's
+/// tab.
 private struct SiteTiles: View {
     let overviews: [SiteOverview]
     let live: LiveStore
     let favicons: FaviconStore
-    let selection: Site.ID?
-    let onSelect: (Site.ID) -> Void
     let onOpen: (Site.ID) -> Void
 
     private func online(_ siteID: Site.ID) -> Double {
@@ -308,8 +304,6 @@ private struct SiteTiles: View {
                     today: live.todays[overview.id]?.today,
                     icon: favicons.image(for: overview.id),
                     heroSize: heroSize,
-                    isSelected: overview.id == selection,
-                    onSelect: { onSelect(overview.id) },
                     onOpen: { onOpen(overview.id) }
                 )
             }
@@ -324,8 +318,6 @@ private struct SiteTile: View {
     let today: TodayVisits?
     let icon: Image?
     let heroSize: CGFloat
-    let isSelected: Bool
-    let onSelect: () -> Void
     let onOpen: () -> Void
 
     private var live: LiveVisitors? { report?.live }
@@ -334,6 +326,15 @@ private struct SiteTile: View {
     private var isLit: Bool { (live?.onlineNow ?? 0) > 0 }
 
     var body: some View {
+        Button(action: onOpen) {
+            card
+        }
+        .clickableSurface(cornerRadius: 12, givesOnPress: true)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private var card: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 8) {
                 Group {
@@ -363,15 +364,10 @@ private struct SiteTile: View {
         .background(isLit ? visitsColor.opacity(0.08) : Palette.raised, in: .rect(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(isLit ? visitsColor.opacity(0.35) : Palette.line, lineWidth: isSelected ? 2 : 1)
+                .strokeBorder(isLit ? visitsColor.opacity(0.35) : Palette.line, lineWidth: 1)
         )
         .animation(.snappy(duration: 0.3), value: isLit)
         .contentShape(Rectangle())
-        // The double-click is declared first so it wins: a single click only selects.
-        .onTapGesture(count: 2, perform: onOpen)
-        .onTapGesture(perform: onSelect)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
     }
 
     /// Today's visits — or, for a site the dashboard load failed on, the reason.
@@ -673,7 +669,7 @@ private struct FeedRow: View, Equatable {
                 .fill(visitsColor.opacity(isArriving ? 0.14 : 0))
                 .animation(isArriving ? nil : .easeOut(duration: Self.tintFade), value: isArriving)
         }
-        .background(isHovered ? Palette.line.opacity(0.45) : Color.clear, in: .rect(cornerRadius: 6))
+        .background(isHovered ? Palette.hover : Color.clear, in: .rect(cornerRadius: 6))
         .padding(.horizontal, -Self.overhang)
         // The row comes in from a little below. Not a layout move: the rows under it have
         // already stepped down, and this row's slot is where it lands.

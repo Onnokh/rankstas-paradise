@@ -64,22 +64,15 @@ private struct FreshnessLabel: View {
 private struct PeekButton: View {
     let action: () -> Void
 
-    @State private var isHovering = false
-
     var body: some View {
         Button(action: action) {
             Image(systemName: "square.grid.2x2")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: 7)
-                        .fill(.primary.opacity(isHovering ? 0.08 : 0))
-                )
                 .contentShape(.rect)
         }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
+        .clickableSurface(cornerRadius: 7)
         .help("Peek at all projects (⌘⇧P)")
         .accessibilityLabel("Peek at projects")
     }

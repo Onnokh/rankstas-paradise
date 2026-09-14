@@ -576,7 +576,6 @@ private struct RegistryRow: View {
     let isOpen: Bool
     let onToggle: () -> Void
 
-    @State private var isHovered = false
 
     static let columnSpacing: CGFloat = 12
     static let numberWidth: CGFloat = 84
@@ -589,9 +588,7 @@ private struct RegistryRow: View {
             Button(action: onToggle) {
                 summaryRow
             }
-            .buttonStyle(.plain)
-            .background(isHovered ? Palette.line.opacity(0.5) : .clear)
-            .onHover { isHovered = $0 }
+            .clickableSurface()
             .accessibilityElement(children: .combine)
             .accessibilityHint(target.isUnindexed ? "Not indexed" : "")
             .accessibilityAddTraits(.isButton)

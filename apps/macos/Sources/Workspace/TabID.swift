@@ -98,7 +98,6 @@ final class OverviewTabState {
 @MainActor
 @Observable
 final class RealtimeTabState {
-    var selectedSiteID: Site.ID?
     /// The sites the page is kept to — its numbers, its Sites card and its feed. Empty keeps
     /// every one. A selection, so it survives a tab switch like the site above.
     var siteFilter: Set<Site.ID> = []
