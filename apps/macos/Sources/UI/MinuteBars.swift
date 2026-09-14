@@ -2,7 +2,9 @@ import SwiftUI
 
 /// The colour of everything that comes from the analytics provider: a site's live dot, the
 /// visits dot in a metric strip, the realtime bars, the visits chart and the feed's events.
-let visitsColor = Palette.lilac
+/// The accent, not a hue of its own: live visitors are the app's momentum, and the guide
+/// gives momentum to acid. It was lilac, and lilac read as a colour nobody chose.
+let visitsColor = Palette.acid
 
 /// One rounded bar per minute, oldest on the left. A quiet minute keeps a stub in the line
 /// colour, so the row always reads as the whole window and not as however many minutes had

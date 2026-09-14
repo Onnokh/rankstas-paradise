@@ -265,7 +265,7 @@ private struct RealtimeStrip: View {
 // MARK: - Sites
 
 /// One tile per shown site, built to be read from across the room when the window is left
-/// open: the people online now as a large figure, lilac while there is anyone, and the last
+/// open: the people online now as a large figure, acid while there is anyone, and the last
 /// half hour as a strip of minutes that deepen with the crowd. A tile lights up while someone
 /// is on the site, so a glance at the grid says which sites are alive.
 ///
@@ -433,7 +433,7 @@ private struct SiteTile: View {
 }
 
 /// One cell per minute of the window, oldest on the left. A quiet minute is a stub in the
-/// line colour; a busy one is lilac, deeper the more people were there against the window's
+/// line colour; a busy one is acid, deeper the more people were there against the window's
 /// busiest minute. Not `MinuteBars`: height is what that one varies, and a tile wants a
 /// strip of even height that reads as a barcode of activity from a distance.
 private struct HeatStrip: View {

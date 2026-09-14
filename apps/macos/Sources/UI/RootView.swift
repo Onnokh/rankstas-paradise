@@ -170,6 +170,8 @@ struct RootView: View {
             }
             .clipped()
         }
+        // One text colour for the window; the hierarchy steps down from it. See `Palette.text`.
+        .foregroundStyle(Palette.text)
         // Extend under the title bar so the tab bar can take its place.
         .ignoresSafeArea(.container, edges: .top)
         // View > Refresh (⌘R) acts on this window's active tab. See `ViewCommands`.
