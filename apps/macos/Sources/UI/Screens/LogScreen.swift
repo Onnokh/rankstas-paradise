@@ -275,7 +275,10 @@ private struct LogRow: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 9)
         .opacity(entry.isAction ? 1 : Self.noteOpacity)
-        .background(isHovered ? Palette.line.opacity(0.5) : .clear)
+        // The fill says the row answers the pointer — by opening its note, or by offering
+        // the page. A row that does neither stays flat rather than promising a click that
+        // does nothing. Hover is tracked either way: the link above rides on it.
+        .background(isHovered && answersPointer ? Palette.hover : .clear)
         .contentShape(.rect)
         // Clicking a row shows the rest of its note. Rows with no note stay inert rather
         // than offering a click that does nothing.
@@ -288,6 +291,10 @@ private struct LogRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityHint(entry.note.isEmpty ? "" : "Shows the whole note")
     }
+
+    /// Whether hovering this row does anything at all: the note can open, or the page can
+    /// be reached. Neither, and the row is a readout.
+    private var answersPointer: Bool { !entry.note.isEmpty || pageURL != nil }
 
     /// When the entry was written, and whether that was the day it records. The two differ
     /// whenever work is written up afterwards, and the gap is worth knowing before reading a

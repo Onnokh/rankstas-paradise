@@ -44,7 +44,6 @@ struct FilterMenu<ID: Hashable>: View {
     var font: Font = .subheadline
 
     @State private var isOpen = false
-    @State private var isHovering = false
 
     /// The chosen options, in the menu's order. A selection can name an option that has
     /// since left the list — a removed site — and that name is not shown.
@@ -96,11 +95,12 @@ struct FilterMenu<ID: Hashable>: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .background(.primary.opacity(isHovering || isOpen ? 0.12 : 0.08), in: .capsule)
+            // The pill's own fill: this control is visible at rest, unlike a row. The
+            // hover and the press ride on top of it, from the shared style.
+            .background(.primary.opacity(isOpen ? 0.12 : 0.08), in: .capsule)
             .contentShape(.capsule)
         }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
+        .clickableSurface(cornerRadius: 999)
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {
             menu
                 .presentationBackground(Palette.raised)
@@ -171,8 +171,6 @@ private struct MenuRow<Icon: View>: View {
     let action: () -> Void
     @ViewBuilder let icon: () -> Icon
 
-    @State private var isHovering = false
-
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
@@ -192,11 +190,9 @@ private struct MenuRow<Icon: View>: View {
             .foregroundStyle(isOn ? .primary : .secondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(.primary.opacity(isHovering ? 0.07 : 0), in: .rect(cornerRadius: 8))
             .contentShape(.rect(cornerRadius: 8))
         }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
+        .clickableSurface(cornerRadius: 8)
         .disabled(isEmpty)
         .opacity(isEmpty ? 0.4 : 1)
         .animation(.snappy(duration: 0.15), value: isOn)

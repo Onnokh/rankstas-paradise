@@ -561,8 +561,14 @@ private struct ProjectTiles: View {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 HStack(alignment: .top, spacing: 12) {
                     ForEach(row) { project in
-                        ProjectTile(project: project, source: source, icon: icon(project.id))
-                            .onTapGesture(count: 2) { onOpen(project.id) }
+                        // A real button, not a tap gesture: a click opens the project, the
+                        // surface answers the pointer and the press, and the keyboard and
+                        // VoiceOver reach it. It used to open on a double-click alone, which
+                        // nothing on the tile announced.
+                        Button { onOpen(project.id) } label: {
+                            ProjectTile(project: project, source: source, icon: icon(project.id))
+                        }
+                        .clickableSurface(cornerRadius: 12, givesOnPress: true)
                     }
                     // A short last row keeps the tile width of a full one.
                     if row.count < perRow {
@@ -607,7 +613,7 @@ private struct ProjectTile: View {
                         .help(error)
                 }
             }
-            .help("Double-click to open \(project.site.name)")
+            .help("Open \(project.site.name)")
 
             Text(headline(growth))
                 .font(.system(size: 20, weight: .medium))

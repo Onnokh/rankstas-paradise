@@ -93,19 +93,17 @@ private struct ScreenRailButton: View {
     let isActive: Bool
     let action: () -> Void
 
-    @State private var isHovering = false
-
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 17, weight: .medium))
                 .foregroundStyle(isActive ? .primary : .secondary)
                 .frame(width: ScreenRail.iconSize, height: ScreenRail.iconSize)
-                // The active screen is a raised surface with a hairline, like a peek card;
-                // a hovered one only hints.
+                // The active screen is a raised surface with a hairline, like a peek card.
+                // The hover and the press come from the button style, the same as everywhere.
                 .background(
                     RoundedRectangle(cornerRadius: PeekLayout.cardCornerRadius)
-                        .fill(isActive ? Palette.raised : .primary.opacity(isHovering ? 0.06 : 0))
+                        .fill(isActive ? Palette.raised : .clear)
                 )
                 .overlay {
                     if isActive {
@@ -122,8 +120,7 @@ private struct ScreenRailButton: View {
                 }
                 .contentShape(.rect)
         }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
+        .clickableSurface(cornerRadius: PeekLayout.cardCornerRadius)
         .help(title)
         .accessibilityLabel(title)
         .accessibilityAddTraits(isActive ? .isSelected : [])

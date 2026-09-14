@@ -129,8 +129,6 @@ private struct SettingsSidebarItem: View {
     let isActive: Bool
     let action: () -> Void
 
-    @State private var isHovering = false
-
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
@@ -158,7 +156,7 @@ private struct SettingsSidebarItem: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: SettingsLayout.controlRadius)
-                    .fill(.primary.opacity(isActive ? 0.09 : isHovering ? 0.05 : 0))
+                    .fill(isActive ? Palette.selected : .clear)
             )
             // The headband stands in the gap between the window edge and the row, the
             // way it marks the active row in the guide's nav and in the rail.
@@ -169,8 +167,7 @@ private struct SettingsSidebarItem: View {
             }
             .contentShape(.rect)
         }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
+        .clickableSurface(cornerRadius: SettingsLayout.controlRadius)
         .accessibilityAddTraits(isActive ? .isSelected : [])
         .animation(.snappy(duration: 0.2), value: isActive)
     }

@@ -39,6 +39,23 @@ enum Palette {
     /// The hairline that separates one surface from the next.
     static let line = adaptive(dark: 0x262626, light: 0xDCDFDE)
 
+    // MARK: Interaction
+
+    /// The three answers a clickable surface gives, one value each.
+    ///
+    /// They are hierarchical on purpose — held is firmer than hovered — so a reader learns
+    /// one fill and reads all three. `.primary` steps down from the window's own foreground,
+    /// so they follow the appearance without a light and a dark value of their own.
+
+    /// Under the pointer.
+    static let hover = Color.primary.opacity(0.06)
+    /// Held down. The HIG asks every custom button for a press state by name, and a hover
+    /// alone cannot say that a click landed.
+    static let pressed = Color.primary.opacity(0.12)
+    /// The chosen one of a set. A different question from hover, so a different fill: a row
+    /// stays chosen when the pointer leaves it.
+    static let selected = Color.primary.opacity(0.09)
+
     // MARK: Text
 
     /// Body text, set at the root of a window. A neutral near-white in dark, so the greys it
