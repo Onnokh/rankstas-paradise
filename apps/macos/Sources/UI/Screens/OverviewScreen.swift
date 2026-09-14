@@ -20,6 +20,10 @@ struct OverviewScreen: View {
     let onRefresh: () -> Void
 
     @Environment(\.isTabPreview) private var isPreview
+    #if DEBUG
+    /// PROTOTYPE: which shape the page is drawn in. Nil outside the prototype's host.
+    @Environment(DashboardPrototype.self) private var prototype: DashboardPrototype?
+    #endif
 
     /// Nothing loaded yet and nothing to report: the body itself shows a spinner.
     private var isFirstLoad: Bool {
@@ -84,6 +88,8 @@ struct OverviewScreen: View {
         } else if let errorMessage = model.errorMessage, model.sites.isEmpty {
             ErrorView(message: errorMessage, retry: onRefresh)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let prototypeBody {
+            prototypeBody
         } else {
             // The same page as a site's tab: one reading column, centred, header at the top,
             // the numbers under it, the cards below, the footer last.
@@ -117,6 +123,29 @@ struct OverviewScreen: View {
             }
             .readingColumn()
         }
+    }
+
+    /// PROTOTYPE: the page in the chosen variant, or nil for the shipped page.
+    private var prototypeBody: DashboardPrototypeBody? {
+        #if DEBUG
+        guard let prototype else { return nil }
+        return DashboardPrototypeBody(
+            prototype: prototype,
+            projects: ProtoSeries.projects(
+                overviews: model.overviews,
+                series: history.series,
+                rankings: rankings,
+                period: state.period
+            ),
+            period: state.period,
+            icon: { favicons.image(for: $0) },
+            onOpen: onOpenSite,
+            header: AnyView(header),
+            footer: AnyView(footer)
+        )
+        #else
+        return nil
+        #endif
     }
 
     /// One row, centred, like a site's header: the mark and the name; at the trailing edge
