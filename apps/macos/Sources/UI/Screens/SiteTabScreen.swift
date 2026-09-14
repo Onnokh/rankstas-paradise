@@ -513,7 +513,7 @@ private struct HourTooltip: View {
 }
 
 /// Today's pages by visits, in the Visits card's place: the list-as-chart of the ranking
-/// cards, lilac like every visits figure.
+/// cards, acid like every visits figure.
 private struct PagesTodayCard: View {
     let pages: [TodayPage]
 
