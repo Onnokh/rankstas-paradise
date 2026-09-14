@@ -1,4 +1,6 @@
 #if DEBUG
+import AppKit
+import Charts
 import SwiftUI
 
 // PROTOTYPE — throwaway. Not for main. See `DashboardPrototype` for the question.
@@ -773,6 +775,380 @@ struct LeagueVariant: View {
         ProtoFigure(value: value, move: move, tint: tint)
             .frame(width: Self.cellWidth, alignment: .trailing)
             .padding(.trailing, 14)
+    }
+}
+
+// MARK: - H2 / H3 — Broken out
+
+/// Round two of H. Three things change from round one.
+///
+/// The chart leaves its card and runs the pane's full width, the way a site's dashboard
+/// draws its own: the strip and the projects keep the reading column, the plot reaches both
+/// edges, and its end dates are set outside the plot at the column inset. A card around a
+/// chart makes the chart an item on the page; without one it is the page's floor.
+///
+/// The strip becomes the switch. Taking the card away took the corner the word switch sat
+/// in, and the strip is the better place anyway: Clicks, Visits and Sales are the three
+/// figures a run can be drawn for, so the chosen one carries the headband — the style
+/// guide's mark for an active item, the same mark the period words carry — and the chart
+/// draws it. Impressions, the rate, the position and the count of projects are facts with no
+/// run behind them, and stay inert.
+///
+/// And a tile says no verdict. "Growing" and "Flat" are the page's reading of a percentage
+/// the reader can read themselves, four times over; what is left is the name, the
+/// percentage, the count it came from, and the shape.
+struct BreakoutVariant: View {
+    enum Tiles {
+        /// One card per project, side by side.
+        case cards
+        /// One container, the projects divided by hairlines.
+        case oneContainer
+    }
+
+    let projects: [ProtoProject]
+    let period: Period
+    @Binding var metric: ProtoMetric
+    let tiles: Tiles
+    /// Whether the switch says so in words at the strip's end, beside the figures that can
+    /// be chosen, for a reader who never thinks to click a number.
+    var showsWordSwitch = false
+    let icon: (Site.ID) -> Image?
+    let onOpen: (Site.ID) -> Void
+
+    /// Which choosable figure the pointer is over, so a figure can say it is choosable
+    /// before it is chosen.
+    @State private var pointedAt: ProtoMetric?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 14) {
+                if showsWordSwitch {
+                    HStack {
+                        Text("Draw")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        WordSwitch(options: ProtoMetric.allCases, selection: $metric, label: \.label)
+                        Spacer()
+                    }
+                }
+                strip
+            }
+                .column()
+
+            // The breakout: no `.column()`, no card. See `TrendChart` on the site dashboard.
+            chart
+                .padding(.top, 36)
+
+            projectTiles
+                .column()
+                .padding(.top, 36)
+        }
+    }
+
+    // MARK: The strip, which is also the switch
+
+    private var strip: some View {
+        let comparison = OverviewGlance.total(projects.map(\.glance))
+        let stats = comparison.currentStats
+        let visits = ProtoSeries.growth(projects, metric: .visits)
+        let sales = ProtoSeries.growth(projects, metric: .sales)
+        let clicks = ProtoSeries.growth(projects, metric: .clicks)
+        return HStack(alignment: .top, spacing: 0) {
+            choice(.clicks, title: "Clicks", value: GlanceFigure.count(clicks?.current ?? 0), growth: clicks)
+            gap
+            fact(
+                title: "Impressions",
+                value: GlanceFigure.count(stats.impressions),
+                change: comparison.impressions.map { Trend.signed($0.delta, fractionDigits: 0) },
+                tint: comparison.impressions.map { GlanceFigure.tint($0.delta) },
+                dot: Palette.amber
+            )
+            gap
+            fact(
+                title: "Click-through rate",
+                value: GlanceFigure.rate(stats.ctr),
+                change: comparison.ctrPointsDelta.map { Trend.signed($0, fractionDigits: 1) + "pp" },
+                tint: comparison.ctrPointsDelta.map { GlanceFigure.tint($0) }
+            )
+            gap
+            fact(
+                title: "Position",
+                value: GlanceFigure.position(stats.position),
+                change: comparison.positionDelta.map { Trend.signed($0, fractionDigits: 1) },
+                tint: comparison.positionDelta.map { GlanceFigure.tint($0, lowerIsBetter: true) }
+            )
+            gap
+            Rectangle()
+                .fill(Palette.line)
+                .frame(width: 1, height: 48)
+            gap
+            choice(.visits, title: "Visits", value: visits.map { GlanceFigure.count($0.current) } ?? "—", growth: visits)
+            gap
+            choice(
+                .sales,
+                title: "Sales",
+                value: sales.map { Money.format($0.current, currency: ProtoSeries.currency(projects)) } ?? "—",
+                growth: sales
+            )
+            gap
+            fact(title: "Projects", value: String(projects.count))
+        }
+        .animation(.snappy(duration: 0.2), value: metric)
+    }
+
+    /// A figure the chart can be drawn for: it takes the headband when it is the one drawn.
+    /// Sales moves in money, the other two in counts, so the move is written the way its own
+    /// figure is written.
+    ///
+    /// A figure that can be chosen has to look choosable while nothing is pointing at it, or
+    /// the switch is a secret: the first cut lit the headband on the chosen figure only, and
+    /// the other two were indistinguishable from the inert ones beside them. So the three
+    /// carry an empty slot the headband can fill — a hairline at rest, acid when chosen, half
+    /// lit under the pointer — and the pointer itself turns into a hand.
+    private func choice(_ source: ProtoMetric, title: String, value: String, growth: Growth?) -> some View {
+        let isActive = metric == source
+        return Button {
+            metric = source
+        } label: {
+            Metric(
+                title: title,
+                value: value,
+                // The same absolute move the shipped strip shows, so the strip keeps reading
+                // as one row written one way; the percentage belongs to the project tiles.
+                change: growth.map { growth in
+                    guard let previous = growth.previous else { return "new" }
+                    let move = growth.current - previous
+                    return source == .sales
+                        ? Money.signed(move, currency: ProtoSeries.currency(projects))
+                        : Trend.signed(move, fractionDigits: 0)
+                },
+                tint: growth.flatMap { GrowthReading.tint($0) },
+                dot: source.color
+            )
+            .padding(.bottom, 8)
+            .overlay(alignment: .bottomLeading) {
+                Headband()
+                    .fill(isActive ? Palette.acid : (pointedAt == source ? Palette.acid.opacity(0.5) : Palette.line))
+                    .frame(width: 28, height: 3)
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { inside in
+            pointedAt = inside ? source : (pointedAt == source ? nil : pointedAt)
+            if inside {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .help("Draw \(title.lowercased()) in the chart")
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+    }
+
+    /// A figure with no run behind it: shown, never chosen.
+    private func fact(title: String, value: String, change: String? = nil, tint: Color? = nil, dot: Color? = nil) -> some View {
+        Metric(title: title, value: value, change: change, tint: tint, dot: dot)
+            .padding(.bottom, 6)
+    }
+
+    private var gap: some View {
+        Spacer(minLength: 24)
+    }
+
+    // MARK: The chart, which is the pane
+
+    private var chart: some View {
+        let run = ProtoSeries.total(projects, metric: metric)
+        return VStack(spacing: 6) {
+            ProtoBreakoutChart(run: run, color: metric.color, format: label)
+                .frame(height: 200)
+            HStack {
+                if let first = run.current.first, let last = run.current.last {
+                    Text(first.date, format: .dateTime.day().month(.abbreviated))
+                    Spacer()
+                    Text(last.date, format: .dateTime.day().month(.abbreviated))
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, SiteTabScreen.columnInset)
+        }
+    }
+
+    private func label(_ value: Double) -> String {
+        metric == .sales
+            ? Money.format(value * 100, currency: ProtoSeries.currency(projects))
+            : GlanceFigure.count(value)
+    }
+
+    // MARK: The projects
+
+    @ViewBuilder
+    private var projectTiles: some View {
+        switch tiles {
+        case .cards:
+            ProtoTileGrid(projects: projects, perRow: 4) { project in
+                tile(project)
+                    .padding(14)
+                    .cardSurface(cornerRadius: 12)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) { onOpen(project.id) }
+            }
+        case .oneContainer:
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(Array(projects.enumerated()), id: \.element.id) { index, project in
+                    if index > 0 {
+                        Rectangle()
+                            .fill(Palette.line)
+                            .frame(width: 1)
+                            .frame(maxHeight: .infinity)
+                    }
+                    tile(project)
+                        .padding(16)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) { onOpen(project.id) }
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .cardSurface(cornerRadius: 12)
+        }
+    }
+
+    /// A project, with no verdict on it: the name, the percentage in its colour, the count it
+    /// came from, and the shape of the period against the one before.
+    private func tile(_ project: ProtoProject) -> some View {
+        let growth = project.growth(metric)
+        return VStack(alignment: .leading, spacing: 8) {
+            ProtoSiteName(site: project.site, icon: icon(project.id), font: .subheadline.weight(.semibold), markSize: 14)
+            Text(growth.map { GrowthReading.label($0) } ?? "—")
+                .font(.system(size: 20, weight: .medium))
+                .monospacedDigit()
+                .foregroundStyle(growth.flatMap { GrowthReading.tint($0) } ?? .primary)
+            Text(growth == nil ? "No \(metric.label.lowercased())" : "\(project.figure(metric)) \(metric.unit)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            ProtoSpark(run: project.run(metric), color: metric.color)
+                .frame(height: 30)
+                .padding(.top, 2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// The hero chart as the pane's floor: the period as a line over a fill light enough to read
+/// as ground rather than as a block, the period before as a grey line behind it, one tick
+/// under each day, and the baseline as the only rule. Its own view because the card's chart
+/// (`ComparisonChart`) is drawn for a 36-point picture: at the pane's full width and 200
+/// points tall, that fill fills a third of the page.
+struct ProtoBreakoutChart: View {
+    let run: ComparisonRun
+    let color: Color
+    var format: (Double) -> String = { $0.formatted(.number.precision(.fractionLength(0))) }
+
+    @Environment(\.isTabPreview) private var isPreview
+    @State private var hovered: Int?
+
+    var body: some View {
+        GeometryReader { geometry in
+            let count = max(run.current.count, 1)
+            let slot = geometry.size.width / CGFloat(count)
+            chart
+                .contentShape(Rectangle())
+                .onContinuousHover { phase in
+                    guard !isPreview else { return }
+                    switch phase {
+                    case .active(let location):
+                        hovered = min(max(Int(location.x / slot), 0), count - 1)
+                    case .ended:
+                        hovered = nil
+                    }
+                }
+                .overlay(alignment: .topLeading) {
+                    if !run.current.isEmpty {
+                        let index = min(hovered ?? 0, run.current.count - 1)
+                        let centre = slot * (CGFloat(index) + 0.5)
+                        label(index)
+                            .fixedSize()
+                            .alignmentGuide(.leading) { label in
+                                -min(max(centre - label.width / 2, 0), max(geometry.size.width - label.width, 0))
+                            }
+                            .opacity(hovered == nil ? 0 : 1)
+                            .allowsHitTesting(false)
+                    }
+                }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private func label(_ index: Int) -> some View {
+        HStack(spacing: 6) {
+            Text(run.current[index].date.formatted(.dateTime.day().month(.abbreviated)))
+                .foregroundStyle(.secondary)
+            Text(format(run.current[index].measured))
+                .fontWeight(.semibold)
+            if index < run.previousMeasured.count {
+                Text(run.previousIsAverage
+                    ? "was \(format(run.previousMeasured[index])) on average"
+                    : "was \(format(run.previousMeasured[index]))")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption)
+        .monospacedDigit()
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.regularMaterial, in: .rect(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
+        .padding(.leading, SiteTabScreen.columnInset)
+        .padding(.top, 8)
+    }
+
+    private var chart: some View {
+        Chart {
+            ForEach(Array(run.previous.enumerated()), id: \.offset) { index, value in
+                LineMark(x: .value("Point", index), y: .value("Was", value), series: .value("Run", "was"))
+                    .foregroundStyle(Color.secondary.opacity(0.6))
+                    .lineStyle(StrokeStyle(lineWidth: 1.25, lineJoin: .round, dash: run.previousIsAverage ? [3, 3] : []))
+            }
+            .interpolationMethod(.monotone)
+
+            ForEach(Array(run.current.enumerated()), id: \.offset) { index, point in
+                AreaMark(x: .value("Point", index), y: .value("Now", point.value), series: .value("Run", "now"))
+                    .foregroundStyle(
+                        LinearGradient(colors: [color.opacity(0.16), color.opacity(0)], startPoint: .top, endPoint: .bottom)
+                    )
+                LineMark(x: .value("Point", index), y: .value("Now", point.value), series: .value("Run", "now"))
+                    .foregroundStyle(color)
+                    .lineStyle(StrokeStyle(lineWidth: 1.75, lineJoin: .round))
+            }
+            .interpolationMethod(.monotone)
+
+            if let hovered, hovered < run.current.count {
+                RuleMark(x: .value("Point", hovered))
+                    .foregroundStyle(.secondary.opacity(0.6))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                PointMark(x: .value("Point", hovered), y: .value("Now", run.current[hovered].value))
+                    .foregroundStyle(color)
+                    .symbolSize(70)
+            }
+        }
+        .chartYScale(domain: .automatic(includesZero: true))
+        // The baseline is the only horizontal rule, as on a site dashboard.
+        .chartYAxis {
+            AxisMarks(values: [0]) { _ in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 1))
+                    .foregroundStyle(Palette.line)
+            }
+        }
+        // One dot under each point; the end dates are set outside the plot.
+        .chartXAxis {
+            AxisMarks(values: Array(0..<max(run.current.count, 1))) { _ in
+                AxisTick(centered: false, length: 2, stroke: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .foregroundStyle(Palette.line)
+            }
+        }
+        .chartPlotStyle { plot in plot.padding(.top, 8) }
     }
 }
 #endif

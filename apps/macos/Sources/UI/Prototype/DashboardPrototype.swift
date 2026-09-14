@@ -27,6 +27,25 @@ import SwiftUI
 //       figures right-aligned and monospaced, the fleet as a foot row. The reference's
 //       transactions table, read as a scoreboard.
 //
+// (Round one's H was chosen: "I really like H, but I believe the cards are maybe a bit over
+// descriptive. Flat, Growing, etc. And could we maybe do something like the detail pages with
+// the container breakout?")
+//
+// Round two answers both. The breakout is the site dashboard's own move: the strip and the
+// cards keep the 880pt reading column and the chart alone runs the pane's full width, with no
+// card under it and its end dates set outside the plot — "the plot is the pane" (see
+// `TrendChart`). Taking the card off the chart also takes away the corner the source switch
+// sat in, which turns out to be the better answer: the strip becomes the switch. Clicks,
+// Visits and Sales carry the headband when chosen, the way every other choice in the app is
+// marked, and the chart draws whichever is lit.
+//
+//   H1 — Round one again, for comparison: the chart in a card inside the column, the word
+//        switch in its corner, the tiles carrying "Growing" and "Flat".
+//   H2 — Broken out: the strip is the switch, the chart is the pane's floor, and a tile is a
+//        name, a percentage, a count and a spark — no verdict.
+//   H3 — The same, and the four projects share one container divided by hairlines, to ask
+//        whether a project needs a box of its own once the chart is the page's floor.
+//
 // Every variant reads `ProtoProject` — the shipped `ProjectTrajectory` beside the strip's
 // `SiteGlance`, which is what carries impressions and position. Nothing here fetches, and
 // nothing here is meant to survive: the winner gets rewritten into `OverviewScreen`.
@@ -39,26 +58,27 @@ import SwiftUI
 @Observable
 final class DashboardPrototype {
     enum Variant: String, CaseIterable, Identifiable {
-        // Declaration order is the order the floating bar cycles through.
-        case hero, mosaic, calendar, league
+        // Declaration order is the order the floating bar cycles through. Round one's other
+        // three shapes are kept in the file and out of the bar; see the commit before this.
+        case hero, heroBreakout, heroBreakoutBare, heroBreakoutWords
 
         var id: String { rawValue }
 
         var key: String {
             switch self {
-            case .hero: "H"
-            case .mosaic: "M"
-            case .calendar: "C"
-            case .league: "L"
+            case .hero: "H1"
+            case .heroBreakout: "H2"
+            case .heroBreakoutBare: "H3"
+            case .heroBreakoutWords: "H4"
             }
         }
 
         var name: String {
             switch self {
-            case .hero: "Hero — the fleet's chart leads, the projects are tiles under it"
-            case .mosaic: "Mosaic — one tile per source, the sites ranked inside it"
-            case .calendar: "Calendar — one cell per day per site, tinted by the day"
-            case .league: "League — one table, fixed columns, the fleet as a foot row"
+            case .hero: "Round one — the chart in a card, the tiles with their verdicts"
+            case .heroBreakout: "Broken out — the strip is the switch, the chart is the pane"
+            case .heroBreakoutBare: "Broken out, one container — the projects share a card"
+            case .heroBreakoutWords: "Broken out, with the switch said in words over the strip"
             }
         }
     }
@@ -325,12 +345,12 @@ struct DashboardPrototypeBody: View {
             switch prototype.variant {
             case .hero:
                 HeroVariant(projects: projects, period: period, metric: $prototype.metric, icon: icon, onOpen: onOpen)
-            case .mosaic:
-                MosaicVariant(projects: projects, period: period, icon: icon, onOpen: onOpen)
-            case .calendar:
-                CalendarVariant(projects: projects, period: period, metric: $prototype.metric, icon: icon, onOpen: onOpen)
-            case .league:
-                LeagueVariant(projects: projects, period: period, icon: icon, onOpen: onOpen)
+            case .heroBreakout:
+                BreakoutVariant(projects: projects, period: period, metric: $prototype.metric, tiles: .cards, icon: icon, onOpen: onOpen)
+            case .heroBreakoutBare:
+                BreakoutVariant(projects: projects, period: period, metric: $prototype.metric, tiles: .oneContainer, icon: icon, onOpen: onOpen)
+            case .heroBreakoutWords:
+                BreakoutVariant(projects: projects, period: period, metric: $prototype.metric, tiles: .oneContainer, showsWordSwitch: true, icon: icon, onOpen: onOpen)
             }
 
             footer

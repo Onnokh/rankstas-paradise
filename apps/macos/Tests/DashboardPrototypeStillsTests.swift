@@ -47,7 +47,7 @@ final class DashboardPrototypeStillsTests: XCTestCase {
         let directory = URL(fileURLWithPath: "/tmp/dashboard-prototype")
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        for (variant, metric) in [(DashboardPrototype.Variant.hero, ProtoMetric.sales), (.calendar, .visits)] {
+        for (variant, metric) in [(DashboardPrototype.Variant.heroBreakout, ProtoMetric.sales), (.heroBreakout, .visits)] {
             let prototype = DashboardPrototype()
             prototype.variant = variant
             prototype.metric = metric
@@ -92,9 +92,9 @@ final class DashboardPrototypeStillsTests: XCTestCase {
     private static func height(_ variant: DashboardPrototype.Variant) -> CGFloat {
         switch variant {
         case .hero: 860
-        case .mosaic: 900
-        case .calendar: 620
-        case .league: 540
+        case .heroBreakout: 820
+        case .heroBreakoutBare: 800
+        case .heroBreakoutWords: 840
         }
     }
 
