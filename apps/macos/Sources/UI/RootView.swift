@@ -144,7 +144,7 @@ struct RootView: View {
                     .accessibilityHidden(true)
                     .offset(x: pane.minX + railWidth, y: pane.minY)
 
-                TabBar(layout: layout, onPeek: advancePeek)
+                TabBar(layout: layout, tab: workspace.activeTabID, model: model, live: live, onPeek: advancePeek)
 
                 // The tabs themselves. Always present: a closed peek is just pills.
                 PeekOverlay(

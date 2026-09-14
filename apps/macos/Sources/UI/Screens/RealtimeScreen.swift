@@ -133,7 +133,7 @@ struct RealtimeScreen: View {
                 .column()
                 .padding(.top, 20)
 
-                footer(now: now)
+                footer
                     .column()
                     .padding(.top, 24)
                     .padding(.bottom, Page.columnInset)
@@ -177,7 +177,9 @@ struct RealtimeScreen: View {
         }
     }
 
-    private func footer(now: Date) -> some View {
+    /// What is wrong, when something is. How current the page is belongs to the tab bar,
+    /// which says it once for every page — see `Freshness`.
+    private var footer: some View {
         HStack {
             if let error = model.errorMessage ?? live.errors.values.first ?? live.feedErrors.values.first {
                 Text(error)
@@ -185,14 +187,6 @@ struct RealtimeScreen: View {
                     .lineLimit(1)
             }
             Spacer()
-            Text("\(model.loadedSiteCount) of \(model.sites.count) sites loaded")
-            if model.isCached {
-                Text("Cached")
-            }
-            if let feedFetchedAt {
-                Text("Feed updated \(RelativeAge.label(from: feedFetchedAt, to: now) ?? "at \(feedFetchedAt.formatted(date: .omitted, time: .shortened))")")
-                    .help(feedFetchedAt.formatted(date: .abbreviated, time: .standard))
-            }
         }
         .font(.callout)
         .foregroundStyle(.secondary)

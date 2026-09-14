@@ -40,10 +40,6 @@ final class OverviewModel {
         }
     }
 
-    var loadedSiteCount: Int {
-        sites.lazy.filter { self.dashboards[$0.id] != nil }.count
-    }
-
     func start() async {
         guard !hasStarted else { return }
         hasStarted = true

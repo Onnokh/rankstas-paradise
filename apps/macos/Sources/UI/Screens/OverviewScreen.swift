@@ -55,11 +55,6 @@ struct OverviewScreen: View {
         }
     }
 
-    /// When the newest dashboard was generated, over every site: the footer's figure.
-    private var generatedAt: Date? {
-        model.overviews.compactMap { SiteTabScreen.instant($0.dashboard?.generatedAt) }.max()
-    }
-
     var body: some View {
         // The page frame every screen wears — see `PageFrame`.
         PageFrame {
@@ -159,6 +154,8 @@ struct OverviewScreen: View {
         model.isRefreshing || !history.refreshing.isEmpty || !rankings.loading.isEmpty
     }
 
+    /// What is wrong, when something is. How current the page is belongs to the tab bar,
+    /// which says it once for every page — see `Freshness`.
     private var footer: some View {
         HStack {
             if let error = model.errorMessage ?? history.errors.values.first ?? rankings.errors.values.first {
@@ -167,18 +164,6 @@ struct OverviewScreen: View {
                     .lineLimit(1)
             }
             Spacer()
-            Text("\(model.loadedSiteCount) of \(model.sites.count) sites loaded")
-            if model.isCached {
-                Text("Cached")
-            }
-            if let generatedAt {
-                // Ticks from a coarse timeline, not SwiftUI's relative date text: that style
-                // asks for a new frame continuously and costs a fifth of a core while idle.
-                TimelineView(.periodic(from: .now, by: 15)) { context in
-                    Text("Updated \(RelativeAge.label(from: generatedAt, to: context.date) ?? "at \(generatedAt.formatted(date: .omitted, time: .shortened))")")
-                        .help(generatedAt.formatted(date: .abbreviated, time: .standard))
-                }
-            }
         }
         .font(.callout)
         .foregroundStyle(.secondary)

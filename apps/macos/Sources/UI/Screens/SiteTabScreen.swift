@@ -1672,6 +1672,8 @@ private struct SiteDashboard: View {
         }
     }
 
+    /// What is wrong, when something is. How current the screen is belongs to the tab bar,
+    /// which says it once for every page — see `Freshness`.
     private var footer: some View {
         HStack {
             if let error = history.errors[overview.id] ?? rankings.errors[overview.id] {
@@ -1680,14 +1682,6 @@ private struct SiteDashboard: View {
                     .lineLimit(1)
             }
             Spacer()
-            if let generated = SiteTabScreen.instant(overview.dashboard?.generatedAt) {
-                // Ticks from a coarse timeline, not SwiftUI's relative date text: that style
-                // asks for a new frame continuously and costs a fifth of a core while idle.
-                TimelineView(.periodic(from: .now, by: 15)) { context in
-                    Text("Updated \(RelativeAge.label(from: generated, to: context.date) ?? "at \(generated.formatted(date: .omitted, time: .shortened))")")
-                        .help(generated.formatted(date: .abbreviated, time: .standard))
-                }
-            }
         }
         .font(.callout)
         .foregroundStyle(.secondary)
