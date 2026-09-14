@@ -6,7 +6,7 @@ import Foundation
 /// from the same source as the clicks and never answer a different question about a project;
 /// the plan has no daily run at all. So these three are what the page's chart offers.
 enum OverviewSource: String, CaseIterable, Identifiable, Sendable {
-    case clicks, visits, sales
+    case clicks, impressions, ctr, visits, sales
 
     var id: String { rawValue }
 
@@ -14,6 +14,8 @@ enum OverviewSource: String, CaseIterable, Identifiable, Sendable {
     var label: String {
         switch self {
         case .clicks: "Clicks"
+        case .impressions: "Impressions"
+        case .ctr: "Click-through rate"
         case .visits: "Visits"
         case .sales: "Sales"
         }
@@ -23,6 +25,8 @@ enum OverviewSource: String, CaseIterable, Identifiable, Sendable {
     var unit: String {
         switch self {
         case .clicks: "clicks"
+        case .impressions: "impressions"
+        case .ctr: ""
         case .visits: "visits"
         case .sales: "sold"
         }
@@ -30,6 +34,12 @@ enum OverviewSource: String, CaseIterable, Identifiable, Sendable {
 
     /// Whether the figure is money, and so written in a currency rather than counted.
     var isMoney: Bool { self == .sales }
+
+    /// Whether the figure is a rate. A rate is written in percent, moves in percentage
+    /// points, is never added across projects or days (see `Rate`), and is drawn on its own
+    /// range rather than from zero: a rate that moves between 8 and 9 percent would be a flat
+    /// line over a floor of nothing.
+    var isRate: Bool { self == .ctr }
 }
 
 extension ProjectTrajectory {
@@ -38,6 +48,8 @@ extension ProjectTrajectory {
     func growth(_ source: OverviewSource) -> Growth? {
         switch source {
         case .clicks: clicks
+        case .impressions: impressions
+        case .ctr: ctr
         case .visits: visits
         case .sales: sales?.growth
         }
@@ -48,6 +60,8 @@ extension ProjectTrajectory {
     func run(_ source: OverviewSource) -> ComparisonRun {
         switch source {
         case .clicks: clicksRun
+        case .impressions: impressionsRun
+        case .ctr: ctrRun
         case .visits: visitsRun
         case .sales: sales?.run ?? ComparisonRun(current: [], previous: [], previousIsAverage: false)
         }
@@ -67,6 +81,12 @@ extension ProjectTrajectory {
 struct FleetTrajectory: Equatable {
     let clicks: Growth
     let clicksRun: ComparisonRun
+    let impressions: Growth
+    let impressionsRun: ComparisonRun
+    /// The fleet's clicks over the fleet's impressions — never the mean of the projects'
+    /// rates. See `Rate`.
+    let ctr: Growth?
+    let ctrRun: ComparisonRun
     /// Nil when no project has an analytics provider with anything to show.
     let visits: Growth?
     let visitsRun: ComparisonRun
@@ -79,9 +99,17 @@ struct FleetTrajectory: Equatable {
     let currency: String?
 
     static func make(_ projects: [ProjectTrajectory]) -> FleetTrajectory {
-        FleetTrajectory(
-            clicks: total(projects, source: .clicks) ?? Growth(current: 0, previous: nil),
-            clicksRun: ComparisonRun.sum(projects.map { $0.run(.clicks) }),
+        let clicks = total(projects, source: .clicks) ?? Growth(current: 0, previous: nil)
+        let impressions = total(projects, source: .impressions) ?? Growth(current: 0, previous: nil)
+        let clicksRun = ComparisonRun.sum(projects.map { $0.run(.clicks) })
+        let impressionsRun = ComparisonRun.sum(projects.map { $0.run(.impressions) })
+        return FleetTrajectory(
+            clicks: clicks,
+            clicksRun: clicksRun,
+            impressions: impressions,
+            impressionsRun: impressionsRun,
+            ctr: Rate.over(clicks, impressions),
+            ctrRun: ComparisonRun.rate(of: clicksRun, over: impressionsRun),
             visits: total(projects, source: .visits),
             visitsRun: ComparisonRun.sum(projects.map { $0.run(.visits) }),
             sales: total(projects, source: .sales),
@@ -95,6 +123,8 @@ struct FleetTrajectory: Equatable {
     func growth(_ source: OverviewSource) -> Growth? {
         switch source {
         case .clicks: clicks
+        case .impressions: impressions
+        case .ctr: ctr
         case .visits: visits
         case .sales: sales
         }
@@ -103,6 +133,8 @@ struct FleetTrajectory: Equatable {
     func run(_ source: OverviewSource) -> ComparisonRun {
         switch source {
         case .clicks: clicksRun
+        case .impressions: impressionsRun
+        case .ctr: ctrRun
         case .visits: visitsRun
         case .sales: salesRun
         }
@@ -112,6 +144,7 @@ struct FleetTrajectory: Equatable {
     /// is nil when no project has one, so a fleet that only started counting reads as "no
     /// comparison yet" rather than as growth from nothing.
     private static func total(_ projects: [ProjectTrajectory], source: OverviewSource) -> Growth? {
+        assert(!source.isRate, "A rate is derived from its two counts, never added. See `Rate`.")
         let growths = projects.compactMap { $0.growth(source) }
         guard !growths.isEmpty else { return nil }
         let earlier = growths.compactMap(\.previous)
