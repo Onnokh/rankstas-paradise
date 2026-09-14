@@ -29,8 +29,10 @@ struct ScreenRail: View {
     static let width: CGFloat = iconSize + PeekLayout.contentInset
     /// The app icon is drawn larger than a symbol: it is a sign, not a control.
     static let markSize: CGFloat = 30
-    /// The Overview and the Realtime wear their headers' own symbols.
-    static let overviewSymbol = "square.grid.2x2"
+    /// The Overview and the Realtime wear their headers' own symbols. The Overview is the
+    /// home of the whole fleet, not a grid of projects: the grid belongs to the peek button,
+    /// and two controls that do different things must not wear the same mark.
+    static let overviewSymbol = "house"
     static let realtimeSymbol = "dot.radiowaves.left.and.right"
 
     /// The room above the app icon and below the account icon: what centres a slot on the header row.
