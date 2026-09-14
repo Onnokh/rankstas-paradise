@@ -447,19 +447,18 @@ private struct FleetChart: View {
         .accessibilityHidden(true)
     }
 
-    /// The point under the pointer: its day, the value now, and the value the period before.
-    /// The values the day measured, not the mean a smoothed line is drawn at — a reader
-    /// pointing at a day asks what happened that day. See `ComparisonRun.Point.measured`.
+    /// The point under the pointer: its day, what the line is at, and what the period before
+    /// was on the same day. The numbers are the line's own — see `ComparisonRun`.
     private func label(_ index: Int) -> some View {
         HStack(spacing: 6) {
             Text(run.current[index].date.formatted(.dateTime.day().month(.abbreviated)))
                 .foregroundStyle(.secondary)
-            Text(figure(run.current[index].measured))
+            Text(figure(run.current[index].value))
                 .fontWeight(.semibold)
-            if index < run.previousMeasured.count {
+            if index < run.previous.count {
                 Text(run.previousIsAverage
-                    ? "was \(figure(run.previousMeasured[index])) on average"
-                    : "was \(figure(run.previousMeasured[index]))")
+                    ? "was \(figure(run.previous[index])) on average"
+                    : "was \(figure(run.previous[index]))")
                     .foregroundStyle(.secondary)
             }
         }

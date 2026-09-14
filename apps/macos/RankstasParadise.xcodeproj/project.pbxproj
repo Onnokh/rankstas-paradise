@@ -24,7 +24,6 @@
 		178BC0BF1D02C8E160E91749 /* FeedArrivals.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76FE0625069CF6A21AD182A2 /* FeedArrivals.swift */; };
 		1A8C3F7BD958EF5188E6A93E /* PlanningPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 642CA8DCFC916FDF71942E90 /* PlanningPreferencesTests.swift */; };
 		1CA76DD10EDFFCD39BA6D88F /* RankingStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15EAE1B69201C1D588D04C18 /* RankingStoreTests.swift */; };
-		208D5662AB7E9D0A386DF344 /* ComparisonChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9316440E7EBA87273ED27F1E /* ComparisonChart.swift */; };
 		209A04C43E5D10AFBDD28CFD /* TabScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B221BE06A0C0C969C69E053 /* TabScreen.swift */; };
 		20E8747A62A7D8ACACA52BD7 /* PeekLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1BE634789533BFD60C75EA7 /* PeekLayoutTests.swift */; };
 		224183F94A9149A58563E39D /* FleetTrajectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD9D227208D8FD7A8BFE074 /* FleetTrajectory.swift */; };
@@ -160,7 +159,6 @@
 		896ED3DA371D99F7DA159667 /* FreshnessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreshnessTests.swift; sourceTree = "<group>"; };
 		8CC4E7D2903AC4572529357B /* PageParts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageParts.swift; sourceTree = "<group>"; };
 		8DFE9D4C0CC1386C304172AE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		9316440E7EBA87273ED27F1E /* ComparisonChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComparisonChart.swift; sourceTree = "<group>"; };
 		96296EA468BBA15D6D00024B /* FlowRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowRow.swift; sourceTree = "<group>"; };
 		994D1775BFC4DA2409EE542D /* PaneTravelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneTravelTests.swift; sourceTree = "<group>"; };
 		99C05C79BE3B70FF6B960794 /* FaviconFetcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaviconFetcherTests.swift; sourceTree = "<group>"; };
@@ -341,7 +339,6 @@
 		AAFDB717B48AE836DD8654CD /* UI */ = {
 			isa = PBXGroup;
 			children = (
-				9316440E7EBA87273ED27F1E /* ComparisonChart.swift */,
 				D0D2FCC32D7B23E7FD043B12 /* FilterMenu.swift */,
 				96296EA468BBA15D6D00024B /* FlowRow.swift */,
 				6DC0C05A557F466F42DC086B /* Headband.swift */,
@@ -524,7 +521,6 @@
 				408CF72772233B1537C487DD /* AcquisitionList.swift in Sources */,
 				FAE4BD7B14C40D4BEA9E92C6 /* AppSettingsPages.swift in Sources */,
 				4EB19731C7D64342D90C3020 /* CommandKeyMonitor.swift in Sources */,
-				208D5662AB7E9D0A386DF344 /* ComparisonChart.swift in Sources */,
 				0886B2DB9CA4455C65865FFC /* FaviconStore.swift in Sources */,
 				178BC0BF1D02C8E160E91749 /* FeedArrivals.swift in Sources */,
 				F72C8423F51C464E0038352D /* FilterMenu.swift in Sources */,
