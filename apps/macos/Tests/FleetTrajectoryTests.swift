@@ -77,6 +77,7 @@ final class FleetTrajectoryTests: XCTestCase {
     private func project(
         id: String,
         clicks: Growth,
+        impressions: Growth = Growth(current: 0, previous: nil),
         visits: Growth? = nil,
         sales: (Growth, String)? = nil
     ) -> ProjectTrajectory {
@@ -85,6 +86,10 @@ final class FleetTrajectoryTests: XCTestCase {
             errorMessage: nil,
             clicks: clicks,
             clicksRun: run([clicks.current]),
+            impressions: impressions,
+            impressionsRun: run([impressions.current]),
+            ctr: Rate.over(clicks, impressions),
+            ctrRun: ComparisonRun.rate(of: run([clicks.current]), over: run([impressions.current])),
             visits: visits,
             visitsRun: run(visits.map { [$0.current] } ?? []),
             sales: sales.map { growth, currency in
@@ -141,15 +146,66 @@ final class FleetTrajectoryTests: XCTestCase {
         XCTAssertEqual(fleet.sales?.current, 1_000)
     }
 
+    // MARK: The rate
+
+    /// The one that a sum would get wrong. A project with four impressions and one click has
+    /// a rate of 25%; the fleet's rate is its clicks over its impressions, so that project
+    /// moves it by the four impressions it brought, not by a quarter of the average.
+    func testTheFleetsRateIsItsClicksOverItsImpressionsAndNotAMeanOfRates() {
+        let fleet = FleetTrajectory.make([
+            project(id: "big", clicks: Growth(current: 80, previous: nil), impressions: Growth(current: 1_000, previous: nil)),
+            project(id: "tiny", clicks: Growth(current: 1, previous: nil), impressions: Growth(current: 4, previous: nil)),
+        ])
+        XCTAssertEqual(try XCTUnwrap(fleet.ctr).current, 81.0 / 1_004.0, accuracy: 0.000_01)
+        let meanOfRates = (80.0 / 1_000 + 1.0 / 4) / 2
+        XCTAssertNotEqual(try XCTUnwrap(fleet.ctr).current, meanOfRates, accuracy: 0.01)
+    }
+
+    func testTheRateOfThePeriodBeforeIsReadTheSameWay() {
+        let fleet = FleetTrajectory.make([
+            project(
+                id: "a",
+                clicks: Growth(current: 10, previous: 5),
+                impressions: Growth(current: 100, previous: 100)
+            ),
+        ])
+        XCTAssertEqual(try XCTUnwrap(fleet.ctr).previous ?? 0, 0.05, accuracy: 0.000_01)
+        XCTAssertEqual(Rate.points(try XCTUnwrap(fleet.ctr)) ?? 0, 5, accuracy: 0.000_01, "Five clicks more in a hundred is five points, not a doubling.")
+    }
+
+    /// Nothing shown is no rate. A zero would read as "nobody clicked", which is a different
+    /// fact from "nothing was there to click".
+    func testNothingShownHasNoRate() {
+        let fleet = FleetTrajectory.make([
+            project(id: "a", clicks: Growth(current: 0, previous: nil), impressions: Growth(current: 0, previous: nil)),
+        ])
+        XCTAssertNil(fleet.ctr)
+        XCTAssertNil(fleet.growth(.ctr))
+    }
+
+    func testARateRunDividesPointForPoint() {
+        let rate = ComparisonRun.rate(of: run([10, 20], previous: [5, 5]), over: run([100, 100], previous: [100, 50]))
+        XCTAssertEqual(rate.current.map(\.value), [0.1, 0.2])
+        XCTAssertEqual(rate.previous, [0.05, 0.1])
+    }
+
+    /// A point with nothing under it is drawn at zero rather than crashing or running off:
+    /// the day the site was shown to nobody has no rate to draw.
+    func testARatePointWithNothingUnderItIsZero() {
+        let rate = ComparisonRun.rate(of: run([3, 4]), over: run([0, 8]))
+        XCTAssertEqual(rate.current.map(\.value), [0, 0.5])
+    }
+
     /// The figure over the chart and the figures on the tiles are one arithmetic, so they
     /// cannot drift apart: the fleet is the projects added.
     func testTheFleetIsTheProjectsAdded() {
         let projects = [
-            project(id: "a", clicks: Growth(current: 10, previous: 5), visits: Growth(current: 100, previous: 80)),
-            project(id: "b", clicks: Growth(current: 7, previous: 9), visits: Growth(current: 20, previous: 10)),
+            project(id: "a", clicks: Growth(current: 10, previous: 5), impressions: Growth(current: 200, previous: 100), visits: Growth(current: 100, previous: 80)),
+            project(id: "b", clicks: Growth(current: 7, previous: 9), impressions: Growth(current: 80, previous: 90), visits: Growth(current: 20, previous: 10)),
         ]
         let fleet = FleetTrajectory.make(projects)
-        for source in OverviewSource.allCases {
+        // The rate is derived rather than added, and is checked on its own above.
+        for source in OverviewSource.allCases where !source.isRate {
             let tiles = projects.compactMap { $0.growth(source)?.current }.reduce(0, +)
             XCTAssertEqual(fleet.growth(source)?.current ?? 0, tiles, "\(source.label) disagrees with its tiles")
         }

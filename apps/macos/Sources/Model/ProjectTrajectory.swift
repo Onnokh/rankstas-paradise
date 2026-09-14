@@ -14,6 +14,12 @@ struct ProjectTrajectory: Identifiable, Equatable {
     let errorMessage: String?
     let clicks: Growth
     let clicksRun: ComparisonRun
+    let impressions: Growth
+    let impressionsRun: ComparisonRun
+    /// Clicks over impressions, over the whole period. Nil when nothing was shown at all:
+    /// a rate over no impressions is undefined, and a zero would read as "nobody clicked".
+    let ctr: Growth?
+    let ctrRun: ComparisonRun
     /// Nil for a site without an analytics provider, or one whose series has not synced.
     let visits: Growth?
     let visitsRun: ComparisonRun
@@ -65,6 +71,10 @@ struct ProjectTrajectory: Identifiable, Equatable {
             current: current.reduce(0) { $0 + $1.clicks },
             previous: previous.isEmpty ? nil : previous.reduce(0) { $0 + $1.clicks }
         )
+        let impressions = Growth(
+            current: current.reduce(0) { $0 + $1.impressions },
+            previous: previous.isEmpty ? nil : previous.reduce(0) { $0 + $1.impressions }
+        )
         let visitsComparison = VisitsComparison(days: days, window: window)
         let visits = visitsComparison.map { Growth(current: $0.current, previous: $0.previous) }
 
@@ -96,15 +106,26 @@ struct ProjectTrajectory: Identifiable, Equatable {
             )
         }
 
+        let clicksRun = ComparisonRun.make(
+            current: current.map { ($0.day, $0.clicks) },
+            previous: previous.map(\.clicks),
+            period: period
+        )
+        let impressionsRun = ComparisonRun.make(
+            current: current.map { ($0.day, $0.impressions) },
+            previous: previous.map(\.impressions),
+            period: period
+        )
+
         return ProjectTrajectory(
             site: overview.site,
             errorMessage: overview.errorMessage,
             clicks: clicks,
-            clicksRun: ComparisonRun.make(
-                current: current.map { ($0.day, $0.clicks) },
-                previous: previous.map(\.clicks),
-                period: period
-            ),
+            clicksRun: clicksRun,
+            impressions: impressions,
+            impressionsRun: impressionsRun,
+            ctr: Rate.over(clicks, impressions),
+            ctrRun: ComparisonRun.rate(of: clicksRun, over: impressionsRun),
             visits: visits,
             visitsRun: ComparisonRun.make(
                 current: current.map { ($0.day, $0.visits?.visits ?? 0) },
@@ -129,6 +150,32 @@ struct ProjectTrajectory: Identifiable, Equatable {
             return nil
         }
         return (latestShare - baselineShare) * 100
+    }
+}
+
+/// A rate made of two counts — clicks over impressions — and never of two rates.
+///
+/// The fleet's click-through rate is its clicks over its impressions, not the mean of its
+/// projects' rates: a project with four impressions and one click would otherwise pull the
+/// fleet's 8% up towards 25%. The same holds for a period: the rate of the whole period is
+/// its clicks over its impressions, not the mean of its days.
+enum Rate {
+    /// The rate over the period and over the period before, from the two counts. Nil when
+    /// nothing was shown, where a rate has no meaning and a zero would be a lie.
+    static func over(_ top: Growth, _ bottom: Growth) -> Growth? {
+        guard bottom.current > 0 else { return nil }
+        var previous: Double?
+        if let topBefore = top.previous, let bottomBefore = bottom.previous, bottomBefore > 0 {
+            previous = topBefore / bottomBefore
+        }
+        return Growth(current: top.current / bottom.current, previous: previous)
+    }
+
+    /// How a rate moved, in percentage points. A rate's move is never a percentage of a
+    /// percentage: from 8% to 9% is a point, not a ninth.
+    static func points(_ growth: Growth) -> Double? {
+        guard let previous = growth.previous else { return nil }
+        return (growth.current - previous) * 100
     }
 }
 
@@ -240,6 +287,38 @@ struct ComparisonRun: Equatable {
             // One stand-in among the runs makes the sum a stand-in: the line is drawn dashed
             // rather than claiming days that were never measured.
             previousIsAverage: counted.contains { $0.previousIsAverage }
+        )
+    }
+
+    /// One run over another, point for point: the run of a rate.
+    ///
+    /// Divided after both runs are smoothed, never smoothed after dividing, so a day with two
+    /// impressions and one click cannot put a 50% spike in the line. A point with nothing
+    /// under it is drawn at zero — the rate is undefined there, and a line has to be
+    /// somewhere; the label says what the day measured.
+    static func rate(of top: ComparisonRun, over bottom: ComparisonRun) -> ComparisonRun {
+        func divide(_ top: Double, _ bottom: Double) -> Double {
+            bottom > 0 ? top / bottom : 0
+        }
+        let current = top.current.indices.map { index -> Point in
+            let under = index < bottom.current.count ? bottom.current[index] : nil
+            return Point(
+                date: top.current[index].date,
+                value: divide(top.current[index].value, under?.value ?? 0),
+                measured: divide(top.current[index].measured, under?.measured ?? 0)
+            )
+        }
+        let previous = top.previous.indices.map { index in
+            divide(top.previous[index], index < bottom.previous.count ? bottom.previous[index] : 0)
+        }
+        let previousMeasured = top.previousMeasured.indices.map { index in
+            divide(top.previousMeasured[index], index < bottom.previousMeasured.count ? bottom.previousMeasured[index] : 0)
+        }
+        return ComparisonRun(
+            current: current,
+            previous: previous,
+            previousMeasured: previousMeasured,
+            previousIsAverage: top.previousIsAverage || bottom.previousIsAverage
         )
     }
 
