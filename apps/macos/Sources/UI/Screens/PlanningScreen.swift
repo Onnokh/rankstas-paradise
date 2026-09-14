@@ -71,7 +71,7 @@ struct PlanningScreen: View {
                     header
                 }
             }
-            .padding(.top, SiteTabScreen.screenInset)
+            .padding(.top, Page.screenInset)
             .padding(.bottom, 24)
 
             controls
@@ -91,7 +91,7 @@ struct PlanningScreen: View {
             }
         }
         .column()
-        .padding(.bottom, SiteTabScreen.columnInset)
+        .padding(.bottom, Page.columnInset)
         .readingColumn()
     }
 

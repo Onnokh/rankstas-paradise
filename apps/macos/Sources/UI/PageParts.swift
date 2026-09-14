@@ -6,8 +6,8 @@ extension View {
     /// Places a view in the reading column: capped at the column width, inset from the pane's
     /// edges, and centred in whatever width the pane has.
     func column() -> some View {
-        frame(maxWidth: SiteTabScreen.columnWidth, alignment: .leading)
-            .padding(.horizontal, SiteTabScreen.columnInset)
+        frame(maxWidth: Page.columnWidth, alignment: .leading)
+            .padding(.horizontal, Page.columnInset)
             .frame(maxWidth: .infinity)
     }
 }

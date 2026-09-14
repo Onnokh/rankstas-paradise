@@ -29,18 +29,15 @@ struct SiteTabScreen: View {
     private var shown: SiteScreen { isPreview ? .dashboard : state.screen }
 
     var body: some View {
-        // One header row for every screen, pinned above the content, so the site's name,
-        // its live count and the period never scroll away and never change shape between
-        // screens. The rail beside the pane chooses the screen; the swap is instant, like a
-        // tab's. A plain switch instead of NavigationStack: that would install a window
-        // toolbar, which clashes with the tab bar owning the title bar area.
-        VStack(spacing: 0) {
+        // The page frame every screen in the app wears — see `PageFrame`. The header is
+        // pinned above the content, so the site's name, its live count and the period never
+        // scroll away and never change shape between screens. The rail beside the pane
+        // chooses the screen; the swap is instant, like a tab's. A plain switch instead of
+        // NavigationStack: that would install a window toolbar, which clashes with the tab
+        // bar owning the title bar area.
+        PageFrame {
             header
-                .column()
-                .frame(height: Self.headerHeight)
-            Rectangle()
-                .fill(Palette.line)
-                .frame(height: 1)
+        } content: {
             screens
         }
         // The live count polls only while the real screen is shown: a preview is a still.
@@ -126,36 +123,12 @@ struct SiteTabScreen: View {
         }
     }
 
-    /// The reading column. Text, numbers and controls stay in one measured column, centred in the
-    /// pane; only the chart runs the full width, so the numbers read like a page and the chart
-    /// reads like the pane's own floor.
-    static let columnWidth: CGFloat = 880
-    static let columnInset: CGFloat = 24
-    /// The header row's height. The rail beside the pane centres its first icon on it.
-    static let headerHeight: CGFloat = 56
-    /// The room between the header's hairline and the first line of a screen.
-    static let screenInset: CGFloat = 32
-
-    /// The site's favicon beside its name.
-    private static let titleIconSize: CGFloat = 20
-    private static let titleIconSpacing: CGFloat = 10
-
     private var header: some View {
         // One row, centred: the favicon, the name, the origin and every control share a
         // centre line. The origin sits beside the name rather than under it, so the header
         // is one line tall and the numbers below get the room.
-        HStack(spacing: Self.titleIconSpacing) {
-            Group {
-                if let icon {
-                    icon.resizable().interpolation(.high).scaledToFit().clipShape(.rect(cornerRadius: 4))
-                } else {
-                    Image(systemName: "globe").font(.title3).foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: Self.titleIconSize, height: Self.titleIconSize)
-
-            Text(overview.site.name)
-                .font(.title3.weight(.semibold))
+        HStack(spacing: Page.titleSpacing) {
+            PageTitle(icon: icon, title: overview.site.name)
 
             Text(overview.site.origin)
                 .foregroundStyle(.secondary)
@@ -172,24 +145,13 @@ struct SiteTabScreen: View {
             // The controls sit in one trailing cluster. The period only means something on
             // the dashboard — the registry and the plan have their own windows — so it
             // leaves with the dashboard rather than staying and lying.
-            HStack(spacing: 20) {
+            HStack(spacing: Page.controlSpacing) {
                 if shown == .dashboard {
                     PeriodSwitch(selection: $state.period)
                         .disabled(isPreview)
                 }
 
-                HStack(spacing: 10) {
-                    if busy {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                    Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                        .disabled(busy)
-                        .help("Refresh (⌘R)")
-                }
+                RefreshControl(busy: busy, action: onRefresh)
             }
         }
     }
@@ -413,7 +375,7 @@ private struct HoursChart: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
-            .padding(.horizontal, SiteTabScreen.columnInset)
+            .padding(.horizontal, Page.columnInset)
         }
     }
 
@@ -768,7 +730,7 @@ private struct TrendChart: View {
         }
         .font(.caption)
         .foregroundStyle(.secondary)
-        .padding(.horizontal, SiteTabScreen.columnInset)
+        .padding(.horizontal, Page.columnInset)
     }
 
     /// Days Google has finalised.
@@ -1571,9 +1533,9 @@ private struct SiteDashboard: View {
             footer
                 .column()
                 .padding(.top, 24)
-                .padding(.bottom, SiteTabScreen.columnInset)
+                .padding(.bottom, Page.columnInset)
         }
-        .padding(.top, SiteTabScreen.screenInset)
+        .padding(.top, Page.screenInset)
     }
 
     /// A stored period: Search Console figures and chart, then the provider's cards.
@@ -1710,6 +1672,8 @@ private struct SiteDashboard: View {
         }
     }
 
+    /// What is wrong, when something is. How current the screen is belongs to the tab bar,
+    /// which says it once for every page — see `Freshness`.
     private var footer: some View {
         HStack {
             if let error = history.errors[overview.id] ?? rankings.errors[overview.id] {
@@ -1718,14 +1682,6 @@ private struct SiteDashboard: View {
                     .lineLimit(1)
             }
             Spacer()
-            if let generated = SiteTabScreen.instant(overview.dashboard?.generatedAt) {
-                // Ticks from a coarse timeline, not SwiftUI's relative date text: that style
-                // asks for a new frame continuously and costs a fifth of a core while idle.
-                TimelineView(.periodic(from: .now, by: 15)) { context in
-                    Text("Updated \(RelativeAge.label(from: generated, to: context.date) ?? "at \(generated.formatted(date: .omitted, time: .shortened))")")
-                        .help(generated.formatted(date: .abbreviated, time: .standard))
-                }
-            }
         }
         .font(.callout)
         .foregroundStyle(.secondary)

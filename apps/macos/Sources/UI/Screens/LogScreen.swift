@@ -37,7 +37,7 @@ struct LogScreen: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-                .padding(.top, SiteTabScreen.screenInset)
+                .padding(.top, Page.screenInset)
                 .padding(.bottom, 24)
 
             if !entries.isEmpty {
@@ -54,7 +54,7 @@ struct LogScreen: View {
             }
         }
         .column()
-        .padding(.bottom, SiteTabScreen.columnInset)
+        .padding(.bottom, Page.columnInset)
         .readingColumn()
         // The screen loads its own record, unlike the Registry and Planning screens, whose
         // rows come down with the site's dashboard. Nothing outside this screen shows the

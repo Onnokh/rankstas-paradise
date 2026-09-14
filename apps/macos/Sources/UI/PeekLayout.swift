@@ -12,6 +12,10 @@ struct PeekLayout {
     static let tabMaxWidth: CGFloat = 200
     static let tabSpacing: CGFloat = 10
     static let tabTrailingInset: CGFloat = 12
+    /// The room kept at the trailing end of the bar for the freshness label — see `TabBar`.
+    /// Taken off the width the pills share, so a fleet of many projects narrows its pills
+    /// rather than running under the label.
+    static let clockWidth: CGFloat = 128
     /// The peek button sits between the traffic lights and the first tab.
     static let peekButtonSize: CGFloat = 28
     static let previewAspect: CGFloat = 560.0 / 980.0
@@ -108,6 +112,17 @@ struct PeekLayout {
         )
     }
 
+    /// Where the freshness label sits: the trailing end of the bar, on the traffic lights'
+    /// row like everything else in it.
+    var clockFrame: CGRect {
+        CGRect(
+            x: size.width - Self.tabTrailingInset - Self.clockWidth,
+            y: chrome.buttonsCenterY - Self.peekButtonSize / 2,
+            width: Self.clockWidth,
+            height: Self.peekButtonSize
+        )
+    }
+
     /// First x a tab may use: right of the peek button.
     var tabsLeadingX: CGFloat {
         peekButtonFrame.maxX + Self.tabSpacing
@@ -115,7 +130,7 @@ struct PeekLayout {
 
     var tabWidth: CGFloat {
         let count = CGFloat(max(tabCount, 1))
-        let available = size.width - tabsLeadingX - Self.tabTrailingInset - Self.tabSpacing * (count - 1)
+        let available = size.width - tabsLeadingX - Self.tabTrailingInset - Self.clockWidth - Self.tabSpacing * (count - 1)
         return max(60, min(Self.tabMaxWidth, available / count))
     }
 

@@ -84,6 +84,10 @@ final class OverviewTabState {
     /// The span every site's figures cover, and the span before it they are set against.
     var period: Period = .d28
 
+    /// Which source the page's chart draws, and the projects under it report. Chosen from the
+    /// strip, and kept while the tab lives, the way the period is.
+    var source: OverviewSource = .clicks
+
     /// The periods the overview offers: every stored one. Today is left out — it is read
     /// live from the provider and has no stored days to compare, so it belongs to the
     /// Realtime tab, where the sites are watched rather than compared.

@@ -34,7 +34,7 @@ struct ScreenRail: View {
     static let realtimeSymbol = "dot.radiowaves.left.and.right"
 
     /// The room above the app icon and below the account icon: what centres a slot on the header row.
-    private static let endInset = (SiteTabScreen.headerHeight - iconSize) / 2
+    private static let endInset = (Page.headerHeight - iconSize) / 2
 
     var body: some View {
         VStack(spacing: Self.spacing) {

@@ -5,6 +5,11 @@ import SwiftUI
 /// swapped or redrawn when a drag begins.
 struct TabBar: View {
     let layout: PeekLayout
+    /// What the pane in front is showing, and the two stores it is drawn from: the bar says
+    /// how current that pane is. See `FreshnessLabel`.
+    let tab: TabID
+    let model: OverviewModel
+    let live: LiveStore
     let onPeek: () -> Void
 
     var body: some View {
@@ -18,8 +23,40 @@ struct TabBar: View {
                 .position(x: button.midX, y: button.midY)
                 .opacity(layout.tabBarOpacity)
                 .allowsHitTesting(layout.tabBarOpacity > 0.5)
+
+            let clock = layout.clockFrame
+            FreshnessLabel(tab: tab, model: model, live: live)
+                .frame(width: clock.width, height: clock.height, alignment: .trailing)
+                .position(x: clock.midX, y: clock.midY)
+                .opacity(layout.tabBarOpacity)
         }
         .frame(width: layout.size.width, height: layout.tabBarHeight)
+    }
+}
+
+/// How current the pane in front is, at the trailing end of the tab bar: the one place in the
+/// app that answers it, for every page.
+///
+/// It reads the stores itself rather than being handed a date, so a poll landing every few
+/// seconds invalidates this label and not the window around it — the hazard `OnlineCount`
+/// documents. The age ticks from a coarse timeline for the same reason SwiftUI's relative
+/// date text is never used here: that style asks for a new frame continuously.
+private struct FreshnessLabel: View {
+    let tab: TabID
+    let model: OverviewModel
+    let live: LiveStore
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 15)) { context in
+            if let updatedAt = Freshness.updatedAt(tab, overviews: model.overviews, feeds: live.feeds) {
+                Text("Updated \(RelativeAge.labelOrTime(from: updatedAt, to: context.date))")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .help(updatedAt.formatted(date: .abbreviated, time: .standard))
+                    .accessibilityLabel("Updated \(RelativeAge.labelOrTime(from: updatedAt, to: context.date))")
+            }
+        }
     }
 }
 
