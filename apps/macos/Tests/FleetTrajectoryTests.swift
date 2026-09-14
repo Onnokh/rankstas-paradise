@@ -189,6 +189,15 @@ final class FleetTrajectoryTests: XCTestCase {
         XCTAssertEqual(rate.previous, [0.05, 0.1])
     }
 
+    /// Every chart on the page reads one number per point, so the line a reader points at and
+    /// the figure they are shown cannot disagree. Checked here because the field that used to
+    /// hold the second number is what made them disagree.
+    func testAPointCarriesOneNumber() {
+        let summed = ComparisonRun.sum([run([1, 2, 3]), run([10, 20, 30])])
+        XCTAssertEqual(summed.current.map(\.value), [11, 22, 33])
+        XCTAssertEqual(Mirror(reflecting: summed.current[0]).children.count, 2, "a point is a date and a value")
+    }
+
     /// A point with nothing under it is drawn at zero rather than crashing or running off:
     /// the day the site was shown to nobody has no rate to draw.
     func testARatePointWithNothingUnderItIsZero() {

@@ -24,39 +24,28 @@ final class ProjectTrajectoryTests: XCTestCase {
         XCTAssertEqual(points.last?.date, days.last?.0, "a point is dated by the last day it sums")
     }
 
-    func testSmoothingIsATrailingMean() {
-        let smoothed = ComparisonRun.smoothed([0, 0, 0, 7, 7, 7, 7, 7, 7, 7], window: 7)
-        XCTAssertEqual(smoothed[0], 0)
-        XCTAssertEqual(smoothed[3], 7.0 / 4)
-        XCTAssertEqual(smoothed[9], 7, accuracy: 0.0001, "a full window of sevens is seven")
-        XCTAssertEqual(ComparisonRun.smoothed([1, 2, 3], window: 7), [1, 2, 3], "a run shorter than the window is left alone")
-    }
-
-    /// The line is drawn through the mean, but a point still knows its own day: two clicks
-    /// on one day of a month are a bump at 0.29 and a label that says 2. Checked by
-    /// neutering: let `smoothed` drop `measured` and this fails.
-    func testASmoothedPointKeepsWhatItsDayMeasured() {
+    /// The one a hover made unanswerable. A daily point is the day it names: a day with two
+    /// clicks is a point at two, and the label over it says two. The run used to be drawn
+    /// through a seven-day mean, which put the line at 0.29 under a label reading 2 — both
+    /// true, and impossible to read together.
+    func testADailyPointIsTheDayItNames() {
         var days = (0..<28).map { (Date(timeIntervalSinceReferenceDate: Double($0) * 86_400), 0.0) }
         days[20].1 = 2
         var before = Array(repeating: 0.0, count: 28)
         before[20] = 5
         let run = ComparisonRun.make(current: days, previous: before, period: .d28)
 
-        XCTAssertEqual(run.current[20].value, 2.0 / 7, accuracy: 0.0001, "drawn at the seven-day mean")
-        XCTAssertEqual(run.current[20].measured, 2, "but the day measured two")
-        XCTAssertEqual(run.current[22].measured, 0, "and the days after it measured nothing, though the line is still up")
-        XCTAssertEqual(run.previous[20], 5.0 / 7, accuracy: 0.0001)
-        XCTAssertEqual(run.previousMeasured[20], 5)
-        XCTAssertEqual(run.previousMeasured.count, run.previous.count)
+        XCTAssertEqual(run.current[20].value, 2)
+        XCTAssertEqual(run.current[22].value, 0, "and the days after it are nothing, not the tail of a mean")
+        XCTAssertEqual(run.previous[20], 5)
+        XCTAssertEqual(run.previous.count, run.current.count)
     }
 
     func testADayIsAPointUpToAMonthAndAWeekBeyond() {
         XCTAssertEqual(ComparisonRun.bucketSize(for: .d7), 1)
         XCTAssertEqual(ComparisonRun.bucketSize(for: .d28), 1)
         XCTAssertEqual(ComparisonRun.bucketSize(for: .m3), 7)
-        XCTAssertFalse(ComparisonRun.smooths(.d7), "a week has no room for a seven-day mean")
-        XCTAssertTrue(ComparisonRun.smooths(.d28))
-        XCTAssertFalse(ComparisonRun.smooths(.m6), "weekly points are already smooth")
+        XCTAssertEqual(ComparisonRun.bucketSize(for: .m6), 7)
     }
 
     func testAnEarlierTotalIsSpreadEvenlyAndMarked() {
