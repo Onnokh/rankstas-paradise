@@ -101,7 +101,7 @@ struct OverviewScreen: View {
                 .column()
 
                 FleetChart(run: fleet.run(source), source: source, currency: fleet.currency)
-                    .padding(.top, Page.chartInset)
+                    .padding(.top, Page.stripInset)
 
                 ProjectTiles(
                     projects: projects,
@@ -110,7 +110,7 @@ struct OverviewScreen: View {
                     onOpen: onOpenSite
                 )
                 .column()
-                .padding(.top, Page.chartInset)
+                .padding(.top, Page.blockInset)
 
                 footer
                     .column()

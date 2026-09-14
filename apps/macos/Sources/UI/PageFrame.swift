@@ -16,8 +16,14 @@ enum Page {
     static let headerHeight: CGFloat = 56
     /// The room between the header's hairline and the first line of a screen.
     static let screenInset: CGFloat = 32
-    /// The room between the strip and the chart under it, on every page that has both.
-    static let chartInset: CGFloat = 36
+    /// The room under the strip, before the chart or the cards it heads.
+    ///
+    /// More than the room between the blocks below it, and deliberately: the strip is a
+    /// control as well as a reading — on the Overview it chooses what the chart draws — and a
+    /// control sitting too close to what it controls reads as that thing's title instead.
+    static let stripInset: CGFloat = 56
+    /// The room between one block of a page and the next.
+    static let blockInset: CGFloat = 36
     /// What a full-width chart may take. A page's chart is the same height on every page, so
     /// the cards under it start on the same line.
     static let chartHeight: ClosedRange<CGFloat> = 200...300
