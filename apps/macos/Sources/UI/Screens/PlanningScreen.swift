@@ -723,7 +723,7 @@ extension KeywordVerdict {
         case .noDemand: Palette.coral
         case .unreported: Palette.amber
         case .unmeasured: .secondary
-        case .brand: Palette.lilac
+        case .brand: Palette.blue
         }
     }
 }

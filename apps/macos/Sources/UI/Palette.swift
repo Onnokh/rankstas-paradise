@@ -1,19 +1,25 @@
 import AppKit
 import SwiftUI
 
-/// The interface style guide's palette, by the guide's own names and hex values.
+/// The app's palette, by the interface style guide's names.
 ///
-/// The guide is written for a dark interface only, but a Mac app follows the
-/// system appearance. Every surface here is therefore a pair: the guide's value
-/// in dark, and a paper-side equivalent that keeps the same layering in light.
-/// Body text and controls still come from AppKit's semantic colors, so the app
-/// keeps the system's contrast and accessibility settings.
+/// The identity colours are the guide's own. The dark surfaces are not: the guide's blue-grey
+/// neutrals were put beside seven other dark schemes on the real window, and a pure black
+/// canvas with neutral greys won — see the `claude/macos-color-schemes-c1f0cc` branch. A Mac
+/// app follows the system appearance, so every surface is a pair: the chosen value in dark,
+/// and a paper-side equivalent that keeps the same layering in light.
+///
+/// Text is `text`, set once at the root of each window. `.primary`, `.secondary` and
+/// `.tertiary` are hierarchical — they step the root's foreground style down in opacity —
+/// so one colour there moves every label. Controls still come from AppKit.
 enum Palette {
     // MARK: Identity
 
     /// Errors and alarms. The mascot's own color.
     static let coral = Color(nsColor: srgb(0xFB3949))
-    /// The interface accent — the headband, carried through the interface.
+    /// The interface accent — the headband, carried through the interface. Also the colour
+    /// of everything that comes from the analytics provider: live visitors are the app's
+    /// momentum, and the guide gives momentum to acid.
     static let acid = Color(nsColor: srgb(0xC4FA04))
     /// The cool half of a two-series chart.
     static let blue = Color(nsColor: srgb(0x4C8DFF))
@@ -21,24 +27,29 @@ enum Palette {
     static let mint = Color(nsColor: srgb(0x42D3A2))
     /// The warm half of a two-series chart.
     static let amber = Color(nsColor: srgb(0xFFB54A))
-    /// The third series and the realtime card: visits, from the site's analytics provider.
-    /// Not in the guide, which knows two series; chosen to sit between its blue and coral.
-    static let lilac = Color(nsColor: srgb(0xA78BFA))
 
     // MARK: Surfaces
 
     /// The canvas the window is built on: behind the tab bar, around the pane.
-    static let void = adaptive(dark: 0x08090A, light: 0xE8EAE9)
+    static let void = adaptive(dark: 0x000000, light: 0xE8EAE9)
     /// Grouped content — the screen a tab shows.
-    static let panel = adaptive(dark: 0x15181D, light: 0xF7F8F8)
+    static let panel = adaptive(dark: 0x0C0C0C, light: 0xF7F8F8)
     /// Floating UI: peek cards, and the cards inside a screen.
-    static let raised = adaptive(dark: 0x1C2026, light: 0xFFFFFF)
+    static let raised = adaptive(dark: 0x171717, light: 0xFFFFFF)
     /// The hairline that separates one surface from the next.
-    static let line = adaptive(dark: 0x292E36, light: 0xDCDFDE)
+    static let line = adaptive(dark: 0x262626, light: 0xDCDFDE)
 
-    /// A surface that carries the guide's value in dark and its paper-side
-    /// equivalent in light. `NSColor`'s dynamic provider is asked for a value
-    /// each time the appearance changes, so this follows the system live.
+    // MARK: Text
+
+    /// Body text, set at the root of a window. A neutral near-white in dark, so the greys it
+    /// steps down to carry no blue; the system's label colour in light.
+    static let text = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? srgb(0xEDEDED) : .labelColor
+    })
+
+    /// A surface that carries one value in dark and its paper-side equivalent in light.
+    /// `NSColor`'s dynamic provider is asked for a value each time the appearance changes,
+    /// so this follows the system live.
     private static func adaptive(dark: UInt32, light: UInt32) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? srgb(dark) : srgb(light)
@@ -56,9 +67,9 @@ enum Palette {
 }
 
 extension View {
-    /// A card sitting on a panel: the guide's raised surface, closed by a hairline.
-    /// The guide leans on its hairlines to separate one surface from the next, and
-    /// raised against panel is too near a match to read on its own.
+    /// A card sitting on a panel: the raised surface, closed by a hairline. The guide leans
+    /// on its hairlines to separate one surface from the next, and raised against panel is
+    /// too near a match to read on its own.
     func cardSurface(cornerRadius: CGFloat = 10) -> some View {
         background(Palette.raised, in: .rect(cornerRadius: cornerRadius))
             .overlay(RoundedRectangle(cornerRadius: cornerRadius).strokeBorder(Palette.line))

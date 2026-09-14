@@ -36,6 +36,8 @@ struct SettingsView: View {
             .environment(\.settingsQuery, query)
         }
         .frame(minWidth: 900, minHeight: 560)
+        // One text colour for the window, as in the main one. See `Palette.text`.
+        .foregroundStyle(Palette.text)
         // The window has no title bar; the top strip is still the window's to drag.
         .ignoresSafeArea(.container, edges: .top)
         .background {
