@@ -67,11 +67,19 @@ struct RealtimeScreen: View {
     }
 
     var body: some View {
-        // The ages in the feed and the footer tick from this timeline, every quarter minute:
-        // coarse enough to cost nothing, fine enough for "just now" to turn into "1m ago"
-        // when it should. Never SwiftUI's relative date text, which redraws every frame.
-        TimelineView(.periodic(from: .now, by: 15)) { context in
-            content(now: context.date)
+        // The page frame every screen wears — see `PageFrame`. The header is outside the
+        // timeline below: its live figure comes from the store, not from the clock, so the
+        // quarter-minute tick invalidates the feed and the footer and leaves the header be.
+        PageFrame {
+            header
+        } content: {
+            // The ages in the feed and the footer tick from this timeline, every quarter
+            // minute: coarse enough to cost nothing, fine enough for "just now" to turn into
+            // "1m ago" when it should. Never SwiftUI's relative date text, which redraws
+            // every frame.
+            TimelineView(.periodic(from: .now, by: 15)) { context in
+                content(now: context.date)
+            }
         }
         // Both polls live exactly as long as the real screen is shown: a preview is a still.
         // The site list is the id, so a site added or removed restarts them over the new list.
@@ -94,14 +102,9 @@ struct RealtimeScreen: View {
             ErrorView(message: errorMessage, retry: onRefresh)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            // The same page as a site's tab: one reading column, centred, header at the top,
-            // the numbers under it, the cards below, the footer last.
+            // The same page as a project's tab: one reading column, centred, the numbers
+            // first under the header's hairline, the cards below, the footer last.
             VStack(alignment: .leading, spacing: 0) {
-                header
-                    .column()
-                    .padding(.top, SiteTabScreen.columnInset)
-                    .padding(.bottom, 40)
-
                 RealtimeStrip(sites: shownSites, live: live)
                     .column()
 
@@ -133,8 +136,9 @@ struct RealtimeScreen: View {
                 footer(now: now)
                     .column()
                     .padding(.top, 24)
-                    .padding(.bottom, SiteTabScreen.columnInset)
+                    .padding(.bottom, Page.columnInset)
             }
+            .padding(.top, Page.screenInset)
             .readingColumn()
         }
     }
@@ -143,14 +147,8 @@ struct RealtimeScreen: View {
     /// shown sites now — the one figure on the page that moves on its own. At the trailing
     /// edge, the menu that keeps the page to some sites, beside the refresh button.
     private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: ScreenRail.realtimeSymbol)
-                .font(.title3)
-                .foregroundStyle(.secondary)
-                .frame(width: 20, height: 20)
-
-            Text("Realtime")
-                .font(.title3.weight(.semibold))
+        HStack(spacing: Page.titleSpacing) {
+            PageTitle(symbol: ScreenRail.realtimeSymbol, title: "Realtime")
 
             HStack(spacing: 6) {
                 Circle()
@@ -173,19 +171,9 @@ struct RealtimeScreen: View {
             )
             .accessibilityLabel("Sites")
             .disabled(isPreview)
+            .padding(.trailing, Page.controlSpacing - Page.titleSpacing)
 
-            HStack(spacing: 14) {
-                if model.isRefreshing {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
-                    .labelStyle(.iconOnly)
-                    .disabled(model.isRefreshing)
-                    .help("Refresh (⌘R)")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            RefreshControl(busy: model.isRefreshing, action: onRefresh)
         }
     }
 
@@ -609,7 +597,7 @@ private struct FeedRow: View, Equatable {
     /// same for every row of the stack, so the zones stay fixed between rows; only the window
     /// moves them. Nil is before the first layout: the column at full width.
     static func captionWidth(in rowWidth: CGFloat?, showsSite: Bool) -> CGFloat {
-        let width = rowWidth ?? (SiteTabScreen.columnWidth - 40)
+        let width = rowWidth ?? (Page.columnWidth - 40)
         let fixed = gutter + spacing + (showsSite ? siteWidth + spacing : 0) + spacing + whoWidth
         let words = width - fixed
         let caption = min(captionMax, words - headlineMin - spacing)

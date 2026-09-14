@@ -56,7 +56,7 @@ struct RegistryScreen: View {
                     numbers
                 }
             }
-            .padding(.top, SiteTabScreen.screenInset)
+            .padding(.top, Page.screenInset)
             .padding(.bottom, 24)
 
             if !targets.isEmpty {
@@ -76,7 +76,7 @@ struct RegistryScreen: View {
             }
         }
         .column()
-        .padding(.bottom, SiteTabScreen.columnInset)
+        .padding(.bottom, Page.columnInset)
         .readingColumn()
     }
 

@@ -1,15 +1,19 @@
+import Charts
 import SwiftUI
 
-/// The overview: how every project does, read from what is stored. The strip sums the
-/// sites over the period; under it, one card per project — the site in its own zone with
-/// what it sold, then Search, Visitors and Plan, each the period against the period before
-/// as a percentage and as two runs on one chart. Nothing here polls: the Realtime tab is
-/// where the sites are watched, and this page is where they are compared.
+/// The overview: how every project does, read from what is stored.
 ///
-/// The figures come from the same stores a site's dashboard reads, so the two never
+/// The page is built the way a project's dashboard is, and on the same frame: the strip
+/// first, under it one chart running the pane's full width, and the projects under that.
+/// What differs is that the strip is also the switch — Clicks, Visits and Sales each carry a
+/// run of days, so the one the reader lights is the one the chart draws, and the projects
+/// below show that same source. Nothing here polls: the Realtime screen is where the sites
+/// are watched, and this page is where they are compared.
+///
+/// The figures come from the same stores a project's dashboard reads, so the two never
 /// disagree: the site's daily series once it is loaded, and until then the 28 days the
-/// dashboard keeps on disk, which is what makes a warm launch land with numbers. The
-/// sales and the plan come from the ranking store, loaded here the way a site tab loads it.
+/// dashboard keeps on disk, which is what makes a warm launch land with numbers. The sales
+/// come from the ranking store, loaded here the way a project's tab loads it.
 struct OverviewScreen: View {
     let model: OverviewModel
     @Bindable var state: OverviewTabState
@@ -57,23 +61,27 @@ struct OverviewScreen: View {
     }
 
     var body: some View {
-        content
-            // The series is what carries the visits and reaches back far enough to compare
-            // six months with the six before; the ranked lists carry the sales and the
-            // registry. Loaded once per session per site, cache first, the way a site tab
-            // loads its own: a fetch, not a poll. The site list and the period are the id, so
-            // a site added in Settings is read without a relaunch, and a new period fetches
-            // the sales for it.
-            .task(id: LoadKey(siteIDs: siteIDs, period: state.period)) {
-                guard !isPreview, !siteIDs.isEmpty else { return }
-                let period = state.period
-                await withTaskGroup(of: Void.self) { group in
-                    for siteID in siteIDs {
-                        group.addTask { await history.load(siteID) }
-                        group.addTask { await rankings.load(siteID, period: period) }
-                    }
+        // The page frame every screen wears — see `PageFrame`.
+        PageFrame {
+            header
+        } content: {
+            content
+        }
+        // The series is what carries the visits and reaches back far enough to compare
+        // six months with the six before; the ranked lists carry the sales. Loaded once per
+        // session per site, cache first, the way a project's tab loads its own: a fetch, not
+        // a poll. The site list and the period are the id, so a site added in Settings is
+        // read without a relaunch, and a new period fetches the sales for it.
+        .task(id: LoadKey(siteIDs: siteIDs, period: state.period)) {
+            guard !isPreview, !siteIDs.isEmpty else { return }
+            let period = state.period
+            await withTaskGroup(of: Void.self) { group in
+                for siteID in siteIDs {
+                    group.addTask { await history.load(siteID) }
+                    group.addTask { await rankings.load(siteID, period: period) }
                 }
             }
+        }
     }
 
     @ViewBuilder
@@ -85,72 +93,62 @@ struct OverviewScreen: View {
             ErrorView(message: errorMessage, retry: onRefresh)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            // The same page as a site's tab: one reading column, centred, header at the top,
-            // the numbers under it, the cards below, the footer last.
-            let rows = rows
+            let projects = projects
+            let fleet = FleetTrajectory.make(projects)
+            let source = drawn(fleet)
             VStack(alignment: .leading, spacing: 0) {
-                header
-                    .column()
-                    .padding(.top, SiteTabScreen.columnInset)
-                    .padding(.bottom, 40)
-
-                GlanceStrip(
+                FleetStrip(
+                    fleet: fleet,
                     comparison: OverviewGlance.total(rows),
-                    visits: OverviewGlance.totalVisits(rows),
-                    siteCount: rows.count
+                    siteCount: rows.count,
+                    source: $state.source
                 )
                 .column()
 
-                VStack(spacing: 12) {
-                    ForEach(projects) { project in
-                        ProjectCard(project: project, period: state.period, icon: favicons.image(for: project.id))
-                            .onTapGesture(count: 2) { onOpenSite(project.id) }
-                    }
-                }
+                FleetChart(run: fleet.run(source), source: source, currency: fleet.currency)
+                    .padding(.top, Page.chartInset)
+
+                ProjectTiles(
+                    projects: projects,
+                    source: source,
+                    icon: { favicons.image(for: $0) },
+                    onOpen: onOpenSite
+                )
                 .column()
-                .padding(.top, 36)
+                .padding(.top, Page.chartInset)
 
                 footer
                     .column()
                     .padding(.top, 24)
-                    .padding(.bottom, SiteTabScreen.columnInset)
+                    .padding(.bottom, Page.columnInset)
             }
+            .padding(.top, Page.screenInset)
             .readingColumn()
         }
     }
 
-    /// One row, centred, like a site's header: the mark and the name; at the trailing edge
+    /// The source the page draws: the reader's choice, or the clicks when what they chose has
+    /// nothing behind it. A fleet with no commerce provider has no sales to draw, and a
+    /// choice made while a site had one must not leave the page blank after it is taken away.
+    private func drawn(_ fleet: FleetTrajectory) -> OverviewSource {
+        fleet.growth(state.source) == nil ? .clicks : state.source
+    }
+
+    /// One row, centred, like a project's header: the mark and the name; at the trailing edge
     /// the period, beside the refresh button. No live figure — nothing on this page moves on
     /// its own.
     private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: ScreenRail.overviewSymbol)
-                .font(.title3)
-                .foregroundStyle(.secondary)
-                .frame(width: 20, height: 20)
-
-            Text("Overview")
-                .font(.title3.weight(.semibold))
+        HStack(spacing: Page.titleSpacing) {
+            PageTitle(symbol: ScreenRail.overviewSymbol, title: "Overview")
 
             Spacer()
 
-            HStack(spacing: 20) {
+            HStack(spacing: Page.controlSpacing) {
                 WordSwitch(options: OverviewTabState.periods, selection: $state.period, label: \.label)
                     .accessibilityLabel("Period")
                     .disabled(isPreview)
 
-                HStack(spacing: 10) {
-                    if busy {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                    Button("Refresh", systemImage: "arrow.clockwise", action: onRefresh)
-                        .labelStyle(.iconOnly)
-                        .disabled(busy)
-                        .help("Refresh (⌘R)")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                RefreshControl(busy: busy, action: onRefresh)
             }
         }
     }
@@ -190,8 +188,8 @@ struct OverviewScreen: View {
 // MARK: - Figures
 
 /// How the Overview writes its numbers: whole counts, a rate in percent to one place, a
-/// position to one place, and a move with its sign. One place for every cell, so a row and
-/// the strip above it say the same thing the same way.
+/// position to one place, and a move with its sign. One place for every cell, so a project's
+/// tile and the strip above it say the same thing the same way.
 enum GlanceFigure {
     static func count(_ value: Double) -> String {
         value.formatted(.number.precision(.fractionLength(0)))
@@ -210,28 +208,68 @@ enum GlanceFigure {
     static func tint(_ delta: Double, lowerIsBetter: Bool = false) -> Color {
         (lowerIsBetter ? delta <= 0 : delta >= 0) ? Palette.mint : Palette.coral
     }
+
+    /// A figure in the units of its source: money for the sales, a count for the rest.
+    static func figure(_ value: Double, source: OverviewSource, currency: String?) -> String {
+        source.isMoney ? Money.format(value, currency: currency) : count(value)
+    }
+
+    /// A move in the units of its source, with its sign in front.
+    static func move(_ growth: Growth, source: OverviewSource, currency: String?) -> String {
+        guard let previous = growth.previous else { return "new" }
+        let moved = growth.current - previous
+        return source.isMoney
+            ? Money.signed(moved, currency: currency)
+            : Trend.signed(moved, fractionDigits: 0)
+    }
+}
+
+// MARK: - Reading a growth
+
+/// What the screen says about a growth: the percentage and a colour. The bands are the
+/// screen's: ten percent either way is the line between moving and standing still. One
+/// colour with one meaning — mint up, coral down, nothing for flat or unknown.
+enum GrowthReading {
+    static let band = 0.1
+
+    /// "+34%", or "new" for a count that came from nothing, or a dash for nothing at all.
+    static func label(_ growth: Growth) -> String {
+        if let ratio = growth.ratio { return Trend.signed(ratio * 100, fractionDigits: 0) + "%" }
+        return growth.current > 0 ? "new" : "—"
+    }
+
+    static func tint(_ growth: Growth) -> Color? {
+        guard let ratio = growth.ratio else { return nil }
+        if ratio >= band { return Palette.mint }
+        if ratio <= -band { return Palette.coral }
+        return nil
+    }
 }
 
 // MARK: - Strip
 
-/// All sites' numbers in one row, in the metric strip's place: Search Console's four summed
-/// over every site with their moves, then, beyond the hairline, the visits and how many
-/// sites there are.
-private struct GlanceStrip: View {
+/// The fleet's numbers in one row, in the metric strip's place, and the page's switch.
+///
+/// Clicks, Visits and Sales each have a run of days behind them, so each can be drawn: the
+/// chosen one carries the headband, the style guide's mark for an active item, and the other
+/// two keep an empty slot for it so a figure that can be chosen looks choosable before it is.
+/// Impressions, the rate, the position and the count of projects have no run and stay inert.
+///
+/// The band is an overlay and takes no room, so this strip stands exactly as tall as a
+/// project's — which is what keeps the chart under it on one line across the app.
+private struct FleetStrip: View {
+    let fleet: FleetTrajectory
     let comparison: PeriodComparison
-    let visits: VisitsComparison?
     let siteCount: Int
+    @Binding var source: OverviewSource
+
+    /// Which choosable figure the pointer is over.
+    @State private var pointedAt: OverviewSource?
 
     var body: some View {
         let stats = comparison.currentStats
         HStack(alignment: .top, spacing: 0) {
-            Metric(
-                title: "Clicks",
-                value: GlanceFigure.count(stats.clicks),
-                change: comparison.clicks.map { Trend.signed($0.delta, fractionDigits: 0) },
-                tint: comparison.clicks.map { GlanceFigure.tint($0.delta) },
-                dot: Palette.blue
-            )
+            choice(.clicks, dot: Palette.blue)
             gap
             Metric(
                 title: "Impressions",
@@ -259,96 +297,283 @@ private struct GlanceStrip: View {
                 .fill(Palette.line)
                 .frame(width: 1, height: 48)
             gap
-            Metric(
-                title: "Visits",
-                value: visits.map { GlanceFigure.count($0.current) } ?? "—",
-                change: visits?.trend.map { Trend.signed($0.delta, fractionDigits: 0) },
-                tint: visits?.trend.map { GlanceFigure.tint($0.delta) },
-                dot: visits == nil ? nil : visitsColor,
-                footnote: visits == nil ? "No analytics" : nil
-            )
+            choice(.visits, dot: visitsColor, absent: "No analytics")
             gap
-            Metric(title: "Sites", value: String(siteCount))
+            choice(.sales, dot: Palette.mint, absent: "No sales")
+            gap
+            Metric(title: "Projects", value: String(siteCount))
         }
+        .animation(.snappy(duration: 0.2), value: source)
+    }
+
+    /// One figure the chart can be drawn for. A source no project has is shown with its
+    /// reason and cannot be chosen: there would be nothing to draw.
+    private func choice(_ chosen: OverviewSource, dot: Color, absent: String? = nil) -> some View {
+        let growth = fleet.growth(chosen)
+        let isActive = source == chosen
+        return Button {
+            source = chosen
+        } label: {
+            Metric(
+                title: chosen.label,
+                value: growth.map { GlanceFigure.figure($0.current, source: chosen, currency: fleet.currency) } ?? "—",
+                // The absolute move, as every other figure in the strip writes it; the
+                // percentage belongs to the project tiles under the chart.
+                change: growth.map { GlanceFigure.move($0, source: chosen, currency: fleet.currency) },
+                tint: growth.flatMap { GrowthReading.tint($0) },
+                dot: dot,
+                footnote: growth == nil ? absent : nil
+            )
+            // An overlay, so the mark costs the strip no height and every page's strip stays
+            // the same height. The band sits in the room between the strip and the chart.
+            .overlay(alignment: .bottomLeading) {
+                if growth != nil {
+                    Headband()
+                        .fill(isActive ? Palette.acid : (pointedAt == chosen ? Palette.acid.opacity(0.5) : Palette.line))
+                        .frame(width: 28, height: 3)
+                        .offset(y: 9)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(growth == nil)
+        .onHover { inside in
+            pointedAt = inside ? chosen : (pointedAt == chosen ? nil : pointedAt)
+        }
+        .help(growth == nil ? (absent ?? "") : "Draw \(chosen.label.lowercased()) in the chart")
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
     private var gap: some View {
-        Spacer(minLength: 28)
+        Spacer(minLength: 24)
     }
 }
 
-// MARK: - Reading a growth
+// MARK: - The chart
 
-/// What the screen says about a growth: the percentage, a word, a colour. The bands are the
-/// screen's: ten percent either way is the line between moving and standing still. One
-/// colour with one meaning — mint up, coral down, nothing for flat or unknown.
-enum GrowthReading {
-    static let band = 0.1
+/// The fleet's chosen source as the pane's floor: the period as a line over a light fill, the
+/// period before as a grey line behind it, one tick under each point, and the baseline as the
+/// only rule. Drawn at the pane's full width with its end dates outside the plot, the way a
+/// project's dashboard draws its own — a chart in a card is an item on the page; a chart
+/// without one is the page's ground.
+///
+/// An earlier run that is a stand-in (one total spread evenly over the days, which is all the
+/// sales report keeps) is dashed, so it never reads as measured days.
+private struct FleetChart: View {
+    let run: ComparisonRun
+    let source: OverviewSource
+    let currency: String?
 
-    /// "+34%", or "new" for a count that came from nothing, or a dash for nothing at all.
-    static func label(_ growth: Growth) -> String {
-        if let ratio = growth.ratio { return Trend.signed(ratio * 100, fractionDigits: 0) + "%" }
-        return growth.current > 0 ? "new" : "—"
+    @Environment(\.isTabPreview) private var isPreview
+    @State private var hovered: Int?
+
+    private var color: Color {
+        switch source {
+        case .clicks: Palette.blue
+        case .visits: visitsColor
+        case .sales: Palette.mint
+        }
     }
-
-    static func word(_ growth: Growth) -> String {
-        guard let ratio = growth.ratio else { return growth.current > 0 ? "Started this period" : "Nothing yet" }
-        if ratio >= band { return "Growing" }
-        if ratio <= -band { return "Slipping" }
-        return "Flat"
-    }
-
-    static func tint(_ growth: Growth) -> Color? {
-        guard let ratio = growth.ratio else { return nil }
-        if ratio >= band { return Palette.mint }
-        if ratio <= -band { return Palette.coral }
-        return nil
-    }
-}
-
-// MARK: - Project card
-
-/// One project: the site in a zone of its own on the left — its mark, name and origin, and
-/// at the foot what it sold over the period when it sells — then three columns every site
-/// has, Search, Visitors and Plan. A source the site does not have keeps its column and
-/// says why, so the columns stand in the same place on every card. Double-click opens the
-/// site's tab.
-private struct ProjectCard: View {
-    let project: ProjectTrajectory
-    let period: Period
-    let icon: Image?
-
-    static let nameWidth: CGFloat = 150
-    static let figureSize: CGFloat = 20
-    static let pictureHeight: CGFloat = 36
 
     var body: some View {
-        HStack(alignment: .top, spacing: 24) {
-            nameZone
-                .frame(width: Self.nameWidth, alignment: .leading)
-                // The zone takes the card's height, so the sales line at its foot sits on
-                // the baseline the three charts share.
-                .frame(maxHeight: .infinity, alignment: .top)
-
-            HStack(alignment: .top, spacing: 20) {
-                searchColumn
-                visitorsColumn
-                PlanColumn(plan: project.plan, period: period)
+        if run.current.count >= 2 {
+            VStack(spacing: 6) {
+                plot
+                    .frame(minHeight: Page.chartHeight.lowerBound, maxHeight: Page.chartHeight.upperBound)
+                endLabels
             }
+        } else {
+            ContentUnavailableView(
+                "Not enough data",
+                systemImage: "chart.xyaxis.line",
+                description: Text("The chart needs at least two days.")
+            )
+            .frame(minHeight: Page.chartHeight.lowerBound)
         }
-        // The row takes its own height — the columns' — and not what it is offered: a zone
-        // let grow to the row's height would otherwise grow the row instead.
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .cardSurface(cornerRadius: 12)
-        .contentShape(Rectangle())
     }
 
-    /// The double-click hint stands on the name only. On the whole card it rose wherever the
-    /// pointer rested — over a chart, beside the chart's own hover label.
-    private var nameZone: some View {
-        VStack(alignment: .leading, spacing: 4) {
+    /// The first and last point, at the two ends of the run. Set outside the chart so the plot
+    /// can reach the pane's edges while the words keep the column inset.
+    private var endLabels: some View {
+        HStack {
+            Text(run.current.first!.date, format: .dateTime.day().month(.abbreviated))
+            Spacer()
+            Text(run.current.last!.date, format: .dateTime.day().month(.abbreviated))
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, Page.columnInset)
+    }
+
+    private var plot: some View {
+        GeometryReader { geometry in
+            let slot = geometry.size.width / CGFloat(max(run.current.count, 1))
+            chart
+                .contentShape(Rectangle())
+                .onContinuousHover { phase in
+                    guard !isPreview else { return }
+                    switch phase {
+                    case .active(let location):
+                        hovered = min(max(Int(location.x / slot), 0), run.current.count - 1)
+                    case .ended:
+                        hovered = nil
+                    }
+                }
+                // Always present and shown by opacity, never inserted: a label that came and
+                // went under the pointer would take the hover with it. See `MinuteBars`.
+                .overlay(alignment: .topLeading) {
+                    let index = min(hovered ?? 0, run.current.count - 1)
+                    let centre = slot * (CGFloat(index) + 0.5)
+                    label(index)
+                        .fixedSize()
+                        .alignmentGuide(.leading) { label in
+                            -min(max(centre - label.width / 2, Page.columnInset), max(geometry.size.width - label.width - Page.columnInset, 0))
+                        }
+                        .alignmentGuide(.top) { _ in -8 }
+                        .opacity(hovered == nil ? 0 : 1)
+                        .allowsHitTesting(false)
+                }
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// The point under the pointer: its day, the value now, and the value the period before.
+    /// The values the day measured, not the mean a smoothed line is drawn at — a reader
+    /// pointing at a day asks what happened that day. See `ComparisonRun.Point.measured`.
+    private func label(_ index: Int) -> some View {
+        HStack(spacing: 6) {
+            Text(run.current[index].date.formatted(.dateTime.day().month(.abbreviated)))
+                .foregroundStyle(.secondary)
+            Text(figure(run.current[index].measured))
+                .fontWeight(.semibold)
+            if index < run.previousMeasured.count {
+                Text(run.previousIsAverage
+                    ? "was \(figure(run.previousMeasured[index])) on average"
+                    : "was \(figure(run.previousMeasured[index]))")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption)
+        .monospacedDigit()
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.regularMaterial, in: .rect(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
+        .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
+    }
+
+    /// A value in the label. The sales run is kept in the currency's major units, as the
+    /// report's days are; every other run is a count.
+    private func figure(_ value: Double) -> String {
+        source.isMoney ? Money.format(value * 100, currency: currency) : GlanceFigure.count(value)
+    }
+
+    private var chart: some View {
+        Chart {
+            ForEach(Array(run.previous.enumerated()), id: \.offset) { index, value in
+                LineMark(x: .value("Point", index), y: .value("Was", value), series: .value("Run", "was"))
+                    .foregroundStyle(Color.secondary.opacity(0.6))
+                    .lineStyle(StrokeStyle(lineWidth: 1.25, lineJoin: .round, dash: run.previousIsAverage ? [3, 3] : []))
+            }
+            .interpolationMethod(.monotone)
+
+            ForEach(Array(run.current.enumerated()), id: \.offset) { index, point in
+                AreaMark(x: .value("Point", index), y: .value("Now", point.value), series: .value("Run", "now"))
+                    .foregroundStyle(
+                        LinearGradient(colors: [color.opacity(0.16), color.opacity(0)], startPoint: .top, endPoint: .bottom)
+                    )
+                LineMark(x: .value("Point", index), y: .value("Now", point.value), series: .value("Run", "now"))
+                    .foregroundStyle(color)
+                    .lineStyle(StrokeStyle(lineWidth: 1.75, lineJoin: .round))
+            }
+            .interpolationMethod(.monotone)
+
+            if let hovered, hovered < run.current.count {
+                RuleMark(x: .value("Point", hovered))
+                    .foregroundStyle(.secondary.opacity(0.6))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                PointMark(x: .value("Point", hovered), y: .value("Now", run.current[hovered].value))
+                    .foregroundStyle(color)
+                    .symbolSize(70)
+            }
+        }
+        .chartYScale(domain: .automatic(includesZero: true))
+        // The baseline is the only horizontal rule: a hairline at zero.
+        .chartYAxis {
+            AxisMarks(values: [0]) { _ in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 1))
+                    .foregroundStyle(Palette.line)
+            }
+        }
+        // One dot under each point. The dates themselves are set outside the plot.
+        .chartXAxis {
+            AxisMarks(values: Array(0..<max(run.current.count, 1))) { _ in
+                AxisTick(centered: false, length: 2, stroke: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .foregroundStyle(Palette.line)
+            }
+        }
+        // Room above the peaks for the label, and none on the sides: the plot is the pane.
+        .chartPlotStyle { plot in plot.padding(.top, 8) }
+    }
+}
+
+// MARK: - The projects
+
+/// The projects under the chart, four to a row: each one the chosen source, so the row reads
+/// as the chart broken up by project. A tile says no verdict — the percentage is the reading,
+/// and a word beside it would only say the percentage again.
+///
+/// Laid out with stacks rather than a lazy grid, so a still of the page draws them: lazy
+/// content in an `ImageRenderer` comes out empty, and the peek shows stills.
+private struct ProjectTiles: View {
+    let projects: [ProjectTrajectory]
+    let source: OverviewSource
+    let icon: (Site.ID) -> Image?
+    let onOpen: (Site.ID) -> Void
+
+    /// Four across at the column's width leaves a tile wide enough for a name and a figure.
+    /// A fleet of two gets two wider tiles rather than two narrow ones and a gap.
+    private var perRow: Int { max(1, min(4, projects.count)) }
+
+    private var rows: [[ProjectTrajectory]] {
+        stride(from: 0, to: projects.count, by: perRow).map {
+            Array(projects[$0..<min($0 + perRow, projects.count)])
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(row) { project in
+                        ProjectTile(project: project, source: source, icon: icon(project.id))
+                            .onTapGesture(count: 2) { onOpen(project.id) }
+                    }
+                    // A short last row keeps the tile width of a full one.
+                    if row.count < perRow {
+                        ForEach(0..<(perRow - row.count), id: \.self) { _ in
+                            Color.clear.frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// One project, in the chosen source: its mark and name, the growth as a percentage in its
+/// colour, the count that percentage came from, and the period against the period before as a
+/// spark. A project without the source keeps its tile and says so, so the tiles stand in the
+/// same places whichever source is drawn.
+private struct ProjectTile: View {
+    let project: ProjectTrajectory
+    let source: OverviewSource
+    let icon: Image?
+
+    var body: some View {
+        let growth = project.growth(source)
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Group {
                     if let icon {
@@ -357,207 +582,115 @@ private struct ProjectCard: View {
                         Image(systemName: "globe").foregroundStyle(.secondary)
                     }
                 }
-                .frame(width: 16, height: 16)
+                .frame(width: 14, height: 14)
                 Text(project.site.name)
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
+                if let error = project.errorMessage {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(Palette.coral)
+                        .help(error)
+                }
             }
             .help("Double-click to open \(project.site.name)")
-            Text(project.site.origin.replacingOccurrences(of: "https://", with: ""))
+
+            Text(growth.map { GrowthReading.label($0) } ?? "—")
+                .font(.system(size: 20, weight: .medium))
+                .monospacedDigit()
+                .foregroundStyle(growth.flatMap { GrowthReading.tint($0) } ?? .primary)
+
+            Text(line(growth))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-            if let error = project.errorMessage {
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundStyle(Palette.coral)
-                    .help(error)
-            }
-            if let sales = project.sales {
-                Spacer(minLength: 12)
-                SalesLine(sales: sales)
-            }
+
+            Spark(run: project.run(source), color: color)
+                .frame(height: 30)
+                .padding(.top, 2)
         }
-    }
-
-    private var searchColumn: some View {
-        let clicks = project.clicks
-        return SourceColumn(
-            title: "Search",
-            growth: clicks,
-            line: "\(GlanceFigure.count(clicks.current)) clicks" + (clicks.previous.map { ", was \(GlanceFigure.count($0))" } ?? ""),
-            absent: nil
-        ) {
-            ComparisonChart(run: project.clicksRun, color: Palette.blue)
-        }
-    }
-
-    private var visitorsColumn: some View {
-        SourceColumn(
-            title: "Visitors",
-            growth: project.visits,
-            line: project.visits.map { "\(GlanceFigure.count($0.current)) visits" + ($0.previous.map { ", was \(GlanceFigure.count($0))" } ?? "") } ?? "",
-            absent: "No analytics provider"
-        ) {
-            ComparisonChart(run: project.visitsRun, color: visitsColor)
-        }
-    }
-}
-
-/// What the site sold over the period, as one line: the source's dot, the amount, the
-/// growth in its colour. What it was is on hover.
-private struct SalesLine: View {
-    let sales: ProjectTrajectory.Sales
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Circle()
-                .fill(Palette.mint)
-                .frame(width: 5, height: 5)
-                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
-            Text(Money.format(sales.growth.current, currency: sales.currency))
-                .font(.callout)
-                .monospacedDigit()
-                .lineLimit(1)
-            Text(GrowthReading.label(sales.growth))
-                .font(.caption.weight(.medium))
-                .monospacedDigit()
-                .foregroundStyle(GrowthReading.tint(sales.growth) ?? .secondary)
-        }
-        .help("Sales this period. Was \(Money.format(sales.growth.previous ?? 0, currency: sales.currency)) the period before.")
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// One source's column: its name, the growth as the figure with its word beside it, the
-/// counts it came from in a line, and the two runs as the picture. A source the site lacks
-/// is a dash over the reason, with the picture's baseline and nothing on it.
-private struct SourceColumn<Picture: View>: View {
-    let title: String
-    let growth: Growth?
-    let line: String
-    let absent: String?
-    @ViewBuilder let picture: () -> Picture
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
-            if let growth {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(GrowthReading.label(growth))
-                        .font(.system(size: ProjectCard.figureSize, weight: .medium))
-                        .monospacedDigit()
-                        .foregroundStyle(GrowthReading.tint(growth) ?? .primary)
-                    Text(GrowthReading.word(growth))
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                }
-                Text(line)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                picture()
-                    .frame(height: ProjectCard.pictureHeight)
-                    .padding(.top, 6)
-            } else {
-                Text("—")
-                    .font(.system(size: ProjectCard.figureSize, weight: .medium))
-                Text(absent ?? "")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                EmptyPicture(text: "")
-                    .frame(height: ProjectCard.pictureHeight)
-                    .padding(.top, 6)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// The plan's column: the indexed share as the figure, its move over the period beside it,
-/// how many planned pages a search has brought someone to, and the Indexed series as the
-/// picture — or why there is none.
-private struct PlanColumn: View {
-    let plan: ProjectTrajectory.Plan?
-    let period: Period
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Plan")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
-            if let plan, let share = plan.indexedShare {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(share.formatted(.percent.precision(.fractionLength(0))))
-                        .font(.system(size: ProjectCard.figureSize, weight: .medium))
-                        .monospacedDigit()
-                    Text(plan.indexedMove.map { Trend.signed($0, fractionDigits: 0) + "pp" } ?? "indexed")
-                        .font(.caption.weight(.medium))
-                        .monospacedDigit()
-                        .foregroundStyle(plan.indexedMove.map { GlanceFigure.tint($0) } ?? .secondary)
-                }
-                Text("\(plan.funnel.clicked) of \(plan.funnel.planned) planned pages clicked")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Group {
-                    if plan.coverage.count >= 2 {
-                        ComparisonChart(
-                            run: ComparisonRun(
-                                current: plan.coverage.compactMap { day in
-                                    day.day.map { ComparisonRun.Point(date: $0, value: (day.indexedShare ?? 0) * 100) }
-                                },
-                                previous: [],
-                                previousIsAverage: false
-                            ),
-                            color: Palette.mint,
-                            format: { $0.formatted(.number.precision(.fractionLength(0))) + "%" },
-                            fromZero: false
-                        )
-                    } else {
-                        EmptyPicture(text: "Indexing series too young")
-                    }
-                }
-                .frame(height: ProjectCard.pictureHeight)
-                .padding(.top, 6)
-            } else {
-                Text("—")
-                    .font(.system(size: ProjectCard.figureSize, weight: .medium))
-                Text(plan == nil ? "No registry yet" : "No keyword pages planned")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                EmptyPicture(text: "")
-                    .frame(height: ProjectCard.pictureHeight)
-                    .padding(.top, 6)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .help(plan.map { Self.help($0) } ?? "")
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .cardSurface(cornerRadius: 12)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 
-    /// The funnel, in words, for the pointer: what the share is measured over, and the steps.
-    private static func help(_ plan: ProjectTrajectory.Plan) -> String {
-        let f = plan.funnel
-        return "Indexed over the \(f.planned) pages a keyword aims at. Planned \(f.planned), published \(f.published), indexed \(f.indexed), reached by a search \(f.reached), clicked \(f.clicked)."
+    private var color: Color {
+        switch source {
+        case .clicks: Palette.blue
+        case .visits: visitsColor
+        case .sales: Palette.mint
+        }
+    }
+
+    /// What the percentage was measured on, or why there is no percentage.
+    private func line(_ growth: Growth?) -> String {
+        guard let growth else {
+            switch source {
+            case .clicks: return "No search data"
+            case .visits: return "No analytics provider"
+            case .sales: return "No commerce provider"
+            }
+        }
+        let now = GlanceFigure.figure(growth.current, source: source, currency: project.sales?.currency)
+        guard let previous = growth.previous else { return "\(now) \(source.unit)" }
+        let was = GlanceFigure.figure(previous, source: source, currency: project.sales?.currency)
+        return "\(now) \(source.unit), was \(was)"
     }
 }
 
-/// The picture's zone when there is nothing to draw: the reason, small, over the baseline
-/// the chart would have had.
-private struct EmptyPicture: View {
-    let text: String
+/// A run drawn small: the period as a line over a faint fill, the period before as a grey line
+/// behind it. No axes and no hover — a spark is a shape, and the figure above it is the
+/// number. Drawn as a path rather than with Charts, because a page can hold one per project.
+struct Spark: View {
+    let run: ComparisonRun
+    let color: Color
 
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            Text(text)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-            Spacer()
-            Palette.line.frame(height: 1)
+        GeometryReader { geometry in
+            let size = geometry.size
+            let now = run.current.map(\.value)
+            let was = run.previous
+            let top = max((now + was).max() ?? 0, 0.0001)
+            ZStack {
+                if was.count > 1 {
+                    Self.line(was, in: size, top: top)
+                        .stroke(Color.secondary.opacity(0.55), style: StrokeStyle(lineWidth: 1, lineJoin: .round))
+                }
+                if now.count > 1 {
+                    Self.area(now, in: size, top: top)
+                        .fill(LinearGradient(colors: [color.opacity(0.18), color.opacity(0.01)], startPoint: .top, endPoint: .bottom))
+                    Self.line(now, in: size, top: top)
+                        .stroke(color, style: StrokeStyle(lineWidth: 1.4, lineJoin: .round))
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private static func points(_ values: [Double], in size: CGSize, top: Double) -> [CGPoint] {
+        let step = values.count > 1 ? size.width / CGFloat(values.count - 1) : size.width
+        return values.enumerated().map { index, value in
+            CGPoint(x: CGFloat(index) * step, y: size.height - CGFloat(value / top) * (size.height - 1) - 0.5)
+        }
+    }
+
+    private static func line(_ values: [Double], in size: CGSize, top: Double) -> Path {
+        Path { path in path.addLines(points(values, in: size, top: top)) }
+    }
+
+    /// Built point by point: `addLines` starts a subpath of its own, which would close the
+    /// fill from the last point straight back to the first and draw a wedge.
+    private static func area(_ values: [Double], in size: CGSize, top: Double) -> Path {
+        let marks = points(values, in: size, top: top)
+        return Path { path in
+            guard let first = marks.first, let last = marks.last else { return }
+            path.move(to: CGPoint(x: first.x, y: size.height))
+            for mark in marks {
+                path.addLine(to: mark)
+            }
+            path.addLine(to: CGPoint(x: last.x, y: size.height))
+            path.closeSubpath()
         }
     }
 }

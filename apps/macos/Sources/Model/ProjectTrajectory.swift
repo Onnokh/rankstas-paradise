@@ -185,6 +185,64 @@ struct ComparisonRun: Equatable {
         self.previousIsAverage = previousIsAverage
     }
 
+    /// Several runs of the same period laid on one axis and added, point for point from the
+    /// last day back.
+    ///
+    /// Backwards, because the runs are not all the same length: a site that started counting
+    /// three weeks ago has fewer points than one measured for a year, and both end on the
+    /// same day. Adding from the end lets every run carry the days it measured and stretches
+    /// none of them over days it did not. An empty run adds nothing at all.
+    ///
+    /// The earlier run is added the same way, and is empty when no run has one — a fleet
+    /// that only started counting has nothing to be set against, which is not the same as
+    /// being set against zero.
+    static func sum(_ runs: [ComparisonRun]) -> ComparisonRun {
+        let counted = runs.filter { !$0.current.isEmpty }
+        guard let longest = counted.max(by: { $0.current.count < $1.current.count }) else {
+            return ComparisonRun(current: [], previous: [], previousIsAverage: false)
+        }
+        let count = longest.current.count
+
+        let current = (0..<count).map { index -> Point in
+            var value = 0.0
+            var measured = 0.0
+            for run in counted {
+                let offset = run.current.count - count + index
+                guard offset >= 0 else { continue }
+                value += run.current[offset].value
+                measured += run.current[offset].measured
+            }
+            return Point(date: longest.current[index].date, value: value, measured: measured)
+        }
+
+        let hasPrevious = counted.contains { !$0.previous.isEmpty }
+        var previous: [Double] = []
+        var previousMeasured: [Double] = []
+        if hasPrevious {
+            for index in 0..<count {
+                var value = 0.0
+                var measured = 0.0
+                for run in counted {
+                    let offset = run.previous.count - count + index
+                    guard offset >= 0 else { continue }
+                    value += run.previous[offset]
+                    measured += run.previousMeasured[offset]
+                }
+                previous.append(value)
+                previousMeasured.append(measured)
+            }
+        }
+
+        return ComparisonRun(
+            current: current,
+            previous: previous,
+            previousMeasured: previousMeasured,
+            // One stand-in among the runs makes the sum a stand-in: the line is drawn dashed
+            // rather than claiming days that were never measured.
+            previousIsAverage: counted.contains { $0.previousIsAverage }
+        )
+    }
+
     /// Days summed into one point: one up to a month, seven beyond.
     static func bucketSize(for period: Period) -> Int {
         period.days > 31 ? 7 : 1
