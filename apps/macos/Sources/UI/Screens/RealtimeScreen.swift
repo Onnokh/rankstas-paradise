@@ -117,7 +117,7 @@ struct RealtimeScreen: View {
                     onOpen: onOpenSite
                 )
                 .column()
-                .padding(.top, 36)
+                .padding(.top, Page.stripInset)
 
                 FeedCard(
                     rows: rows,

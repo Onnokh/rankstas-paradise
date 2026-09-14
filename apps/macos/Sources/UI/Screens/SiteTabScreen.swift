@@ -1545,7 +1545,7 @@ private struct SiteDashboard: View {
             .column()
 
         TrendChart(days: Array(days.suffix(state.period.days)))
-            .padding(.top, 36)
+            .padding(.top, Page.stripInset)
 
         // The analytics provider's two views, side by side under the Search Console
         // chart and apart from it: the people on the site this half hour, and the
@@ -1561,7 +1561,7 @@ private struct SiteDashboard: View {
                 }
             }
             .column()
-            .padding(.top, 36)
+            .padding(.top, Page.blockInset)
 
             // What visitors did, over the same period: the provider's third view,
             // the full column wide because event names run long.
@@ -1585,7 +1585,7 @@ private struct SiteDashboard: View {
 
         rankingCards
             .column()
-            .padding(.top, 36)
+            .padding(.top, Page.blockInset)
     }
 
     /// Today: nothing is stored yet, so everything here is the provider's, read live. Search
@@ -1598,14 +1598,14 @@ private struct SiteDashboard: View {
                 .column()
 
             HoursChart(today: today)
-                .padding(.top, 36)
+                .padding(.top, Page.stripInset)
 
             HStack(alignment: .top, spacing: 20) {
                 RealtimeCard(live: liveVisitors)
                 PagesTodayCard(pages: today.pages)
             }
             .column()
-            .padding(.top, 36)
+            .padding(.top, Page.blockInset)
 
             EventsCard(
                 rows: today.events.map { EventRow(name: $0.name, current: $0.count, previous: 0, delta: 0) },
