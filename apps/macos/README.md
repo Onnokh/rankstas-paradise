@@ -106,14 +106,14 @@ A release is a universal DMG, signed with Developer ID and notarised, so it open
 
 ```sh
 scripts/release.sh   # build/RankstasParadise-<version>.dmg, version from MARKETING_VERSION
-scripts/publish.sh   # GitHub release macos-v<version>, then the DMG's sha256
+scripts/publish.sh   # GitHub release macos-v<version>, then the Homebrew cask
 ```
 
 Raise `MARKETING_VERSION` in `project.yml` (and run `xcodegen generate`) before a release: the
 tag is per version. `release.sh` needs the Developer ID Application certificate of team
 5Q5AZ5596L in the keychain and an `asc` profile for notarisation (`RP_ASC_PROFILE`, default
-`personal`). The Homebrew cask downloads the DMG from the GitHub release: after a release,
-set the cask's `version` and `sha256` to the new ones.
+`personal`). `publish.sh` points the Homebrew cask `onnokh/tap/rankstas-paradise` at the new
+DMG; it needs that tap (`brew tap onnokh/tap`) and push access to it.
 
 ## Layout
 
