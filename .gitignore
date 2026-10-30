@@ -22,6 +22,8 @@ DerivedData/
 .derivedData/
 xcuserdata/
 *.xcuserstate
+# Release disk images of apps/macos/scripts/release.sh.
+apps/macos/build/
 
 # Claude Code session files and worktrees
 .claude/

@@ -94,11 +94,26 @@ open -a "/Applications/Ranksta's Paradise.app"
 The bundle is ad-hoc signed and names no development team, which is all a local install needs:
 `codesign --verify --deep --strict` passes, and a bundle that was never downloaded carries no
 quarantine flag for Gatekeeper to act on. It would not open on another Mac, though — that needs
-a Developer ID signature and notarisation.
+a release (below).
 
 A copy already in `/Applications` is replaced by the same command, so quit the running app
 first. Its data lives in `~/Library/Application Support/com.rankstasparadise.mac`, outside the
 bundle, and a replacement leaves it alone.
+
+## Release
+
+A release is a universal DMG, signed with Developer ID and notarised, so it opens on any Mac:
+
+```sh
+scripts/release.sh   # build/RankstasParadise-<version>.dmg, version from MARKETING_VERSION
+scripts/publish.sh   # GitHub release macos-v<version>, then the DMG's sha256
+```
+
+Raise `MARKETING_VERSION` in `project.yml` (and run `xcodegen generate`) before a release: the
+tag is per version. `release.sh` needs the Developer ID Application certificate of team
+5Q5AZ5596L in the keychain and an `asc` profile for notarisation (`RP_ASC_PROFILE`, default
+`personal`). The Homebrew cask downloads the DMG from the GitHub release: after a release,
+set the cask's `version` and `sha256` to the new ones.
 
 ## Layout
 
