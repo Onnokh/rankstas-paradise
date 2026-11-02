@@ -26,27 +26,22 @@ struct PeekOverlay: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(layout.gridOpacity < 0.5)
 
-            // The Overview's summary, laid out natively for the card's size. No tab and so
-            // no pill: it belongs to the grid and travels in from the left edge as the site
-            // cards travel down, behind them — it is first in the stack — so it never
-            // stands on top of a card still moving.
-            let overview = layout.overviewCardFrame
-            PeekCard(
-                title: TabID.overview.title(in: model),
-                icon: nil,
-                shortcut: nil,
-                showsShortcut: false,
-                isActive: workspace.activeTabID == .overview,
-                layout: layout,
-                size: overview.size,
-                hint: "Open the overview",
-                action: { onSelect(.overview) }
-            ) {
-                OverviewSummaryCard(model: model)
-            }
-            .frame(width: overview.width, height: overview.height)
+            // The Overview's column: its own heading on the "Projects" line, the fleet's
+            // figures under it, and the link to the page at its foot. No tab and so no pill,
+            // and no card either — see `OverviewColumn`. It travels in from the left edge as
+            // the site cards travel down, behind them — it is first in the stack — so it
+            // never stands on top of a card still moving.
+            let overview = layout.overviewColumnFrame
+            OverviewColumn(
+                model: model,
+                headingHeight: PeekLayout.gridHeadingHeight,
+                onOpen: { onSelect(.overview) }
+            )
+            .frame(width: overview.width, height: overview.height, alignment: .topLeading)
             .position(x: overview.midX, y: overview.midY)
-            .opacity(layout.overviewCardOpacity)
+            .opacity(layout.overviewColumnOpacity)
+            // Only from halfway in does the column take the pointer, so its link — the one
+            // thing in the peek that hovers — is never asked about while it is travelling.
             .allowsHitTesting(layout.morph > 0.5)
             .accessibilityHidden(layout.morph < 0.5)
 
@@ -86,7 +81,6 @@ private struct PeekCard<Screen: View>: View {
     let isActive: Bool
     let layout: PeekLayout
     let size: CGSize
-    var hint = "Open this project"
     let action: () -> Void
     @ViewBuilder let screen: () -> Screen
 
@@ -140,7 +134,7 @@ private struct PeekCard<Screen: View>: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
-        .accessibilityHint(hint)
+        .accessibilityHint("Open this project")
         .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 

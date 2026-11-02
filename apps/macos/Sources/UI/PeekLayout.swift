@@ -29,8 +29,9 @@ struct PeekLayout {
     static let gridGap: CGFloat = 20
     static let gridHeadingHeight: CGFloat = 44
     static let gridColumns = 2
-    /// The overview card on the left is a little narrower than a site card and spans two rows.
-    static let overviewCardWidthRatio: CGFloat = 0.85
+    /// The Overview's column on the left is a little narrower than a site card, and stands
+    /// from the heading line down to the bottom of the second row.
+    static let overviewColumnWidthRatio: CGFloat = 0.85
 
     /// Progress above the strip that does not yet start the grid morph. A springy landing on
     /// the strip overshoots into this zone and reads as the strip stretching, not the grid
@@ -170,16 +171,17 @@ struct PeekLayout {
     // MARK: Grid
     //
     // Every tab is a site, and the site cards fill a two-column grid under the "Projects"
-    // heading. The Overview's summary card stands to their left, two rows tall. It is no
-    // tab: it has no pill to grow from, so it belongs to the grid alone and travels in from
-    // the window's left edge on the same morph the site cards travel down on (see
-    // `overviewCardFrame`).
+    // heading. The Overview stands to their left as a column of its own — its heading on the
+    // same line as "Projects", its figures under it, and at its foot the one link that opens
+    // the page. It is no card and no tab: nothing here grows from a pill, so the column
+    // belongs to the grid alone and travels in from the window's left edge on the same morph
+    // the site cards travel down on (see `overviewColumnFrame`).
 
     var gridRows: Int {
         max(1, Int((Double(tabCount) / Double(Self.gridColumns)).rounded(.up)))
     }
 
-    /// Rows the block is sized for: the overview card needs at least two.
+    /// Rows the block is sized for: the Overview's column needs at least two.
     private var sizedRows: Int { max(gridRows, 2) }
 
     var gridCardSize: CGSize {
@@ -187,16 +189,22 @@ struct PeekLayout {
         let rows = CGFloat(sizedRows)
         let blockWidth = size.width * 0.72
         let blockHeight = size.height * 0.7 - Self.gridHeadingHeight
-        let byWidth = (blockWidth - Self.gridGap * columns) / (columns + Self.overviewCardWidthRatio)
+        let byWidth = (blockWidth - Self.gridGap * columns) / (columns + Self.overviewColumnWidthRatio)
         let rowHeight = (blockHeight - Self.gridGap * (rows - 1)) / rows
         let byHeight = cardWidth(forHeight: rowHeight)
         let width = max(120, min(byWidth, byHeight))
         return CGSize(width: width, height: cardHeight(forWidth: width))
     }
 
-    var overviewCardSize: CGSize {
+    /// The column carries its own heading, so it starts on the heading line rather than under
+    /// it: "Overview" and "Projects" are then written on one line, and the figures below the
+    /// one stand level with the cards below the other.
+    var overviewColumnSize: CGSize {
         let card = gridCardSize
-        return CGSize(width: card.width * Self.overviewCardWidthRatio, height: card.height * 2 + Self.gridGap)
+        return CGSize(
+            width: card.width * Self.overviewColumnWidthRatio,
+            height: Self.gridHeadingHeight + card.height * 2 + Self.gridGap
+        )
     }
 
     var gridBlockSize: CGSize {
@@ -204,7 +212,7 @@ struct PeekLayout {
         let columns = CGFloat(Self.gridColumns)
         let rows = CGFloat(sizedRows)
         return CGSize(
-            width: overviewCardSize.width + Self.gridGap + card.width * columns + Self.gridGap * (columns - 1),
+            width: overviewColumnSize.width + Self.gridGap + card.width * columns + Self.gridGap * (columns - 1),
             height: Self.gridHeadingHeight + card.height * rows + Self.gridGap * (rows - 1)
         )
     }
@@ -214,30 +222,30 @@ struct PeekLayout {
         return CGPoint(x: (size.width - block.width) / 2, y: (size.height - block.height) / 2)
     }
 
-    /// Where the Overview's card stands in the grid: left of the site grid, level with its
-    /// first row, two rows tall.
-    var overviewGridFrame: CGRect {
-        CGRect(origin: CGPoint(x: gridOrigin.x, y: gridOrigin.y + Self.gridHeadingHeight), size: overviewCardSize)
+    /// Where the Overview's column stands in the grid: left of the site grid, from the
+    /// heading line down to the bottom of the second row.
+    var overviewColumnHome: CGRect {
+        CGRect(origin: gridOrigin, size: overviewColumnSize)
     }
 
-    /// The Overview's card at this progress. It has no pill to grow from, so it waits wholly
-    /// off the window's left edge and travels to its place on the morph, the same number
-    /// the site cards travel down on: everything in the grid arrives together, and nothing
-    /// appears on top of a card still moving.
-    var overviewCardFrame: CGRect {
-        let home = overviewGridFrame
+    /// The Overview's column at this progress. It has no pill to grow from, so it waits
+    /// wholly off the window's left edge and travels to its place on the morph, the same
+    /// number the site cards travel down on: everything in the grid arrives together, and
+    /// nothing appears on top of a card still moving.
+    var overviewColumnFrame: CGRect {
+        let home = overviewColumnHome
         let parked = CGRect(x: -home.width, y: home.minY, width: home.width, height: home.height)
         return interpolate(parked, home, by: morph)
     }
 
-    /// The card fades up as it travels, so it is fully there only when it is in place.
-    var overviewCardOpacity: Double {
+    /// The column fades up as it travels, so it is fully there only when it is in place.
+    var overviewColumnOpacity: Double {
         Double(morph)
     }
 
-    /// Left edge of the site grid, right of the overview card.
+    /// Left edge of the site grid, right of the Overview's column.
     private var siteGridMinX: CGFloat {
-        gridOrigin.x + overviewCardSize.width + Self.gridGap
+        gridOrigin.x + overviewColumnSize.width + Self.gridGap
     }
 
     /// The "Projects" heading sits over the site grid only.

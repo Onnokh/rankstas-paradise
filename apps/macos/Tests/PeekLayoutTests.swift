@@ -69,20 +69,22 @@ final class PeekLayoutTests: XCTestCase {
         XCTAssertEqual(layout.tabFrame(1).minX, layout.tabFrame(0).minX + layout.tabWidth + PeekLayout.tabSpacing, accuracy: 0.001)
     }
 
-    /// Every tab is a site and fills the two-column grid under the heading; the Overview's
-    /// summary card, no tab, stands to the left of them two rows tall.
-    func testGridPutsTheOverviewCardLeftSpanningTwoRowsAndEverySiteInTwoColumns() {
+    /// Every tab is a site and fills the two-column grid under the heading; the Overview, no
+    /// tab, stands to the left of them as a column of its own — from the heading line, so its
+    /// own heading is written on the "Projects" line, down to the bottom of the second row.
+    func testGridPutsTheOverviewColumnLeftFromTheHeadingLineAndEverySiteInTwoColumns() {
         let layout = PeekLayout(size: size, tabCount: 5, progress: PeekProgress.grid)
-        let overview = layout.overviewCardFrame
-        XCTAssertEqual(overview, layout.overviewGridFrame, "In the grid the card is home.")
+        let overview = layout.overviewColumnFrame
+        XCTAssertEqual(overview, layout.overviewColumnHome, "In the grid the column is home.")
         let first = layout.gridFrame(0)
         let second = layout.gridFrame(1)
         let third = layout.gridFrame(2)
 
         XCTAssertEqual(overview.minX, layout.gridOrigin.x, accuracy: 0.001)
-        XCTAssertEqual(overview.height, first.height * 2 + PeekLayout.gridGap, accuracy: 0.001)
+        XCTAssertEqual(overview.minY, layout.gridOrigin.y, accuracy: 0.001, "It starts on the heading line.")
+        XCTAssertEqual(overview.minY + PeekLayout.gridHeadingHeight, first.minY, accuracy: 0.001)
+        XCTAssertEqual(overview.maxY, third.maxY, accuracy: 0.001, "And reaches the bottom of the second row.")
         XCTAssertEqual(first.minX, overview.maxX + PeekLayout.gridGap, accuracy: 0.001)
-        XCTAssertEqual(first.minY, overview.minY, accuracy: 0.001)
         XCTAssertEqual(second.minX, first.maxX + PeekLayout.gridGap, accuracy: 0.001)
         XCTAssertEqual(second.size, first.size)
         XCTAssertEqual(third.minX, first.minX, accuracy: 0.001)
@@ -94,22 +96,22 @@ final class PeekLayoutTests: XCTestCase {
         XCTAssertTrue(block.contains(overview))
     }
 
-    /// The overview card has no pill to grow from, so it waits off the window's left edge
+    /// The overview column has no pill to grow from, so it waits off the window's left edge
     /// through the bar and the strip, and travels to its place on the morph, the number the
     /// site cards travel on, so the grid arrives as one.
-    func testOverviewCardWaitsOffTheLeftEdgeAndTravelsInOnTheMorph() {
+    func testOverviewColumnWaitsOffTheLeftEdgeAndTravelsInOnTheMorph() {
         for progress in [PeekProgress.closed, PeekProgress.strip] {
             let layout = PeekLayout(size: size, tabCount: 4, progress: progress)
-            XCTAssertLessThanOrEqual(layout.overviewCardFrame.maxX, 0, "Off the window at progress \(progress).")
-            XCTAssertEqual(layout.overviewCardOpacity, 0)
+            XCTAssertLessThanOrEqual(layout.overviewColumnFrame.maxX, 0, "Off the window at progress \(progress).")
+            XCTAssertEqual(layout.overviewColumnOpacity, 0)
         }
         let halfway = 1 + PeekLayout.morphDeadzone + (1 - PeekLayout.morphDeadzone) / 2
         let mid = PeekLayout(size: size, tabCount: 4, progress: halfway)
-        let home = mid.overviewGridFrame
-        XCTAssertEqual(mid.overviewCardFrame.minX, (-home.width + home.minX) / 2, accuracy: 0.001, "Halfway along its travel.")
-        XCTAssertEqual(mid.overviewCardFrame.minY, home.minY, accuracy: 0.001, "It travels level.")
-        XCTAssertEqual(mid.overviewCardOpacity, 0.5, accuracy: 0.0001)
-        XCTAssertEqual(PeekLayout(size: size, tabCount: 4, progress: PeekProgress.grid).overviewCardOpacity, 1)
+        let home = mid.overviewColumnHome
+        XCTAssertEqual(mid.overviewColumnFrame.minX, (-home.width + home.minX) / 2, accuracy: 0.001, "Halfway along its travel.")
+        XCTAssertEqual(mid.overviewColumnFrame.minY, home.minY, accuracy: 0.001, "It travels level.")
+        XCTAssertEqual(mid.overviewColumnOpacity, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(PeekLayout(size: size, tabCount: 4, progress: PeekProgress.grid).overviewColumnOpacity, 1)
     }
 
     func testOvershootPastTheStripStretchesItWithoutStartingTheMorph() {
