@@ -25,8 +25,11 @@ enum OverviewGlance {
         if let series, !series.isEmpty {
             return series
         }
-        return (overview.dashboard?.history ?? []).map {
-            HistoryReportDay(date: $0.date, provisional: false, impressions: $0.impressions, clicks: $0.clicks, ctr: $0.ctr, position: $0.position)
+        guard let dashboard = overview.dashboard else { return [] }
+        return dashboard.history.map { day in
+            // The digest ends at a finalized day, including in older disk snapshots.
+            let provisional = day.provisional ?? dashboard.digest.latestDate.map { day.date > $0 }
+            return HistoryReportDay(date: day.date, provisional: provisional ?? true, impressions: day.impressions, clicks: day.clicks, ctr: day.ctr, position: day.position)
         }
     }
 
@@ -36,7 +39,7 @@ enum OverviewGlance {
             let days = days(for: overview, series: series[overview.id])
             return SiteGlance(
                 site: overview.site,
-                comparison: PeriodComparison(days: days.map(\.asHistoryDay), window: period.days),
+                comparison: PeriodComparison(days: days.finalized.map(\.asHistoryDay), window: period.days),
                 visits: VisitsComparison(days: days, window: period.days),
                 errorMessage: overview.errorMessage
             )

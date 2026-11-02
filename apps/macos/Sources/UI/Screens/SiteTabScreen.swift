@@ -689,8 +689,7 @@ private struct RankingCard: View {
 // MARK: - Chart
 
 /// Impressions and clicks over the period as gradient areas on one value axis, with a hover
-/// rule, point markers and a tooltip. The days Google may still revise continue the same
-/// lines at reduced opacity.
+/// rule, point markers and a tooltip. Only finalized Search Console days are shown.
 ///
 /// The chart is the one thing on the screen that runs edge to edge. It sits straight on the
 /// panel, with no card, no legend and no value axis: a baseline, a dot per day, and the first
@@ -733,21 +732,9 @@ private struct TrendChart: View {
         .padding(.horizontal, Page.columnInset)
     }
 
-    /// Days Google has finalised.
-    private var finalized: [HistoryReportDay] {
-        days.filter { !$0.provisional }
-    }
-
-    /// Days still being revised, starting from the last finalised day so the lines join.
-    private var provisional: [HistoryReportDay] {
-        guard let first = days.firstIndex(where: \.provisional) else { return [] }
-        return Array(days[max(first - 1, 0)...])
-    }
-
     private var chart: some View {
         Chart {
-            series(finalized, suffix: "", opacity: 1)
-            series(provisional, suffix: " (provisional)", opacity: 0.45)
+            series(days)
 
             if let hovered {
                 RuleMark(x: .value("Date", hovered.day))
@@ -810,65 +797,41 @@ private struct TrendChart: View {
         .frame(minHeight: 200, maxHeight: 300)
     }
 
-    /// Area and line for both metrics over one run of days. The suffix keeps provisional runs
-    /// as separate series so they are drawn on their own, without adding legend entries.
-    /// The curve is monotone, so a day is a soft crest rather than a corner. Monotone never
-    /// overshoots the data: Catmull-Rom dipped below the baseline between two empty days.
+    /// Monotone curves avoid dipping below zero between empty days.
     @ChartContentBuilder
-    private func series(_ run: [HistoryReportDay], suffix: String, opacity: Double) -> some ChartContent {
+    private func series(_ run: [HistoryReportDay]) -> some ChartContent {
         ForEach(run) { point in
             AreaMark(
                 x: .value("Date", point.day),
                 y: .value("Impressions", point.impressions),
-                series: .value("Series", "Impressions" + suffix),
+                series: .value("Series", "Impressions"),
                 stacking: .unstacked
             )
-            .foregroundStyle(Self.gradient(Self.impressionsColor).opacity(opacity))
+            .foregroundStyle(Self.gradient(Self.impressionsColor))
 
-            // The finalised lines carry the by-series style, which is what feeds the legend.
-            if suffix.isEmpty {
-                LineMark(
-                    x: .value("Date", point.day),
-                    y: .value("Impressions", point.impressions),
-                    series: .value("Series", "Impressions")
-                )
-                .foregroundStyle(by: .value("Series", "Impressions"))
-                .lineStyle(StrokeStyle(lineWidth: 1.5, lineJoin: .round))
-            } else {
-                LineMark(
-                    x: .value("Date", point.day),
-                    y: .value("Impressions", point.impressions),
-                    series: .value("Series", "Impressions" + suffix)
-                )
-                .foregroundStyle(Self.impressionsColor.opacity(opacity))
-                .lineStyle(StrokeStyle(lineWidth: 1.5, lineJoin: .round))
-            }
+            LineMark(
+                x: .value("Date", point.day),
+                y: .value("Impressions", point.impressions),
+                series: .value("Series", "Impressions")
+            )
+            .foregroundStyle(by: .value("Series", "Impressions"))
+            .lineStyle(StrokeStyle(lineWidth: 1.5, lineJoin: .round))
 
             AreaMark(
                 x: .value("Date", point.day),
                 y: .value("Clicks", point.clicks),
-                series: .value("Series", "Clicks" + suffix),
+                series: .value("Series", "Clicks"),
                 stacking: .unstacked
             )
-            .foregroundStyle(Self.gradient(Self.clicksColor).opacity(opacity))
+            .foregroundStyle(Self.gradient(Self.clicksColor))
 
-            if suffix.isEmpty {
-                LineMark(
-                    x: .value("Date", point.day),
-                    y: .value("Clicks", point.clicks),
-                    series: .value("Series", "Clicks")
-                )
-                .foregroundStyle(by: .value("Series", "Clicks"))
-                .lineStyle(StrokeStyle(lineWidth: 1.5, lineJoin: .round))
-            } else {
-                LineMark(
-                    x: .value("Date", point.day),
-                    y: .value("Clicks", point.clicks),
-                    series: .value("Series", "Clicks" + suffix)
-                )
-                .foregroundStyle(Self.clicksColor.opacity(opacity))
-                .lineStyle(StrokeStyle(lineWidth: 1.5, lineJoin: .round))
-            }
+            LineMark(
+                x: .value("Date", point.day),
+                y: .value("Clicks", point.clicks),
+                series: .value("Series", "Clicks")
+            )
+            .foregroundStyle(by: .value("Series", "Clicks"))
+            .lineStyle(StrokeStyle(lineWidth: 1.5, lineJoin: .round))
         }
         .interpolationMethod(.monotone)
     }
@@ -1481,7 +1444,7 @@ private struct SiteDashboard: View {
     }
 
     private var comparison: PeriodComparison {
-        PeriodComparison(days: days.map(\.asHistoryDay), window: state.period.days)
+        PeriodComparison(days: days.finalized.map(\.asHistoryDay), window: state.period.days)
     }
 
     private var visitsComparison: VisitsComparison? {
@@ -1544,8 +1507,16 @@ private struct SiteDashboard: View {
         MetricStrip(comparison: comparison, visits: visitsComparison, rating: ratingMove)
             .column()
 
-        TrendChart(days: Array(days.suffix(state.period.days)))
+        TrendChart(days: Array(days.finalized.suffix(state.period.days)))
             .padding(.top, Page.stripInset)
+
+        if days.contains(where: \.provisional), let latest = days.finalized.last {
+            Text("Search Console through \(latest.day.formatted(.dateTime.day().month(.abbreviated))). Recent days are still processing.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .column()
+                .padding(.top, 12)
+        }
 
         // The analytics provider's two views, side by side under the Search Console
         // chart and apart from it: the people on the site this half hour, and the

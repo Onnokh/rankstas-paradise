@@ -62,10 +62,14 @@ struct ProjectTrajectory: Identifiable, Equatable {
         period: Period
     ) -> ProjectTrajectory {
         let days = OverviewGlance.days(for: overview, series: series)
-        let count = days.count
+        let searchDays = days.finalized
+        let count = searchDays.count
         let window = period.days
-        let current = Array(days.suffix(window))
-        let previous = Array(days[max(0, count - window * 2)..<max(0, count - window)])
+        let current = Array(searchDays.suffix(window))
+        let previous = Array(searchDays[max(0, count - window * 2)..<max(0, count - window)])
+        let visitCount = days.count
+        let currentVisits = Array(days.suffix(window))
+        let previousVisits = Array(days[max(0, visitCount - window * 2)..<max(0, visitCount - window)])
 
         let clicks = Growth(
             current: current.reduce(0) { $0 + $1.clicks },
@@ -128,8 +132,8 @@ struct ProjectTrajectory: Identifiable, Equatable {
             ctrRun: ComparisonRun.rate(of: clicksRun, over: impressionsRun),
             visits: visits,
             visitsRun: ComparisonRun.make(
-                current: current.map { ($0.day, $0.visits?.visits ?? 0) },
-                previous: previous.map { $0.visits?.visits ?? 0 },
+                current: currentVisits.map { ($0.day, $0.visits?.visits ?? 0) },
+                previous: previousVisits.map { $0.visits?.visits ?? 0 },
                 period: period
             ),
             sales: sales,

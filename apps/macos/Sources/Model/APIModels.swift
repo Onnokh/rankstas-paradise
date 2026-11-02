@@ -102,7 +102,7 @@ struct HistoryReport: Codable, Sendable {
 
 struct HistoryReportDay: Codable, Sendable, Equatable, Identifiable {
     let date: String
-    /// Google is still revising this day; the UI dims it.
+    /// Google is still revising this day; Search Console charts omit it.
     let provisional: Bool
     let impressions: Double
     let clicks: Double
@@ -120,8 +120,12 @@ struct HistoryReportDay: Codable, Sendable, Equatable, Identifiable {
     }
 
     var asHistoryDay: HistoryDay {
-        HistoryDay(date: date, impressions: impressions, clicks: clicks, ctr: ctr, position: position)
+        HistoryDay(date: date, impressions: impressions, clicks: clicks, ctr: ctr, position: position, provisional: provisional)
     }
+}
+
+extension Array where Element == HistoryReportDay {
+    var finalized: [HistoryReportDay] { filter { !$0.provisional } }
 }
 
 /// One day of the analytics provider's series. Visits (sessions) sum across days; visitors
@@ -503,6 +507,8 @@ struct HistoryDay: Codable, Sendable, Equatable {
     let clicks: Double
     let ctr: Double
     let position: Double
+    // Older snapshots did not keep the server's provisional flag.
+    var provisional: Bool? = nil
 }
 
 struct DashboardStats: Equatable, Sendable {

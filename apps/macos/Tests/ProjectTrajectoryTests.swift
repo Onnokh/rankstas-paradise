@@ -108,6 +108,20 @@ final class ProjectTrajectoryTests: XCTestCase {
         XCTAssertEqual(project.clicksRun.previous.count, 28)
     }
 
+    func testSearchRunsStopAtFinalizedDaysWhileVisitsStayCurrent() {
+        let days = (1...16).map { n in
+            HistoryReportDay(date: String(format: "2026-09-%02d", n), provisional: n > 14, impressions: n > 14 ? 0 : 100, clicks: n > 14 ? 0 : 10, ctr: 0.1, position: 5, visits: VisitsDay(pageviews: 40, visits: 20, visitors: 10))
+        }
+        let site = Site(id: "s", name: "S", origin: "https://s.test")
+        let project = ProjectTrajectory.make(overview: SiteOverview(site: site, dashboard: nil, errorMessage: nil), series: days, revenue: nil, targets: nil, coverage: [], period: .d7)
+        XCTAssertEqual(project.clicks.current, 70)
+        XCTAssertEqual(project.clicks.previous, 70)
+        XCTAssertEqual(project.clicksRun.current.last?.date, days[13].day)
+        XCTAssertEqual(project.impressionsRun.current.last?.value, 100)
+        XCTAssertEqual(project.visitsRun.current.last?.date, days[15].day)
+        XCTAssertEqual(project.visits?.current, 140)
+    }
+
     private func target(_ path: String, phase: String, indexed: String?, impressions: Double, clicks: Double, keywords: Int) -> RegistryTarget {
         RegistryTarget(
             targetUrl: path,

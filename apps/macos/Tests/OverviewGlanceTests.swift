@@ -100,4 +100,38 @@ final class OverviewGlanceTests: XCTestCase {
         XCTAssertFalse(OverviewTabState.periods.contains(.today))
         XCTAssertEqual(OverviewTabState.periods.count, Period.allCases.count - 1)
     }
+
+    func testSearchExcludesProvisionalDaysButVisitsKeepThem() {
+        let finalized = series(14, clicks: 10, impressions: 100, position: 5, visits: 20)
+        let pending = HistoryReportDay(date: "2026-09-15", provisional: true, impressions: 0, clicks: 0, ctr: 0, position: 0, visits: VisitsDay(pageviews: 80, visits: 40, visitors: 30))
+        let overview = SiteOverview(site: sleevy, dashboard: dashboard(finalized), errorMessage: nil)
+        let row = OverviewGlance.rows(overviews: [overview], series: [sleevy.id: finalized + [pending]], period: .d7)[0]
+        XCTAssertEqual(row.comparison.current.last?.date, "2026-09-14")
+        XCTAssertEqual(row.comparison.currentStats.clicks, 70)
+        XCTAssertEqual(row.comparison.clicks?.delta, 0)
+        XCTAssertEqual(row.visits?.current, 160)
+    }
+
+    func testCachedDashboardPreservesProvisionalDays() throws {
+        let data = Data("""
+        {"date":"2026-09-15","impressions":0,"clicks":0,"ctr":0,"position":0,"provisional":true}
+        """.utf8)
+        let pending = try JSONDecoder().decode(HistoryDay.self, from: data)
+        let base = dashboard(series(14, clicks: 10, impressions: 100, position: 5, visits: nil))
+        let cached = DashboardEnvelope(generatedAt: base.generatedAt, mode: base.mode, summary: base.summary, digest: base.digest, history: base.history + [pending])
+        let overview = SiteOverview(site: sleevy, dashboard: cached, errorMessage: nil)
+        let row = OverviewGlance.rows(overviews: [overview], series: [:], period: .d7)[0]
+        XCTAssertEqual(row.comparison.current.last?.date, "2026-09-14")
+        XCTAssertEqual(row.comparison.currentStats.clicks, 70)
+    }
+
+    func testLegacyDashboardUsesItsFinalizedDigestDate() throws {
+        let pending = try JSONDecoder().decode(HistoryDay.self, from: Data("""
+        {"date":"2026-09-15","impressions":0,"clicks":0,"ctr":0,"position":0}
+        """.utf8))
+        let base = dashboard(series(14, clicks: 10, impressions: 100, position: 5, visits: nil))
+        let cached = DashboardEnvelope(generatedAt: base.generatedAt, mode: base.mode, summary: base.summary, digest: base.digest, history: base.history + [pending])
+        let overview = SiteOverview(site: sleevy, dashboard: cached, errorMessage: nil)
+        XCTAssertEqual(OverviewGlance.days(for: overview, series: nil).finalized.last?.date, "2026-09-14")
+    }
 }
