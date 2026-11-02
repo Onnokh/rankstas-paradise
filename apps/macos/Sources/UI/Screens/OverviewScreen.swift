@@ -170,112 +170,6 @@ struct OverviewScreen: View {
     }
 }
 
-extension OverviewSource {
-    /// The one colour this source wears everywhere in the app. The rate has none: it is not a
-    /// source of its own but a relation between two, so it is drawn in the foreground colour
-    /// rather than borrowing the meaning of blue or amber.
-    var color: Color {
-        switch self {
-        case .clicks: Palette.blue
-        case .impressions: Palette.amber
-        case .ctr: Palette.text
-        case .visits: visitsColor
-        case .sales: Palette.mint
-        }
-    }
-
-    /// The dot that ties a figure in the strip to its line in the chart. A rate has no line of
-    /// its own colour, so it has no dot.
-    var dot: Color? {
-        isRate ? nil : color
-    }
-
-    /// Whether the line is drawn over a fill. A count fills: the area under it is the clicks
-    /// that were made. A rate does not accumulate — the area under 8% means nothing — so it
-    /// is a line alone, which is also what keeps a white line from washing the page grey.
-    var fills: Bool { !isRate }
-}
-
-// MARK: - Figures
-
-/// How the Overview writes its numbers: whole counts, a rate in percent to one place, a
-/// position to one place, and a move with its sign. One place for every cell, so a project's
-/// tile and the strip above it say the same thing the same way.
-enum GlanceFigure {
-    static func count(_ value: Double) -> String {
-        value.formatted(.number.precision(.fractionLength(0)))
-    }
-
-    static func rate(_ value: Double) -> String {
-        value.formatted(.percent.precision(.fractionLength(1)))
-    }
-
-    /// A position of zero is no position: no impression put the site anywhere.
-    static func position(_ value: Double) -> String {
-        value > 0 ? value.formatted(.number.precision(.fractionLength(1))) : "—"
-    }
-
-    /// Mint when the move is the good way, coral otherwise. For a position, down is up.
-    static func tint(_ delta: Double, lowerIsBetter: Bool = false) -> Color {
-        (lowerIsBetter ? delta <= 0 : delta >= 0) ? Palette.mint : Palette.coral
-    }
-
-    /// A figure in the units of its source: percent for a rate, money for the sales, a count
-    /// for the rest.
-    static func figure(_ value: Double, source: OverviewSource, currency: String?) -> String {
-        if source.isRate { return rate(value) }
-        return source.isMoney ? Money.format(value, currency: currency) : count(value)
-    }
-
-    /// A move in the units of its source, with its sign in front. A rate moves in percentage
-    /// points: from 8% to 9% is a point, not a ninth.
-    static func move(_ growth: Growth, source: OverviewSource, currency: String?) -> String {
-        if source.isRate {
-            guard let points = Rate.points(growth) else { return "new" }
-            return Trend.signed(points, fractionDigits: 1) + "pp"
-        }
-        guard let previous = growth.previous else { return "new" }
-        let moved = growth.current - previous
-        return source.isMoney
-            ? Money.signed(moved, currency: currency)
-            : Trend.signed(moved, fractionDigits: 0)
-    }
-
-    /// How a source's move is tinted: mint the good way, coral the other, nothing for a move
-    /// too small to call. A rate is judged on its points, a count on its ratio.
-    static func tint(_ growth: Growth, source: OverviewSource) -> Color? {
-        if source.isRate {
-            guard let points = Rate.points(growth) else { return nil }
-            if points >= 0.1 { return Palette.mint }
-            if points <= -0.1 { return Palette.coral }
-            return nil
-        }
-        return GrowthReading.tint(growth)
-    }
-}
-
-// MARK: - Reading a growth
-
-/// What the screen says about a growth: the percentage and a colour. The bands are the
-/// screen's: ten percent either way is the line between moving and standing still. One
-/// colour with one meaning — mint up, coral down, nothing for flat or unknown.
-enum GrowthReading {
-    static let band = 0.1
-
-    /// "+34%", or "new" for a count that came from nothing, or a dash for nothing at all.
-    static func label(_ growth: Growth) -> String {
-        if let ratio = growth.ratio { return Trend.signed(ratio * 100, fractionDigits: 0) + "%" }
-        return growth.current > 0 ? "new" : "—"
-    }
-
-    static func tint(_ growth: Growth) -> Color? {
-        guard let ratio = growth.ratio else { return nil }
-        if ratio >= band { return Palette.mint }
-        if ratio <= -band { return Palette.coral }
-        return nil
-    }
-}
-
 // MARK: - Strip
 
 /// The fleet's numbers in one row, in the metric strip's place, and the page's switch.
@@ -511,8 +405,9 @@ private struct FleetChart: View {
             }
         }
         // A rate keeps its own range: a click-through rate that moves between 8 and 9 percent
-        // drawn from a floor of nothing is a flat line.
-        .chartYScale(domain: .automatic(includesZero: !source.isRate))
+        // drawn from a floor of nothing is a flat line. The room above the peaks for the label
+        // is in the domain (see `ChartSpan`); none on the sides: the plot is the pane.
+        .chartYScale(domain: ChartSpan.domain(run.current.map(\.value) + run.previous, fromZero: !source.isRate, headroom: 0.08))
         // The baseline is the only horizontal rule: a hairline at zero.
         .chartYAxis {
             AxisMarks(values: [0]) { _ in
@@ -527,8 +422,6 @@ private struct FleetChart: View {
                     .foregroundStyle(Palette.line)
             }
         }
-        // Room above the peaks for the label, and none on the sides: the plot is the pane.
-        .chartPlotStyle { plot in plot.padding(.top, 8) }
     }
 }
 
@@ -658,74 +551,6 @@ private struct ProjectTile: View {
         guard let previous = growth.previous else { return now + unit }
         let was = GlanceFigure.figure(previous, source: source, currency: project.sales?.currency)
         return "\(now)\(unit), was \(was)"
-    }
-}
-
-/// A run drawn small: the period as a line over a faint fill, the period before as a grey line
-/// behind it. No axes and no hover — a spark is a shape, and the figure above it is the
-/// number. Drawn as a path rather than with Charts, because a page can hold one per project.
-struct Spark: View {
-    let run: ComparisonRun
-    let color: Color
-    /// Whether the shape stands on a floor of zero. A rate wants its own range: a
-    /// click-through rate between 8 and 9 percent drawn from nothing is a flat line.
-    var fromZero = true
-    /// Whether the line is drawn over a fill. See `OverviewSource.fills`.
-    var fills = true
-
-    var body: some View {
-        GeometryReader { geometry in
-            let size = geometry.size
-            let now = run.current.map(\.value)
-            let was = run.previous
-            let top = max((now + was).max() ?? 0, 0.0001)
-            let floor = fromZero ? 0 : ((now + was).min() ?? 0)
-            ZStack {
-                if was.count > 1 {
-                    Self.line(was, in: size, top: top, floor: floor)
-                        .stroke(Color.secondary.opacity(0.55), style: StrokeStyle(lineWidth: 1, lineJoin: .round))
-                }
-                if now.count > 1 {
-                    if fills {
-                        Self.area(now, in: size, top: top, floor: floor)
-                            .fill(LinearGradient(colors: [color.opacity(0.18), color.opacity(0.01)], startPoint: .top, endPoint: .bottom))
-                    }
-                    Self.line(now, in: size, top: top, floor: floor)
-                        .stroke(color, style: StrokeStyle(lineWidth: 1.4, lineJoin: .round))
-                }
-            }
-        }
-        .accessibilityHidden(true)
-    }
-
-    private static func points(_ values: [Double], in size: CGSize, top: Double, floor: Double) -> [CGPoint] {
-        let step = values.count > 1 ? size.width / CGFloat(values.count - 1) : size.width
-        let span = max(top - floor, 0.0001)
-        return values.enumerated().map { index, value in
-            CGPoint(
-                x: CGFloat(index) * step,
-                y: size.height - CGFloat((value - floor) / span) * (size.height - 1) - 0.5
-            )
-        }
-    }
-
-    private static func line(_ values: [Double], in size: CGSize, top: Double, floor: Double) -> Path {
-        Path { path in path.addLines(points(values, in: size, top: top, floor: floor)) }
-    }
-
-    /// Built point by point: `addLines` starts a subpath of its own, which would close the
-    /// fill from the last point straight back to the first and draw a wedge.
-    private static func area(_ values: [Double], in size: CGSize, top: Double, floor: Double) -> Path {
-        let marks = points(values, in: size, top: top, floor: floor)
-        return Path { path in
-            guard let first = marks.first, let last = marks.last else { return }
-            path.move(to: CGPoint(x: first.x, y: size.height))
-            for mark in marks {
-                path.addLine(to: mark)
-            }
-            path.addLine(to: CGPoint(x: last.x, y: size.height))
-            path.closeSubpath()
-        }
     }
 }
 

@@ -469,8 +469,9 @@ private struct IndexingChart: View {
         }
         .chartLegend(.hidden)
         // Zero to the whole plan, always: a chart scaled to the readings alone turned
-        // "3 of 27 indexed" into a line across the top of the card.
-        .chartYScale(domain: 0...Double(max(days.map(\.keywordTargets).max() ?? 1, 1)))
+        // "3 of 27 indexed" into a line across the top of the card. Room above the ceiling for
+        // the tooltip, in the domain (see `ChartSpan`).
+        .chartYScale(domain: ChartSpan.domain([0, Double(max(days.map(\.keywordTargets).max() ?? 1, 1))], fromZero: true, headroom: 0.04))
         // The baseline is the only horizontal rule: a hairline at zero, as on the dashboard.
         .chartYAxis {
             AxisMarks(values: [0]) { _ in
@@ -483,10 +484,6 @@ private struct IndexingChart: View {
                 AxisTick(centered: false, length: 2, stroke: StrokeStyle(lineWidth: 2, lineCap: .round))
                     .foregroundStyle(Palette.line)
             }
-        }
-        // Room above the ceiling for the tooltip.
-        .chartPlotStyle { plot in
-            plot.padding(.top, 8)
         }
         .chartOverlay { proxy in
             if !isPreview {

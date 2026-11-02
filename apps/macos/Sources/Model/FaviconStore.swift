@@ -1,7 +1,17 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import Foundation
 import Observation
 import SwiftUI
+
+#if canImport(AppKit)
+typealias PlatformImage = NSImage
+#else
+typealias PlatformImage = UIImage
+#endif
 
 /// Finds, caches and hands out each site's favicon for the tab bar.
 ///
@@ -11,7 +21,7 @@ import SwiftUI
 @MainActor
 @Observable
 final class FaviconStore {
-    private(set) var icons: [Site.ID: NSImage] = [:]
+    private(set) var icons: [Site.ID: PlatformImage] = [:]
 
     @ObservationIgnored private let fetcher: FaviconFetcher
     @ObservationIgnored private var inFlight: Set<Site.ID> = []
@@ -21,7 +31,11 @@ final class FaviconStore {
     }
 
     func image(for siteID: Site.ID) -> Image? {
+        #if canImport(AppKit)
         icons[siteID].map { Image(nsImage: $0) }
+        #else
+        icons[siteID].map { Image(uiImage: $0) }
+        #endif
     }
 
     /// Loads icons for sites that do not have one yet. Safe to call on every site list change.
@@ -132,22 +146,35 @@ struct FaviconFetcher: Sendable {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), !data.isEmpty else { return nil }
         // Some servers answer 200 with an HTML page for missing icons; make sure it decodes.
+        #if canImport(AppKit)
         guard NSBitmapImageRep(data: data) != nil || NSImage(data: data)?.isValid == true else { return nil }
+        #else
+        guard UIImage(data: data) != nil else { return nil }
+        #endif
         return data
     }
 }
 
-extension NSImage {
+extension PlatformImage {
     /// Crops away fully transparent margins, so icons that pad themselves inside the file
     /// fill the tab's icon slot like icons that do not.
-    func trimmingTransparentMargins() -> NSImage {
+    func trimmingTransparentMargins() -> PlatformImage {
+        #if canImport(AppKit)
+        let cgImage = cgImage(forProposedRect: nil, context: nil, hints: nil)
+        #else
+        let cgImage = self.cgImage
+        #endif
         guard
-            let cgImage = cgImage(forProposedRect: nil, context: nil, hints: nil),
+            let cgImage,
             let box = cgImage.opaqueBoundingBox(),
             box != CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height),
             let cropped = cgImage.cropping(to: box)
         else { return self }
+        #if canImport(AppKit)
         return NSImage(cgImage: cropped, size: NSSize(width: box.width, height: box.height))
+        #else
+        return UIImage(cgImage: cropped, scale: scale, orientation: imageOrientation)
+        #endif
     }
 }
 
@@ -185,11 +212,11 @@ private extension CGImage {
 /// Turns favicon bytes into an image, covering the case AppKit's SVG support does not.
 enum FaviconDecoder {
     @MainActor
-    static func image(from data: Data) -> NSImage? {
+    static func image(from data: Data) -> PlatformImage? {
         if let glyph = textGlyph(inSVG: data) {
             return rasterize(glyph)
         }
-        return NSImage(data: data)
+        return PlatformImage(data: data)
     }
 
     /// Some favicons are an SVG with a single `<text>` element, typically an emoji drawn by the
@@ -208,8 +235,9 @@ enum FaviconDecoder {
     }
 
     @MainActor
-    private static func rasterize(_ glyph: String) -> NSImage {
+    private static func rasterize(_ glyph: String) -> PlatformImage {
         let side: CGFloat = 64
+        #if canImport(AppKit)
         let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
             let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: side * 0.78)]
             let string = NSAttributedString(string: glyph, attributes: attributes)
@@ -218,5 +246,13 @@ enum FaviconDecoder {
             return true
         }
         return image
+        #else
+        return UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { _ in
+            let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: side * 0.78)]
+            let string = NSAttributedString(string: glyph, attributes: attributes)
+            let size = string.size()
+            string.draw(at: CGPoint(x: (side - size.width) / 2, y: (side - size.height) / 2))
+        }
+        #endif
     }
 }

@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
 /// The app's palette, by the interface style guide's names.
@@ -16,17 +20,17 @@ enum Palette {
     // MARK: Identity
 
     /// Errors and alarms. The mascot's own color.
-    static let coral = Color(nsColor: srgb(0xFB3949))
+    static let coral = Color(platform: srgb(0xFB3949))
     /// The interface accent — the headband, carried through the interface. Also the colour
     /// of everything that comes from the analytics provider: live visitors are the app's
     /// momentum, and the guide gives momentum to acid.
-    static let acid = Color(nsColor: srgb(0xC4FA04))
+    static let acid = Color(platform: srgb(0xC4FA04))
     /// The cool half of a two-series chart.
-    static let blue = Color(nsColor: srgb(0x4C8DFF))
+    static let blue = Color(platform: srgb(0x4C8DFF))
     /// Gains, and anything measured as healthy.
-    static let mint = Color(nsColor: srgb(0x42D3A2))
+    static let mint = Color(platform: srgb(0x42D3A2))
     /// The warm half of a two-series chart.
-    static let amber = Color(nsColor: srgb(0xFFB54A))
+    static let amber = Color(platform: srgb(0xFFB54A))
 
     // MARK: Surfaces
 
@@ -60,19 +64,32 @@ enum Palette {
 
     /// Body text, set at the root of a window. A neutral near-white in dark, so the greys it
     /// steps down to carry no blue; the system's label colour in light.
+    #if canImport(AppKit)
     static let text = Color(nsColor: NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? srgb(0xEDEDED) : .labelColor
     })
+    #else
+    static let text = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? srgb(0xEDEDED) : .label
+    })
+    #endif
 
     /// A surface that carries one value in dark and its paper-side equivalent in light.
     /// `NSColor`'s dynamic provider is asked for a value each time the appearance changes,
     /// so this follows the system live.
     private static func adaptive(dark: UInt32, light: UInt32) -> Color {
+        #if canImport(AppKit)
         Color(nsColor: NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? srgb(dark) : srgb(light)
         })
+        #else
+        Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark ? srgb(dark) : srgb(light)
+        })
+        #endif
     }
 
+    #if canImport(AppKit)
     private static func srgb(_ hex: UInt32) -> NSColor {
         NSColor(
             srgbRed: Double((hex >> 16) & 0xFF) / 255,
@@ -81,6 +98,24 @@ enum Palette {
             alpha: 1
         )
     }
+    #else
+    private static func srgb(_ hex: UInt32) -> UIColor {
+        UIColor(
+            red: Double((hex >> 16) & 0xFF) / 255,
+            green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255,
+            alpha: 1
+        )
+    }
+    #endif
+}
+
+private extension Color {
+    #if canImport(AppKit)
+    init(platform color: NSColor) { self.init(nsColor: color) }
+    #else
+    init(platform color: UIColor) { self.init(uiColor: color) }
+    #endif
 }
 
 extension View {

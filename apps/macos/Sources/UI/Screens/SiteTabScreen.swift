@@ -771,7 +771,9 @@ private struct TrendChart: View {
         }
         .chartForegroundStyleScale(["Impressions": Self.impressionsColor, "Clicks": Self.clicksColor])
         .chartLegend(.hidden)
-        .chartYScale(domain: .automatic(includesZero: true))
+        // Room above the peaks for the tooltip, in the domain (see `ChartSpan`); none on the
+        // sides: the plot is the pane.
+        .chartYScale(domain: ChartSpan.domain(days.flatMap { [$0.impressions, $0.clicks] }, fromZero: true, headroom: 0.08))
         // The baseline is the only horizontal rule: a hairline at zero.
         .chartYAxis {
             AxisMarks(values: [0]) { _ in
@@ -785,10 +787,6 @@ private struct TrendChart: View {
                 AxisTick(centered: false, length: 2, stroke: StrokeStyle(lineWidth: 2, lineCap: .round))
                     .foregroundStyle(Palette.line)
             }
-        }
-        // Room above the peaks for the tooltip, and none on the sides: the plot is the pane.
-        .chartPlotStyle { plot in
-            plot.padding(.top, 8)
         }
         .chartOverlay { proxy in
             if !isPreview {

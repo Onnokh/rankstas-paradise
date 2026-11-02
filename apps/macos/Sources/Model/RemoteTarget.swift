@@ -9,13 +9,23 @@ struct RemoteTarget: Codable, Sendable, Equatable {
     }
 }
 
-/// Resolves where the app talks to and with which token: `RP_API_URL` and `RP_TOKEN` from the
-/// process environment, else `client.json` in the app home, the same file the TUI reads.
-/// No Keychain: every fresh build of an unsigned app would prompt for it.
+/// Resolves where the app talks to and with which token.
+///
+/// On the Mac: `RP_API_URL` and `RP_TOKEN` from the process environment, else `client.json`
+/// in the app home, the same file the TUI reads. No Keychain: every fresh build of an
+/// unsigned app would prompt for it.
+///
+/// On the iPhone there is no environment and no home to read a file from, so the target is
+/// the one the reader typed in at sign-in, kept in the Keychain — see `StoredTarget`.
 enum ClientConfiguration {
     static func load() throws -> RemoteTarget {
+        #if os(iOS)
+        guard let target = StoredTarget.load() else { throw ConfigurationError.signedOut }
+        return target
+        #else
         let environment = ProcessInfo.processInfo.environment
         return try load(environment: environment, file: fileURL(environment: environment))
+        #endif
     }
 
     static func load(environment: [String: String], file: URL) throws -> RemoteTarget {
@@ -42,6 +52,7 @@ enum ClientConfiguration {
         }
     }
 
+    #if os(macOS)
     /// Where `load()` takes the target from, in words the Settings window can show: the two
     /// variables when the environment has both, else the file's path.
     static func sourceDescription(environment: [String: String] = ProcessInfo.processInfo.environment) -> String {
@@ -65,11 +76,13 @@ enum ClientConfiguration {
             .appending(path: "rankstas-paradise", directoryHint: .isDirectory)
             .appending(path: "client.json", directoryHint: .notDirectory)
     }
+    #endif
 }
 
 enum ConfigurationError: LocalizedError {
     case missing(path: String)
     case invalid(path: String)
+    case signedOut
 
     var errorDescription: String? {
         switch self {
@@ -77,6 +90,8 @@ enum ConfigurationError: LocalizedError {
             "No client configuration found. Set RP_API_URL and RP_TOKEN, or create \(path)."
         case .invalid(let path):
             "The client configuration at \(path) must contain valid apiUrl and token strings."
+        case .signedOut:
+            "Sign in with a server address and an API key."
         }
     }
 }

@@ -4,6 +4,7 @@ options:
   bundleIdPrefix: com.rankstasparadise
   deploymentTarget:
     macOS: "14.0"
+    iOS: "17.0"
   xcodeVersion: "26.0"
 
 settings:
@@ -31,6 +32,37 @@ targets:
     scheme:
       testTargets:
         - RankstasParadiseTests
+
+  # The iPhone app. It shares the Mac app's model — the API client, the stores and their
+  # caches, the period arithmetic — and the palette, and has a shell of its own in `iOS/`:
+  # the peek, the tab bar and the rail are a window's answers, and a phone has no window.
+  RankstasParadisePhone:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/Model
+      - path: Sources/Workspace/TabID.swift
+      - path: Sources/UI/Palette.swift
+      - path: Sources/UI/Figures.swift
+      - path: Sources/UI/Headband.swift
+      - path: Sources/UI/PageFrame.swift
+      - path: Sources/UI/PageParts.swift
+      - path: Sources/UI/Spark.swift
+      - path: iOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rankstasparadise.ios
+        PRODUCT_NAME: Ranksta's Paradise
+        PRODUCT_MODULE_NAME: RankstasParadise
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Ranksta's Paradise
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
 
   RankstasParadiseTests:
     type: bundle.unit-test
